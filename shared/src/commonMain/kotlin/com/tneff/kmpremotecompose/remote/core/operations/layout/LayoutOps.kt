@@ -39,11 +39,16 @@ object LayoutOps {
         Operations.registerInBase(Operations.LAYOUT_BOX, BoxLayout)
         Operations.registerInBase(Operations.LAYOUT_CONTENT, LayoutContent)
         Operations.registerInBase(Operations.LAYOUT_COLUMN, ColumnLayout)
+        Operations.registerInBase(Operations.MODIFIER_PADDING, PaddingModifier) // REM-17 (F6)
 
         // ROOT_CONTENT_BEHAVIOR: V6 base only + (API ≥ 7) deprecated overlays — NOT V7_BASE.
         // No base helper covers a V6-only op, so register V6 directly + the overlays via registerInOverlay.
         Operations.register(Operations.Layer.V6, Operations.ROOT_CONTENT_BEHAVIOR, RootContentBehavior)
         Operations.registerInOverlay(Operations.Layer.V7_ANDROIDX_DEPRECATED, Operations.ROOT_CONTENT_BEHAVIOR, RootContentBehavior)
         Operations.registerInOverlay(Operations.Layer.V7_WIDGETS_DEPRECATED, Operations.ROOT_CONTENT_BEHAVIOR, RootContentBehavior)
+
+        // CORE_TEXT: ANDROIDX + WIDGETS overlays (not base). REM-17 (F6).
+        Operations.registerInOverlay(Operations.Layer.V7_ANDROIDX, Operations.CORE_TEXT, CoreText)
+        Operations.registerInOverlay(Operations.Layer.V7_WIDGETS, Operations.CORE_TEXT, CoreText)
     }
 }
