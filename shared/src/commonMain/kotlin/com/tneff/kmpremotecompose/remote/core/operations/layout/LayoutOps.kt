@@ -38,6 +38,7 @@ object LayoutOps {
         Operations.registerInBase(Operations.MODIFIER_BACKGROUND, BackgroundModifier)
         Operations.registerInBase(Operations.LAYOUT_BOX, BoxLayout)
         Operations.registerInBase(Operations.LAYOUT_CONTENT, LayoutContent)
+        Operations.registerInBase(Operations.LAYOUT_COLUMN, ColumnLayout)
 
         // ROOT_CONTENT_BEHAVIOR: V6 base only + (API ≥ 7) deprecated overlays — NOT V7_BASE.
         // No base helper covers a V6-only op, so register V6 directly + the overlays via registerInOverlay.
