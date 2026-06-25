@@ -1,5 +1,7 @@
 package com.tneff.kmpremotecompose.conformance
 
+import com.tneff.kmpremotecompose.remote.core.debug.OpSpan
+
 /**
  * REM-7 — **RcToString-Diff-Plumbing** (≙ TechSpec §3.3 Punkt 3 / Referenz `RcToString.java`).
  *
@@ -38,10 +40,11 @@ object RcDiffReporter {
         sb.append("  expected=").append(expByte?.let { ByteDiff.hex(it) } ?: "<EOF>")
             .append("  actual=").append(actByte?.let { ByteDiff.hex(it) } ?: "<EOF>").append('\n')
 
-        val span = spans.firstOrNull { it.contains(fd) }
+        val span = spans.firstOrNull { fd in it.byteStart until it.byteEnd }
         if (span != null) {
             val rel = fd - span.byteStart
             sb.append("  Operation: opcode=").append(span.opcode)
+                .append(" (").append(span.name).append(")")
                 .append(" [").append(span.byteStart).append("..").append(span.byteEnd).append(")")
                 .append("  +").append(rel).append(" im Op\n")
             sb.append("  Felder: ").append(span.fields).append('\n')

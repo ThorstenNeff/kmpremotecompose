@@ -1,5 +1,6 @@
 package com.tneff.kmpremotecompose.conformance
 
+import com.tneff.kmpremotecompose.remote.core.debug.OpSpan
 import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertFalse
@@ -36,8 +37,8 @@ class ConformanceEngineTest {
     fun writerByteEquality_brokenCodec_reportsOpAndOffset() {
         val golden = byteArrayOf(0, 1, 2, 3, 4)
         val spans = listOf(
-            OpSpan(opcode = 0, byteStart = 0, byteEnd = 2, fields = "HEADER"),
-            OpSpan(opcode = 42, byteStart = 2, byteEnd = 5, fields = "DRAW_RECT l,t,r"),
+            OpSpan(opcode = 0, name = "HEADER", byteStart = 0, byteEnd = 2, fields = "HEADER"),
+            OpSpan(opcode = 42, name = "DRAW_RECT", byteStart = 2, byteEnd = 5, fields = "DRAW_RECT l,t,r"),
         )
         // Flip Byte an Offset 3 (innerhalb der zweiten Op-Spanne).
         val broken = RcCodec { bytes ->

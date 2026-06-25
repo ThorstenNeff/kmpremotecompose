@@ -6,9 +6,10 @@ Diese Package liefert die **Mechanik** der Conformance-Harness. **Assertions, Fi
 ## Was dev-2 besitzt (hier enthalten)
 | Datei | Rolle |
 |---|---|
-| `ConformanceContract.kt` | **Provisorischer Seam** zu REM-2/REM-3: `RcCodec` (decode), `RcReadback` (reEncode + opSpans), `OpSpan` (≙ §3.4-Dump). Bei REM-3 an `RemoteComposeReader`/`RemoteComposeWriter` binden. |
+| `ConformanceContract.kt` | `RcCodec` (decode) + `RcReadback` (reEncode + opSpans). opSpans liefert die **REM-3-`OpSpan`** (`remote.core.debug.OpSpan`, mit `name`) — eigener Duplikat entfernt. |
+| `RcDocumentCodec.kt` | **Reale Bindung** an die REM-3-Facade: `DocumentReader.inflateWithTrace` (decode) + sequentielles `Operation.write()` (byte-treuer Re-Encode; NICHT `RemoteComposeWriter`, das den Header re-derivt). |
 | `ByteDiff.kt` | Reiner Byte-Vergleich: `firstDivergence`, `equal`, Hex-Helfer. |
-| `RcDiffReporter.kt` | RcToString-Diff-Plumbing: Offset → Op/Feld über `OpSpan` + Hex-Fenster. |
+| `RcDiffReporter.kt` | RcToString-Diff-Plumbing: Offset → Op/Feld über REM-3-`OpSpan` (inkl. `name`) + Hex-Fenster. |
 | `FixtureManifest.kt` | `FixtureEntry` (Signatur von test-1) + `ManifestParser` (TSV, `#`=Kommentar). |
 | `RcCorpus.kt` | `RcCorpus` (Contract von test-1) + `RcCorpusReader` (okio, gegen `FakeFileSystem` testbar). |
 | `ConformanceEngine.kt` | Decode→Re-Encode-Loop: `roundTrip`, `writerByteEquality`, `runCorpus` (sammelt, P2). |
@@ -43,7 +44,10 @@ assertTrue(report.allPassed, report.summary())
    Mechanik bewusst `NotImplementedError` (kein stiller Fehlpfad).
 2. **`MANIFEST.tsv`-Format** hier provisorisch nach der `FixtureEntry`-Signatur (8 Spalten). Finalisierung
    durch test-1.
-3. **Codec-Seam** wird ersetzt, sobald `RemoteComposeReader`/`RemoteComposeWriter` (REM-2/REM-3) stehen —
-   Engine/Diff/Loader bleiben unverändert.
+3. **Codec-Seam ist gebunden** (`RcDocumentCodec` → REM-3 `DocumentReader` + `Operation.write()`).
+   Engine/Diff/Loader unverändert. Header-only-Dokument decode→re-encode ist byte-identisch (Test).
+   **Offen (dev-1):** `Header.write()` stempelt im Flat-Pfad die Versions-Konstanten (MAJOR/MINOR=1)
+   statt der geparsten Version → ein **API-6-Flat-Header (z. B. `procedure_simple1`) round-trippt
+   noch nicht byte-genau** (Minor 0→1). Blockiert F1-Byte-Equality; an PO gemeldet.
 4. Loader-Tests laufen über den in-memory `CorpusIo`-Seam (kein `okio-fakefilesystem` — dessen
    `kotlinx-datetime`-Abhängigkeit kollidiert mit der von `compose-material3` erzwungenen datetime-0.7.x).
