@@ -146,6 +146,28 @@ class LayoutOpsByteTest {
     }
 
     @Test
+    fun columnLayout_writesExactBytes() {
+        // opcode 204 (0xCC) + componentId -3 + animationId -1 + hPos 1 + vPos 4 + spacedBy 0f.
+        // Anchored to the real c_text.rc golden (@ byte 62, the F6 op gap) verbatim — 21 bytes.
+        assertContentEquals(
+            bytes(
+                0xCC,
+                0xFF, 0xFF, 0xFF, 0xFD,
+                0xFF, 0xFF, 0xFF, 0xFF,
+                0x00, 0x00, 0x00, 0x01,
+                0x00, 0x00, 0x00, 0x04,
+                0x00, 0x00, 0x00, 0x00,
+            ),
+            writeBytes(
+                ColumnLayout(
+                    componentId = -3, animationId = -1,
+                    horizontalPositioning = 1, verticalPositioning = 4, spacedBy = 0f,
+                ),
+            ),
+        )
+    }
+
+    @Test
     fun rootContentBehavior_writesExactBytes() {
         // opcode 65 (0x41) + scroll/alignment/sizing/mode (spec-anchored distinct ints).
         assertContentEquals(
@@ -186,6 +208,7 @@ class LayoutOpsByteTest {
         assertRoundTrips(HeightModifier(DimensionType.WEIGHT, 2.5f), HeightModifier)
         assertRoundTrips(BackgroundModifier(1, 42, 0, 0, 0.25f, 0.5f, 0.75f, 1f, 2), BackgroundModifier)
         assertRoundTrips(BoxLayout(-3, -1, 2, 2), BoxLayout)
+        assertRoundTrips(ColumnLayout(-3, -1, 1, 4, 12.5f), ColumnLayout)
         assertRoundTrips(LayoutContent(-4), LayoutContent)
         assertRoundTrips(RootContentBehavior(1, 2, 3, 4), RootContentBehavior)
     }
@@ -213,6 +236,7 @@ class LayoutOpsByteTest {
             Operations.LAYOUT_ROOT, Operations.CONTAINER_END, Operations.COMPONENT_START,
             Operations.MODIFIER_WIDTH, Operations.MODIFIER_HEIGHT, Operations.MODIFIER_CLICK,
             Operations.MODIFIER_BACKGROUND, Operations.LAYOUT_BOX, Operations.LAYOUT_CONTENT,
+            Operations.LAYOUT_COLUMN,
         )
         for (op in opcodes) {
             assertTrue(Operations.isValid(op, 6, Operations.PROFILE_BASELINE), "v6 ${Operations.name(op)}")
