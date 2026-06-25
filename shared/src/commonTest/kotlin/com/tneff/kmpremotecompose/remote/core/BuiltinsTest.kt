@@ -53,6 +53,7 @@ class BuiltinsTest {
             Operations.MATRIX_RESTORE, Operations.MATRIX_TRANSLATE, Operations.MATRIX_SCALE,
             Operations.MATRIX_ROTATE, Operations.MATRIX_SKEW, Operations.CONDITIONAL_OPERATIONS,
             Operations.DEBUG_MESSAGE, Operations.ATTRIBUTE_COLOR,
+            Operations.TEXT_LOOKUP, // REM-22 SB3 (base)
         )
         val groupB = listOf(
             // Checkpoint base ops.

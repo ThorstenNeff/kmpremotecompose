@@ -74,5 +74,14 @@ object DataOps {
         Operations.registerInOverlay(Operations.Layer.V7_WIDGETS, Operations.UPDATE_DYNAMIC_FLOAT_LIST, UpdateDynamicFloatList)
         Operations.registerInOverlay(Operations.Layer.V7_ANDROIDX, Operations.WAKE_IN, WakeIn)
         Operations.registerInOverlay(Operations.Layer.V7_WIDGETS, Operations.WAKE_IN, WakeIn)
+
+        // REM-22 SB3 — TEXT_LOOKUP base; MATRIX_EXPRESSION is a V7_BASE always-on (NOT V6);
+        // ID_LOOKUP + TEXT_TRANSFORM are profile-overlay ops (androidx + widgets).
+        Operations.registerInBase(Operations.TEXT_LOOKUP, TextLookup)
+        Operations.registerInLayer(Operations.Layer.V7_BASE, Operations.MATRIX_EXPRESSION, MatrixExpression)
+        Operations.registerInOverlay(Operations.Layer.V7_ANDROIDX, Operations.ID_LOOKUP, IdLookup)
+        Operations.registerInOverlay(Operations.Layer.V7_WIDGETS, Operations.ID_LOOKUP, IdLookup)
+        Operations.registerInOverlay(Operations.Layer.V7_ANDROIDX, Operations.TEXT_TRANSFORM, TextTransform)
+        Operations.registerInOverlay(Operations.Layer.V7_WIDGETS, Operations.TEXT_TRANSFORM, TextTransform)
     }
 }
