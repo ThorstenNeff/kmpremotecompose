@@ -40,6 +40,15 @@ object LayoutOps {
         Operations.registerInBase(Operations.LAYOUT_CONTENT, LayoutContent)
         Operations.registerInBase(Operations.LAYOUT_COLUMN, ColumnLayout)
         Operations.registerInBase(Operations.MODIFIER_PADDING, PaddingModifier) // REM-17 (F6)
+        Operations.registerInBase(Operations.VALUE_STRING_CHANGE_ACTION, ValueStringChangeAction) // REM-20 (F7)
+        Operations.registerInBase(Operations.ACCESSIBILITY_SEMANTICS, CoreSemantics) // REM-20 (F7)
+        // REM-20 P2 group-B (multi-doc first): CANVAS+CANVAS_CONTENT (~82 docs), ROW(10), CLIP_RECT(4),
+        // COLLAPSIBLE_ROW(2). LAYOUT_CANVAS_CONTENT (207) surfaced via corpus probe as the real 82-doc lever.
+        Operations.registerInBase(Operations.LAYOUT_CANVAS, CanvasLayout)
+        Operations.registerInBase(Operations.LAYOUT_CANVAS_CONTENT, CanvasContent)
+        Operations.registerInBase(Operations.LAYOUT_ROW, RowLayout)
+        Operations.registerInBase(Operations.MODIFIER_CLIP_RECT, ClipRectModifier)
+        Operations.registerInBase(Operations.LAYOUT_COLLAPSIBLE_ROW, CollapsibleRowLayout)
 
         // ROOT_CONTENT_BEHAVIOR: V6 base only + (API ≥ 7) deprecated overlays — NOT V7_BASE.
         // No base helper covers a V6-only op, so register V6 directly + the overlays via registerInOverlay.
@@ -50,5 +59,9 @@ object LayoutOps {
         // CORE_TEXT: ANDROIDX + WIDGETS overlays (not base). REM-17 (F6).
         Operations.registerInOverlay(Operations.Layer.V7_ANDROIDX, Operations.CORE_TEXT, CoreText)
         Operations.registerInOverlay(Operations.Layer.V7_WIDGETS, Operations.CORE_TEXT, CoreText)
+
+        // LAYOUT_COMPUTE: ANDROIDX + WIDGETS *experimental* overlays. REM-20.
+        Operations.registerInOverlay(Operations.Layer.V7_ANDROIDX_EXPERIMENTAL, Operations.LAYOUT_COMPUTE, LayoutCompute)
+        Operations.registerInOverlay(Operations.Layer.V7_WIDGETS_EXPERIMENTAL, Operations.LAYOUT_COMPUTE, LayoutCompute)
     }
 }

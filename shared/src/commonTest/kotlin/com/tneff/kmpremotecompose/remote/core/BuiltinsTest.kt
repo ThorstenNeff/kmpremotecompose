@@ -58,6 +58,10 @@ class BuiltinsTest {
             Operations.LAYOUT_COLUMN, // REM-15
             Operations.DRAW_TEXT_ANCHOR, // REM-16 (F3)
             Operations.MODIFIER_PADDING, // REM-17 (F6)
+            // REM-20 P2 group-B sub-batch 1 (base ops).
+            Operations.LAYOUT_CANVAS, Operations.LAYOUT_CANVAS_CONTENT, Operations.LAYOUT_ROW,
+            Operations.MODIFIER_CLIP_RECT, Operations.LAYOUT_COLLAPSIBLE_ROW,
+            Operations.VALUE_STRING_CHANGE_ACTION, Operations.ACCESSIBILITY_SEMANTICS,
         )
         for (op in groupA + groupB) {
             assertTrue(Operations.isValid(op, 7, 0), "${Operations.name(op)} not resolvable at api 7")
