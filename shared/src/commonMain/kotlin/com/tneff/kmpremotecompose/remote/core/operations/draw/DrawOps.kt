@@ -53,5 +53,10 @@ object DrawOps {
         Operations.registerInBase(Operations.DRAW_BITMAP_SCALED, DrawBitmapScaled)
         Operations.registerInOverlay(Operations.Layer.V7_ANDROIDX, Operations.DRAW_TO_BITMAP, DrawToBitmap)
         Operations.registerInOverlay(Operations.Layer.V7_WIDGETS, Operations.DRAW_TO_BITMAP, DrawToBitmap)
+        // REM-26 R5 path/draw family (all base).
+        Operations.registerInBase(Operations.PATH_ADD, PathAppend)
+        Operations.registerInBase(Operations.DRAW_TWEEN_PATH, DrawTweenPath)
+        Operations.registerInBase(Operations.DRAW_TEXT_ON_PATH, DrawTextOnPath)
+        Operations.registerInBase(Operations.DRAW_CONTENT, DrawContent)
     }
 }
