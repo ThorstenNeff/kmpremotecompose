@@ -156,6 +156,7 @@ class RegistryReconcileTest {
         val expectedBase = setOf(
             Operations.HEADER, Operations.DATA_TEXT, Operations.DATA_FLOAT, Operations.DATA_INT,
             Operations.COLOR_CONSTANT, Operations.DATA_BITMAP, Operations.ROOT_CONTENT_DESCRIPTION,
+            Operations.TEXT_FROM_FLOAT,
         )
         assertTrue(Operations.registeredOpcodes(Layer.V6).containsAll(expectedBase))
         assertTrue(Operations.registeredOpcodes(Layer.V7_BASE).containsAll(expectedBase))
