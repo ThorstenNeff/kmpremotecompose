@@ -54,6 +54,11 @@ object LayoutOps {
         Operations.registerInBase(Operations.LAYOUT_STATE, StateLayout)
         Operations.registerInBase(Operations.CANVAS_OPERATIONS, CanvasOperations)
         Operations.registerInBase(Operations.MODIFIER_VISIBILITY, VisibilityModifier) // REM-25 (R4)
+        // REM-26 R5 action/container family (all base).
+        Operations.registerInBase(Operations.IMPULSE_START, ImpulseStart)
+        Operations.registerInBase(Operations.RUN_ACTION, RunAction)
+        Operations.registerInBase(Operations.HOST_ACTION, HostAction)
+        Operations.registerInBase(Operations.HOST_METADATA_ACTION, HostMetadataAction)
 
         // ROOT_CONTENT_BEHAVIOR: V6 base only + (API ≥ 7) deprecated overlays — NOT V7_BASE.
         // No base helper covers a V6-only op, so register V6 directly + the overlays via registerInOverlay.

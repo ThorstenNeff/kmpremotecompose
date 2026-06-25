@@ -86,6 +86,9 @@ class BuiltinsTest {
             Operations.PATH_CREATE, Operations.PATH_TWEEN, Operations.TOUCH_EXPRESSION,
             // REM-25 P2 group-B round 4 (base ops).
             Operations.CLIP_RECT, Operations.DRAW_BITMAP_SCALED, Operations.MODIFIER_VISIBILITY,
+            // REM-26 P2 group-B round 5 (base ops).
+            Operations.PATH_ADD, Operations.DRAW_TWEEN_PATH, Operations.DRAW_TEXT_ON_PATH, Operations.DRAW_CONTENT,
+            Operations.IMPULSE_START, Operations.RUN_ACTION, Operations.HOST_ACTION, Operations.HOST_METADATA_ACTION,
         )
         for (op in groupA + groupB) {
             assertTrue(Operations.isValid(op, 7, 0), "${Operations.name(op)} not resolvable at api 7")
