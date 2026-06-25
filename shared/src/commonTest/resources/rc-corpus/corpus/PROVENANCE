@@ -37,5 +37,14 @@ pristine and which are adapted.
     Both defaults = Integer.MAX_VALUE (0x7FFFFFFF), source-derived from FlowLayout. Doc length +8
     (1037 -> 1045 bytes). FLOW op region: F0 | compId | animId | hPos | vPos | spacedBy |
     7FFFFFFF | 7FFFFFFF | <next op 0x10>. Spec by assist (source-derived).
-    Verification: structural splice + spec-level FLOW-7 decode->re-encode byte-identical confirmed;
-    final codec decode->re-encode byte-identity to be confirmed once dev-2's FLOW-7 impl is in develop.
+    Verification: codec decode->re-encode byte-identical against dev-2's FLOW-7 impl (REM-24 e67320a)
+    on iOS K/N (ConformanceEngine.roundTrip) — CONFIRMED.
+
+  demo_graphs0.rc, pressure_gauge.rc — HEADER (op 0) property table was in PRE-SORT order
+    (key 9 / content-description STRING first: [9,5,6,14]) while the current upstream Header.write()
+    sorts keys ascending (Collections.sort). Adapted: reordered the 4 property TLV records to
+    ascending key order [5,6,9,14]. Whole TLV records moved (key 9 = variable-length STRING);
+    every record byte-preserved, only order changed; doc size UNCHANGED (2642 / 1907 bytes).
+    NOT a byte-swap. Verification: decode->re-encode byte-identical with our Header.write() on iOS
+    K/N (ConformanceEngine.roundTrip) — CONFIRMED. Evidence: test-2 header-divergence-evidence.md.
+    NOTE: more such pre-sort-header docs may surface after op-fixes — same reorder pattern applies.
