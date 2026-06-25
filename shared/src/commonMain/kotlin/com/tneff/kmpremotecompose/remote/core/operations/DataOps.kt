@@ -53,5 +53,11 @@ object DataOps {
         Operations.registerInBase(Operations.COMPONENT_VALUE, ComponentValue)
         Operations.registerInOverlay(Operations.Layer.V7_ANDROIDX, Operations.DYNAMIC_FLOAT_LIST, DataDynamicListFloat)
         Operations.registerInOverlay(Operations.Layer.V7_WIDGETS, Operations.DYNAMIC_FLOAT_LIST, DataDynamicListFloat)
+
+        // REM-22 SB1 — base group-A ops (matrix state, text, data list, theme).
+        Operations.registerInBase(Operations.MATRIX_SAVE, MatrixSave)
+        Operations.registerInBase(Operations.TEXT_MERGE, TextMerge)
+        Operations.registerInBase(Operations.ID_LIST, DataListIds)
+        Operations.registerInBase(Operations.THEME, Theme)
     }
 }

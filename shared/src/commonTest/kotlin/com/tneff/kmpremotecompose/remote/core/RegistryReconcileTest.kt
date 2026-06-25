@@ -159,6 +159,8 @@ class RegistryReconcileTest {
             Operations.TEXT_FROM_FLOAT,
             Operations.ANIMATED_FLOAT, Operations.NAMED_VARIABLE, Operations.COLOR_EXPRESSIONS,
             Operations.FLOAT_LIST, Operations.ID_MAP, Operations.COMPONENT_VALUE,
+            // REM-22 SB1.
+            Operations.MATRIX_SAVE, Operations.TEXT_MERGE, Operations.ID_LIST, Operations.THEME,
         )
         assertTrue(Operations.registeredOpcodes(Layer.V6).containsAll(expectedBase))
         assertTrue(Operations.registeredOpcodes(Layer.V7_BASE).containsAll(expectedBase))
