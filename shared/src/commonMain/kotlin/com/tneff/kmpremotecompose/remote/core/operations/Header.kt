@@ -86,7 +86,8 @@ class Header private constructor(
 
     override fun dump(): String =
         "HEADER v$major.$minor.$patch w=$width h=$height profiles=$profiles" +
-            (properties?.let { " props=${it.toSortedMap()}" } ?: " [$flatCapabilities]")
+            // sortedBy is multiplatform stdlib; toSortedMap() is JVM-only and breaks Kotlin/Native.
+            (properties?.let { " props=${it.entries.sortedBy { e -> e.key }}" } ?: " [$flatCapabilities]")
 
     companion object : OperationReader {
 
