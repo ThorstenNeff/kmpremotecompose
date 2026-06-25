@@ -85,12 +85,15 @@ object LayoutOps {
         Operations.registerInBase(Operations.CLICK_AREA, ClickArea)
         Operations.registerInBase(Operations.MODIFIER_SCROLL, ScrollModifier)
         Operations.registerInBase(Operations.MODIFIER_COLLAPSIBLE_PRIORITY, CollapsiblePriorityModifier)
+        // REM-24 R3: TOUCH_EXPRESSION (157, base — touch family).
+        Operations.registerInBase(Operations.TOUCH_EXPRESSION, TouchExpression)
 
-        // REM-20 SB2 experimental-overlay op: MODIFIER_ALIGN_BY (237).
-        // NOTE: LAYOUT_FLOW (240) DEFERRED — the committed golden c_flow.rc encodes FLOW with 5 fields
-        // (RowLayout shape) while the current ./androidx FlowLayout.apply/read use 7 (maxItemsInEachRow,
-        // maxLines). Stale-golden vs source skew → PO/PO-assistant call before we pin the wire shape.
+        // Experimental-overlay ops: MODIFIER_ALIGN_BY (237, REM-20 SB2) + LAYOUT_FLOW (240, REM-24).
+        // LAYOUT_FLOW now 7 fields per current ./androidx source (human decision: source wins, fixture
+        // c_flow.rc is being adapted to 7 fields by test-1).
         Operations.registerInOverlay(Operations.Layer.V7_ANDROIDX_EXPERIMENTAL, Operations.MODIFIER_ALIGN_BY, AlignByModifier)
         Operations.registerInOverlay(Operations.Layer.V7_WIDGETS_EXPERIMENTAL, Operations.MODIFIER_ALIGN_BY, AlignByModifier)
+        Operations.registerInOverlay(Operations.Layer.V7_ANDROIDX_EXPERIMENTAL, Operations.LAYOUT_FLOW, FlowLayout)
+        Operations.registerInOverlay(Operations.Layer.V7_WIDGETS_EXPERIMENTAL, Operations.LAYOUT_FLOW, FlowLayout)
     }
 }

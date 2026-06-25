@@ -42,5 +42,10 @@ object DrawOps {
         Operations.registerInBase(Operations.DATA_PATH, PathData)
         Operations.registerInBase(Operations.DRAW_PATH, DrawPath)
         Operations.registerInBase(Operations.DRAW_TEXT_ANCHOR, DrawTextAnchored) // REM-16 (F3)
+        // REM-24 R3 path family: PATH_CREATE + PATH_TWEEN (base), PATH_EXPRESSION (ANDROIDX + WIDGETS overlay).
+        Operations.registerInBase(Operations.PATH_CREATE, PathCreate)
+        Operations.registerInBase(Operations.PATH_TWEEN, PathTween)
+        Operations.registerInOverlay(Operations.Layer.V7_ANDROIDX, Operations.PATH_EXPRESSION, PathExpression)
+        Operations.registerInOverlay(Operations.Layer.V7_WIDGETS, Operations.PATH_EXPRESSION, PathExpression)
     }
 }
