@@ -49,6 +49,10 @@ object LayoutOps {
         Operations.registerInBase(Operations.LAYOUT_ROW, RowLayout)
         Operations.registerInBase(Operations.MODIFIER_CLIP_RECT, ClipRectModifier)
         Operations.registerInBase(Operations.LAYOUT_COLLAPSIBLE_ROW, CollapsibleRowLayout)
+        // REM-23 P2 group-B round 2: LOOP_START (215), LAYOUT_STATE (217), CANVAS_OPERATIONS (173).
+        Operations.registerInBase(Operations.LOOP_START, LoopStart)
+        Operations.registerInBase(Operations.LAYOUT_STATE, StateLayout)
+        Operations.registerInBase(Operations.CANVAS_OPERATIONS, CanvasOperations)
 
         // ROOT_CONTENT_BEHAVIOR: V6 base only + (API ≥ 7) deprecated overlays — NOT V7_BASE.
         // No base helper covers a V6-only op, so register V6 directly + the overlays via registerInOverlay.

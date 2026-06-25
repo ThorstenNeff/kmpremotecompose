@@ -75,6 +75,8 @@ class BuiltinsTest {
             Operations.MODIFIER_ZINDEX, Operations.MODIFIER_TOUCH_DOWN, Operations.MODIFIER_TOUCH_UP,
             Operations.MODIFIER_TOUCH_CANCEL, Operations.VALUE_INTEGER_CHANGE_ACTION, Operations.CLICK_AREA,
             Operations.MODIFIER_SCROLL, Operations.MODIFIER_COLLAPSIBLE_PRIORITY,
+            // REM-23 P2 group-B round 2 (base ops).
+            Operations.LOOP_START, Operations.LAYOUT_STATE, Operations.CANVAS_OPERATIONS,
         )
         for (op in groupA + groupB) {
             assertTrue(Operations.isValid(op, 7, 0), "${Operations.name(op)} not resolvable at api 7")
