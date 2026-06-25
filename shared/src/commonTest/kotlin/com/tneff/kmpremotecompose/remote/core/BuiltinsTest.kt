@@ -43,6 +43,9 @@ class BuiltinsTest {
         val groupA = listOf(
             Operations.HEADER, Operations.DATA_TEXT, Operations.DATA_FLOAT, Operations.DATA_INT,
             Operations.COLOR_CONSTANT, Operations.DATA_BITMAP, Operations.TEXT_FROM_FLOAT,
+            // REM-19 P2 base ops.
+            Operations.ANIMATED_FLOAT, Operations.NAMED_VARIABLE, Operations.COLOR_EXPRESSIONS,
+            Operations.FLOAT_LIST, Operations.ID_MAP,
         )
         val groupB = listOf(
             // Checkpoint base ops.

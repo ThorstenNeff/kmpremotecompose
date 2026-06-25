@@ -578,29 +578,34 @@ object Operations {
     }
 
     /**
-     * Register [reader] for [opcode] in both profile-independent base layers (V6 and V7_BASE).
-     * Validates that the opcode is a base-layer member (catches a wrong-layer registration). This is
-     * the blessed path for op-group registrars (DataOps, DrawOps, LayoutOps, …).
+     * Register [reader] for [opcode] in exactly one [layer], validating that the opcode is a member
+     * of that layer (catches a wrong-layer registration). The general primitive behind
+     * [registerInBase] / [registerInOverlay]; use it directly for an op with an irregular layer
+     * footprint (e.g. DATA_SHADER, which is V6 base but a V7 *overlay* op, not V7_BASE).
      */
-    fun registerInBase(opcode: Int, reader: OperationReader) {
-        require(opcode in MEMBERSHIP.getValue(Layer.V6) && opcode in MEMBERSHIP.getValue(Layer.V7_BASE)) {
-            "opcode $opcode (${name(opcode)}) is not a base-layer member — wrong layer"
-        }
-        register(Layer.V6, opcode, reader)
-        register(Layer.V7_BASE, opcode, reader)
-    }
-
-    /**
-     * Register [reader] for an overlay-only [opcode] in a profile [layer] (e.g. V7_ANDROIDX). For
-     * operations that exist only under a profile, not in the base set. Validates membership against
-     * the target overlay layer. (No consumer yet — overlay-only ops land with later op groups.)
-     */
-    fun registerInOverlay(layer: Layer, opcode: Int, reader: OperationReader) {
-        require(layer != Layer.V6 && layer != Layer.V7_BASE) { "$layer is a base layer, use registerInBase" }
+    fun registerInLayer(layer: Layer, opcode: Int, reader: OperationReader) {
         require(opcode in MEMBERSHIP.getValue(layer)) {
             "opcode $opcode (${name(opcode)}) is not a member of $layer — wrong layer"
         }
         register(layer, opcode, reader)
+    }
+
+    /**
+     * Register [reader] for [opcode] in both profile-independent base layers (V6 and V7_BASE).
+     * This is the blessed path for op-group registrars (DataOps, DrawOps, LayoutOps, …).
+     */
+    fun registerInBase(opcode: Int, reader: OperationReader) {
+        registerInLayer(Layer.V6, opcode, reader)
+        registerInLayer(Layer.V7_BASE, opcode, reader)
+    }
+
+    /**
+     * Register [reader] for an overlay-only [opcode] in a profile [layer] (e.g. V7_ANDROIDX). For
+     * operations that exist only under a profile, not in the base set.
+     */
+    fun registerInOverlay(layer: Layer, opcode: Int, reader: OperationReader) {
+        require(layer != Layer.V6 && layer != Layer.V7_BASE) { "$layer is a base layer, use registerInBase" }
+        registerInLayer(layer, opcode, reader)
     }
 
     /** Test/maintenance hook: drop all registered readers (does not touch opcode constants). */
