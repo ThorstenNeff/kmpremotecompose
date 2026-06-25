@@ -21,6 +21,7 @@ import com.tneff.kmpremotecompose.remote.core.operations.Operations.Layer
 import kotlin.test.AfterTest
 import kotlin.test.Test
 import kotlin.test.assertEquals
+import kotlin.test.assertFalse
 import kotlin.test.assertTrue
 
 /**
@@ -44,14 +45,47 @@ class BuiltinsTest {
             Operations.COLOR_CONSTANT, Operations.DATA_BITMAP,
         )
         val groupB = listOf(
+            // Checkpoint base ops.
             Operations.DRAW_CIRCLE, Operations.DRAW_RECT, Operations.DRAW_LINE, Operations.DRAW_OVAL,
             Operations.LAYOUT_ROOT, Operations.CONTAINER_END, Operations.COMPONENT_START,
             Operations.MODIFIER_WIDTH, Operations.MODIFIER_HEIGHT, Operations.MODIFIER_CLICK,
+            // REM-5-full base ops (REM-13 coverage gap): a deleted registerInBase fails here at the
+            // unit level instead of only at the REM-7 corpus gate.
+            Operations.DRAW_ROUND_RECT, Operations.DRAW_ARC, Operations.DRAW_SECTOR,
+            Operations.PAINT_VALUES, Operations.MODIFIER_BACKGROUND,
+            Operations.LAYOUT_BOX, Operations.LAYOUT_CONTENT,
+            Operations.DRAW_TEXT_RUN, Operations.DATA_PATH, Operations.DRAW_PATH,
         )
         for (op in groupA + groupB) {
             assertTrue(Operations.isValid(op, 7, 0), "${Operations.name(op)} not resolvable at api 7")
             assertTrue(Operations.isValid(op, 6, 0), "${Operations.name(op)} not resolvable at api 6")
         }
+    }
+
+    /**
+     * `ROOT_CONTENT_BEHAVIOR` is the one REM-5 op that is NOT a v7 base member: it resolves in the
+     * API-6 base and (API ≥ 7) only under the deprecated overlays — mirroring its layer placement.
+     * Catches a missing/mis-layered registration of this special-case op.
+     */
+    @Test
+    fun register_rootContentBehavior_isV6AndDeprecatedOverlayOnly() {
+        Operations.resetReaders()
+        Builtins.register()
+        val op = Operations.ROOT_CONTENT_BEHAVIOR
+        assertTrue(Operations.isValid(op, 6, 0), "ROOT_CONTENT_BEHAVIOR not resolvable at api 6")
+        assertFalse(Operations.isValid(op, 7, 0), "must not resolve at api 7 baseline")
+        assertFalse(
+            Operations.isValid(op, 7, Operations.PROFILE_ANDROIDX),
+            "must not resolve under plain androidx (non-deprecated)",
+        )
+        assertTrue(
+            Operations.isValid(op, 7, Operations.PROFILE_ANDROIDX or Operations.PROFILE_DEPRECATED),
+            "must resolve under androidx + deprecated overlay",
+        )
+        assertTrue(
+            Operations.isValid(op, 7, Operations.PROFILE_WIDGETS or Operations.PROFILE_DEPRECATED),
+            "must resolve under widgets + deprecated overlay",
+        )
     }
 
     @Test
