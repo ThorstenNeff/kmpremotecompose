@@ -1,0 +1,5 @@
+# oracle = committed upstream .rc, verbatim copy, upstream tree NOT built
+# target dir = shared/src/commonTest/resources/rc-corpus/  (loaded via okio FileSystem)
+# columns: id, target_name, bytes, tier, role, source_path, generator, semantic
+id	target_name	bytes	tier	role	source_path	generator	semantic
+F1	procedure_simple1.rc	61	P0	writer-byte-equality	androidx/compose/remote/integration-tests/player-view-demos/src/main/res/raw/procedure_simple1.rc	BasicProceduralDemos.simple1()	RemoteComposeWriter(600,600,"Clock",6,0); drawCircle(150,150,150)
