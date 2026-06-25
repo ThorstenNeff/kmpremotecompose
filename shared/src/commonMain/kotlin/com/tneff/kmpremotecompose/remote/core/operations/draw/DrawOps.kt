@@ -41,5 +41,6 @@ object DrawOps {
         Operations.registerInBase(Operations.DRAW_TEXT_RUN, DrawText)
         Operations.registerInBase(Operations.DATA_PATH, PathData)
         Operations.registerInBase(Operations.DRAW_PATH, DrawPath)
+        Operations.registerInBase(Operations.DRAW_TEXT_ANCHOR, DrawTextAnchored) // REM-16 (F3)
     }
 }
