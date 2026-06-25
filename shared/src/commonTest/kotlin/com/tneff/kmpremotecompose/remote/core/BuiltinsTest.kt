@@ -47,6 +47,8 @@ class BuiltinsTest {
             Operations.ANIMATED_FLOAT, Operations.NAMED_VARIABLE, Operations.COLOR_EXPRESSIONS,
             Operations.FLOAT_LIST, Operations.ID_MAP,
             Operations.COMPONENT_VALUE, // SB2
+            // REM-22 SB1.
+            Operations.MATRIX_SAVE, Operations.TEXT_MERGE, Operations.ID_LIST, Operations.THEME,
         )
         val groupB = listOf(
             // Checkpoint base ops.
