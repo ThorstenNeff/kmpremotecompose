@@ -8,8 +8,7 @@ import kotlin.test.fail
  *
  * Ownership-Schnitt (siehe `conformance/README.md` / [ConformanceContract]): die Decode→Re-Encode-
  * Mechanik ([ConformanceEngine]), der Loader ([RcCorpus]), der Codec ([RcDocumentCodec]) und das
- * Diff-Plumbing ([RcDiffReporter]/[ByteDiff]) gehören dev-2. **Hier** liegen nur die Assertions und
- * die (provisorische) Auflösung der Korpus-Wurzel für Host-Tests.
+ * Diff-Plumbing ([RcDiffReporter]/[ByteDiff]) gehören dev-2. **Hier** liegen nur die Assertions.
  */
 
 /**
@@ -49,4 +48,19 @@ fun assertConformancePasses(result: ByteEqualityResult) {
             }
         },
     )
+}
+
+/**
+ * **Decode-only**-Assertion (F7-Orakel): das Dokument muss **fehlerfrei dekodieren** und ≥1 Op
+ * liefern. **KEIN** Byte-Equality — es gibt keinen committeten Generator, also kein Golden-Ziel.
+ * Reiner „Reader bricht nicht am echten Dokument"-Beweis. Bei einem Op-Gap wirft der Codec; die
+ * Meldung trägt dann das unbekannte Opcode + den Byte-Offset (wie bei den Byte-Equality-Tests).
+ */
+fun assertDecodesCleanly(golden: ByteArray, fixtureId: String) {
+    val spans = try {
+        RcDocumentCodec.decode(golden).opSpans()
+    } catch (t: Throwable) {
+        fail("[$fixtureId] decode FEHLGESCHLAGEN: ${t.message ?: t::class.simpleName}")
+    }
+    assertTrue(spans.isNotEmpty(), "[$fixtureId] dekodiert, aber 0 Ops")
 }
