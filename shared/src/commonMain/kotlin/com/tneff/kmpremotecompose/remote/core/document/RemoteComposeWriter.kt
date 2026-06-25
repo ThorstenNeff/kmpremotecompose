@@ -43,6 +43,7 @@ class RemoteComposeWriter(
     val apiLevel: Int = Header.versionToApiLevel(Header.MAJOR_VERSION, Header.MINOR_VERSION)
 
     init {
+        Operations.registerDefaults()
         val properties = LinkedHashMap<Int, Any>()
         properties[Header.DOC_WIDTH] = width
         properties[Header.DOC_HEIGHT] = height
