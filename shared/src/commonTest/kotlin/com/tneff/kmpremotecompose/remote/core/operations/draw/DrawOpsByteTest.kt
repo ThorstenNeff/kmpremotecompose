@@ -24,6 +24,7 @@ import kotlin.test.Test
 import kotlin.test.assertContentEquals
 import kotlin.test.assertEquals
 import kotlin.test.assertFalse
+import kotlin.test.assertNotEquals
 import kotlin.test.assertTrue
 
 /**
@@ -163,6 +164,17 @@ class DrawOpsByteTest {
         assertRoundTrips(DrawRoundRect(1f, 2f, 3f, 4f, 8f, 8f))
         assertRoundTrips(DrawArc(0f, 0f, 100f, 100f, 45f, 270f))
         assertRoundTrips(DrawSector(0f, 0f, 50f, 50f, -90f, 180f))
+    }
+
+    /** Model equality must use raw float bits, so two ops with identical NaN-id bits are equal. */
+    @Test
+    fun nanEncodedId_modelEqualityUsesRawBits() {
+        val id = WireTypes.asNan(0x2A)
+        // Naive Float `==` would make these unequal (NaN != NaN); toRawBits equality makes them equal.
+        assertEquals(DrawCircle(id, 7f, id), DrawCircle(id, 7f, id))
+        assertEquals(DrawCircle(id, 7f, id).hashCode(), DrawCircle(id, 7f, id).hashCode())
+        // Different ids stay distinct.
+        assertNotEquals(DrawCircle(id, 7f, id), DrawCircle(WireTypes.asNan(0x2B), 7f, id))
     }
 
     /** A float field carrying a NaN-encoded variable id must survive read→write bit-for-bit. */

@@ -50,7 +50,7 @@ class ComponentStart(
         this === other || (
             other is ComponentStart &&
                 type == other.type && componentId == other.componentId &&
-                width == other.width && height == other.height
+                width.toRawBits() == other.width.toRawBits() && height.toRawBits() == other.height.toRawBits()
             )
 
     override fun hashCode(): Int =

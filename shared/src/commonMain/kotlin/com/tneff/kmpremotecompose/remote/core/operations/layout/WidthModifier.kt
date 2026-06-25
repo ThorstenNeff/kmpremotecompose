@@ -39,7 +39,8 @@ class WidthModifier(val type: DimensionType, val value: Float) : Operation {
     override fun dump(): String = "MODIFIER_WIDTH type=$type value=$value"
 
     override fun equals(other: Any?): Boolean =
-        this === other || (other is WidthModifier && type == other.type && value == other.value)
+        this === other ||
+            (other is WidthModifier && type == other.type && value.toRawBits() == other.value.toRawBits())
 
     override fun hashCode(): Int = 31 * type.ordinal + value.hashCode()
 
