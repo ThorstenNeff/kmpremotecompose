@@ -48,3 +48,10 @@ pristine and which are adapted.
     NOT a byte-swap. Verification: decode->re-encode byte-identical with our Header.write() on iOS
     K/N (ConformanceEngine.roundTrip) — CONFIRMED. Evidence: test-2 header-divergence-evidence.md.
     NOTE: more such pre-sort-header docs may surface after op-fixes — same reorder pattern applies.
+
+  demo_graphs1.rc, cube3d.rc — same pre-sort HEADER property-table issue (R6 sweep). Stored orders
+    demo_graphs1 [9,5,6,14] (4 props) and cube3d [8,9,5,6,14] (5 props, incl. extra key-8 INT) while
+    upstream Header.write() sorts ascending. Reordered to [5,6,9,14] and [5,6,8,9,14] respectively;
+    whole TLV records moved, every record byte-preserved (multiset-checked), size UNCHANGED
+    (3223 / 2767 bytes). Verification: decode->re-encode byte-identical with our Header.write() on iOS
+    K/N (ConformanceEngine.roundTrip, 2/2 green) — CONFIRMED.
