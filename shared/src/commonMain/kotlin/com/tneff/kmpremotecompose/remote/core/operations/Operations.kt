@@ -15,6 +15,8 @@
  */
 package com.tneff.kmpremotecompose.remote.core.operations
 
+import kotlin.concurrent.Volatile
+
 /**
  * The RemoteCompose opcode registry: the canonical 1-byte opcode → operation map.
  *
@@ -340,11 +342,19 @@ object Operations {
         V7_WIDGETS, V7_WIDGETS_EXPERIMENTAL, V7_WIDGETS_DEPRECATED,
     }
 
-    private val layers: Map<Layer, MutableMap<Int, OperationReader>> =
-        Layer.entries.associateWith { mutableMapOf() }
+    // Thread-safety: the reader registry is a write-once-at-init, read-many structure. Registration
+    // publishes a fresh IMMUTABLE snapshot through a @Volatile copy-on-write reference, so concurrent
+    // document decodes — which only READ — always observe a consistent map and never mutate shared
+    // state. (The previous design cached the composed map on each read, which was not thread-safe.)
+    // Contract: build the registry during single-threaded startup; concurrent *distinct*
+    // registrations are not supported, only concurrent reads.
+    private fun emptyLayers(): Map<Layer, Map<Int, OperationReader>> =
+        Layer.entries.associateWith { emptyMap() }
 
-    private val composedCache: MutableMap<Long, Map<Int, OperationReader>> = mutableMapOf()
+    @Volatile
+    private var layers: Map<Layer, Map<Int, OperationReader>> = emptyLayers()
 
+    @Volatile
     private var defaultsRegistered = false
 
     // ---------------------------------------------------------------------------------------------
@@ -436,56 +446,52 @@ object Operations {
     )
 
     /**
-     * Register the [reader] for [opcode] in [layer]. Called by operation classes (REM-4) at init.
+     * Register the [reader] for [opcode] in [layer] (single-threaded init; see thread-safety note).
      * Registering one of the [ORPHAN_OPCODES] is a programming error.
      */
     fun register(layer: Layer, opcode: Int, reader: OperationReader) {
         require(opcode in 0..255) { "opcode out of range: $opcode" }
         require(opcode !in ORPHAN_OPCODES) { "opcode $opcode (${name(opcode)}) is reserved and must not be registered" }
-        layers.getValue(layer)[opcode] = reader
-        composedCache.clear()
+        val current = layers
+        val updatedLayer = current.getValue(layer) + (opcode to reader)
+        layers = current + (layer to updatedLayer) // publish a new immutable snapshot atomically
     }
 
     /**
      * The effective opcode → reader map for a document at [apiLevel] with the given [profiles]
      * bitmask. API < 7 → V6 set. API ≥ 7 → V7 base plus selected profile overlays; multiple
      * profiles are intersected so only operations valid in all of them resolve.
+     *
+     * Pure: recomputed from a single consistent snapshot on every call, with no shared-state writes.
      */
     fun readerMapFor(apiLevel: Int, profiles: Int): Map<Int, OperationReader> {
-        val key = (apiLevel.toLong() shl 32) or (profiles.toLong() and 0xFFFFFFFFL)
-        composedCache[key]?.let { return it }
-
-        val composed: Map<Int, OperationReader> = if (apiLevel < 7) {
-            layers.getValue(Layer.V6).toMap()
-        } else {
-            val map = layers.getValue(Layer.V7_BASE).toMutableMap()
-            if (profiles != 0) {
-                if ((profiles and PROFILE_ANDROID_NATIVE) != 0) {
-                    throw UnsupportedOperationException("Android native profile is defined externally")
-                }
-                val overlays = mutableListOf<Map<Int, OperationReader>>()
-                if ((profiles and PROFILE_ANDROIDX) != 0) {
-                    overlays += overlayFor(
-                        profiles, Layer.V7_ANDROIDX,
-                        Layer.V7_ANDROIDX_EXPERIMENTAL, Layer.V7_ANDROIDX_DEPRECATED,
-                    )
-                }
-                if ((profiles and PROFILE_WIDGETS) != 0) {
-                    overlays += overlayFor(
-                        profiles, Layer.V7_WIDGETS,
-                        Layer.V7_WIDGETS_EXPERIMENTAL, Layer.V7_WIDGETS_DEPRECATED,
-                    )
-                }
-                when (overlays.size) {
-                    0 -> {}
-                    1 -> map.putAll(overlays[0])
-                    else -> map.putAll(intersect(overlays)) // only ops valid in ALL profiles
-                }
+        val snapshot = layers // one volatile read → consistent view for the whole composition
+        if (apiLevel < 7) return snapshot.getValue(Layer.V6)
+        val map = snapshot.getValue(Layer.V7_BASE).toMutableMap()
+        if (profiles != 0) {
+            if ((profiles and PROFILE_ANDROID_NATIVE) != 0) {
+                throw UnsupportedOperationException("Android native profile is defined externally")
             }
-            map
+            val overlays = mutableListOf<Map<Int, OperationReader>>()
+            if ((profiles and PROFILE_ANDROIDX) != 0) {
+                overlays += overlayFor(
+                    snapshot, profiles, Layer.V7_ANDROIDX,
+                    Layer.V7_ANDROIDX_EXPERIMENTAL, Layer.V7_ANDROIDX_DEPRECATED,
+                )
+            }
+            if ((profiles and PROFILE_WIDGETS) != 0) {
+                overlays += overlayFor(
+                    snapshot, profiles, Layer.V7_WIDGETS,
+                    Layer.V7_WIDGETS_EXPERIMENTAL, Layer.V7_WIDGETS_DEPRECATED,
+                )
+            }
+            when (overlays.size) {
+                0 -> {}
+                1 -> map.putAll(overlays[0])
+                else -> map.putAll(intersect(overlays)) // only ops valid in ALL profiles
+            }
         }
-        composedCache[key] = composed
-        return composed
+        return map
     }
 
     /** True if [opcode] resolves to a registered reader for this api level + profile combination. */
@@ -543,14 +549,15 @@ object Operations {
     internal fun registeredOpcodes(layer: Layer): Set<Int> = layers.getValue(layer).keys.toSet()
 
     private fun overlayFor(
+        snapshot: Map<Layer, Map<Int, OperationReader>>,
         profiles: Int,
         base: Layer,
         experimental: Layer,
         deprecated: Layer,
     ): Map<Int, OperationReader> {
-        val out = layers.getValue(base).toMutableMap()
-        if ((profiles and PROFILE_EXPERIMENTAL) != 0) out.putAll(layers.getValue(experimental))
-        if ((profiles and PROFILE_DEPRECATED) != 0) out.putAll(layers.getValue(deprecated))
+        val out = snapshot.getValue(base).toMutableMap()
+        if ((profiles and PROFILE_EXPERIMENTAL) != 0) out.putAll(snapshot.getValue(experimental))
+        if ((profiles and PROFILE_DEPRECATED) != 0) out.putAll(snapshot.getValue(deprecated))
         return out
     }
 
@@ -587,8 +594,7 @@ object Operations {
 
     /** Test/maintenance hook: drop all registered readers (does not touch opcode constants). */
     internal fun resetReaders() {
-        layers.values.forEach { it.clear() }
-        composedCache.clear()
+        layers = emptyLayers()
         defaultsRegistered = false
     }
 }
