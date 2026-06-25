@@ -161,6 +161,10 @@ class RegistryReconcileTest {
             Operations.FLOAT_LIST, Operations.ID_MAP, Operations.COMPONENT_VALUE,
             // REM-22 SB1.
             Operations.MATRIX_SAVE, Operations.TEXT_MERGE, Operations.ID_LIST, Operations.THEME,
+            // REM-22 SB2 base ops.
+            Operations.MATRIX_RESTORE, Operations.MATRIX_TRANSLATE, Operations.MATRIX_SCALE,
+            Operations.MATRIX_ROTATE, Operations.MATRIX_SKEW, Operations.CONDITIONAL_OPERATIONS,
+            Operations.DEBUG_MESSAGE, Operations.ATTRIBUTE_COLOR,
         )
         assertTrue(Operations.registeredOpcodes(Layer.V6).containsAll(expectedBase))
         assertTrue(Operations.registeredOpcodes(Layer.V7_BASE).containsAll(expectedBase))
