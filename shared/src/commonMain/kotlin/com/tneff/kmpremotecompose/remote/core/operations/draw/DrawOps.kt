@@ -47,5 +47,11 @@ object DrawOps {
         Operations.registerInBase(Operations.PATH_TWEEN, PathTween)
         Operations.registerInOverlay(Operations.Layer.V7_ANDROIDX, Operations.PATH_EXPRESSION, PathExpression)
         Operations.registerInOverlay(Operations.Layer.V7_WIDGETS, Operations.PATH_EXPRESSION, PathExpression)
+        // REM-25 R4: CLIP_RECT (39, base — draw clip ≠ MODIFIER_CLIP_RECT 108) + DRAW_BITMAP_SCALED (149, base)
+        // + DRAW_TO_BITMAP (190, ANDROIDX + WIDGETS overlay).
+        Operations.registerInBase(Operations.CLIP_RECT, ClipRect)
+        Operations.registerInBase(Operations.DRAW_BITMAP_SCALED, DrawBitmapScaled)
+        Operations.registerInOverlay(Operations.Layer.V7_ANDROIDX, Operations.DRAW_TO_BITMAP, DrawToBitmap)
+        Operations.registerInOverlay(Operations.Layer.V7_WIDGETS, Operations.DRAW_TO_BITMAP, DrawToBitmap)
     }
 }
