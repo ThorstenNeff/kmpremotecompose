@@ -2,6 +2,7 @@ package com.tneff.kmpremotecompose.conformance
 
 import okio.FileSystem
 import okio.Path
+import okio.Path.Companion.toPath
 
 /**
  * REM-7 — **Korpus-Loader-Mechanik** (dev-2). Signatur von [RcCorpus] **fix vorgegeben von test-1**:
@@ -23,9 +24,10 @@ import okio.Path
  * `kotlinx-datetime` (`Clock.System`) inkompatibel mit der von `compose-material3` erzwungenen
  * datetime-0.7.x-Linie. Der [CorpusIo]-Seam umgeht das ohne fragile transitive Abhängigkeit.
  *
- * **Noch nicht erfüllt (bewusst, bis REM-3-Reader + physischer Korpus stehen):**
- * [fixtureRoot] braucht Plattform-Auflösung (Android-Assets/-Cache-Dir, iOS `NSBundle`). Bis dahin
- * kann die Test-Umgebung [rootOverride] setzen. Mit PO/test-1 final abzustimmen.
+ * [fixtureRoot] löst portabel über die build-zeit-generierte Konstante `GENERATED_CORPUS_RESOURCES_ROOT`
+ * (absoluter Pfad zu `src/commonTest/resources`, pro Build neu erzeugt) auf — funktioniert auf Host
+ * (jvmTest) UND iOS-Simulator (beide laufen auf der Build-Maschine). [rootOverride] hat Vorrang (für
+ * Spezial-Setups). Das ist **Test-Harness-Infra**; App-/Runtime-Resource-Loading ist separat (REM-8).
  */
 object RcCorpus {
     const val DIR: String = "rc-corpus"
@@ -46,19 +48,10 @@ object RcCorpus {
     fun corpusNames(): List<String> = reader().corpusNames()
 
     /**
-     * Wurzelverzeichnis, das `rc-corpus/` enthält.
-     *
-     * PROVISORISCH (REM-7): Plattform-Auflösung (Android/iOS) ist offen und blockiert auf REM-3 +
-     * physischem Korpus. Solange greift [rootOverride]; ohne Override → klare [NotImplementedError],
-     * damit kein stiller Fehlpfad entsteht.
+     * Wurzelverzeichnis, das `rc-corpus/` enthält. [rootOverride] hat Vorrang; sonst der
+     * build-zeit-generierte absolute Pfad zu `src/commonTest/resources` — portabel auf Host + iOS-Sim.
      */
-    private fun fixtureRoot(): Path =
-        rootOverride
-            ?: throw NotImplementedError(
-                "RcCorpus.fixtureRoot(): Plattform-Auflösung (Android/iOS) steht noch aus (REM-7). " +
-                    "Bis REM-3 + physischer Korpus: RcCorpus.rootOverride im Test-Setup setzen. " +
-                    "Siehe conformance/README.md.",
-            )
+    private fun fixtureRoot(): Path = rootOverride ?: GENERATED_CORPUS_RESOURCES_ROOT.toPath()
 }
 
 /**
