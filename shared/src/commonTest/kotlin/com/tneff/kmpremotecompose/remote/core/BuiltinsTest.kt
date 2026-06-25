@@ -56,6 +56,7 @@ class BuiltinsTest {
             Operations.LAYOUT_BOX, Operations.LAYOUT_CONTENT,
             Operations.DRAW_TEXT_RUN, Operations.DATA_PATH, Operations.DRAW_PATH,
             Operations.LAYOUT_COLUMN, // REM-15
+            Operations.DRAW_TEXT_ANCHOR, // REM-16 (F3)
         )
         for (op in groupA + groupB) {
             assertTrue(Operations.isValid(op, 7, 0), "${Operations.name(op)} not resolvable at api 7")

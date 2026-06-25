@@ -166,6 +166,22 @@ class DrawOpsByteTest {
         assertContentEquals(bytes(0x7C, 0x00, 0x00, 0x00, 0x2A), writeBytes(DrawPath(42)))
     }
 
+    @Test
+    fun drawTextAnchored_writesExactBytes() {
+        // opcode 133 (0x85) + textId 42 + x 0f + y 0f + panX -1f + panY 1f + flags 0.
+        // Anchored to the real small_animated.rc (F3) golden @ byte 0x51 verbatim — 25 bytes.
+        val expected = bytes(
+            0x85,
+            0x00, 0x00, 0x00, 0x2A,
+            0x00, 0x00, 0x00, 0x00,
+            0x00, 0x00, 0x00, 0x00,
+            0xBF, 0x80, 0x00, 0x00,
+            0x3F, 0x80, 0x00, 0x00,
+            0x00, 0x00, 0x00, 0x00,
+        )
+        assertContentEquals(expected, writeBytes(DrawTextAnchored(42, 0f, 0f, -1f, 1f, 0)))
+    }
+
     // ---------------------------------------------------------------------------------------------
     // Round-trip: write → read (opcode consumed by loop) → re-write byte-identical + fields equal.
     // ---------------------------------------------------------------------------------------------
@@ -186,6 +202,7 @@ class DrawOpsByteTest {
             is DrawText -> DrawText.read(buffer, decoded)
             is PathData -> PathData.read(buffer, decoded)
             is DrawPath -> DrawPath.read(buffer, decoded)
+            is DrawTextAnchored -> DrawTextAnchored.read(buffer, decoded)
             else -> error("unexpected op $op")
         }
         assertEquals(1, decoded.size)
@@ -206,6 +223,7 @@ class DrawOpsByteTest {
         assertRoundTrips(DrawText(42, 0, 5, 0, 5, 1f, 2f, rtl = true))
         assertRoundTrips(PathData(7, intArrayOf(0x3F800000.toInt(), 0, -1, WireTypes.asNan(9).toRawBits())))
         assertRoundTrips(DrawPath(-3))
+        assertRoundTrips(DrawTextAnchored(42, 0f, 0f, -1f, 1f, 0))
     }
 
     /** Model equality must use raw float bits, so two ops with identical NaN-id bits are equal. */
@@ -246,6 +264,7 @@ class DrawOpsByteTest {
             Operations.DRAW_CIRCLE, Operations.DRAW_RECT, Operations.DRAW_LINE, Operations.DRAW_OVAL,
             Operations.DRAW_ROUND_RECT, Operations.DRAW_ARC, Operations.DRAW_SECTOR,
             Operations.PAINT_VALUES, Operations.DRAW_TEXT_RUN, Operations.DATA_PATH, Operations.DRAW_PATH,
+            Operations.DRAW_TEXT_ANCHOR,
         )
         for (op in drawOpcodes) {
             assertTrue(Operations.isValid(op, 6, Operations.PROFILE_BASELINE), "v6 ${Operations.name(op)}")
