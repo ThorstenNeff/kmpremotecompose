@@ -59,5 +59,20 @@ object DataOps {
         Operations.registerInBase(Operations.TEXT_MERGE, TextMerge)
         Operations.registerInBase(Operations.ID_LIST, DataListIds)
         Operations.registerInBase(Operations.THEME, Theme)
+
+        // REM-22 SB2 — matrix transforms + conditional/debug/color-attribute (base group-A).
+        Operations.registerInBase(Operations.MATRIX_RESTORE, MatrixRestore)
+        Operations.registerInBase(Operations.MATRIX_TRANSLATE, MatrixTranslate)
+        Operations.registerInBase(Operations.MATRIX_SCALE, MatrixScale)
+        Operations.registerInBase(Operations.MATRIX_ROTATE, MatrixRotate)
+        Operations.registerInBase(Operations.MATRIX_SKEW, MatrixSkew)
+        Operations.registerInBase(Operations.CONDITIONAL_OPERATIONS, ConditionalOperations)
+        Operations.registerInBase(Operations.DEBUG_MESSAGE, DebugMessage)
+        Operations.registerInBase(Operations.ATTRIBUTE_COLOR, ColorAttribute)
+        // UPDATE_DYNAMIC_FLOAT_LIST + WAKE_IN are profile-overlay ops (androidx + widgets).
+        Operations.registerInOverlay(Operations.Layer.V7_ANDROIDX, Operations.UPDATE_DYNAMIC_FLOAT_LIST, UpdateDynamicFloatList)
+        Operations.registerInOverlay(Operations.Layer.V7_WIDGETS, Operations.UPDATE_DYNAMIC_FLOAT_LIST, UpdateDynamicFloatList)
+        Operations.registerInOverlay(Operations.Layer.V7_ANDROIDX, Operations.WAKE_IN, WakeIn)
+        Operations.registerInOverlay(Operations.Layer.V7_WIDGETS, Operations.WAKE_IN, WakeIn)
     }
 }
