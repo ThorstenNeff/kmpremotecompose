@@ -66,6 +66,13 @@ class BuiltinsTest {
             Operations.LAYOUT_CANVAS, Operations.LAYOUT_CANVAS_CONTENT, Operations.LAYOUT_ROW,
             Operations.MODIFIER_CLIP_RECT, Operations.LAYOUT_COLLAPSIBLE_ROW,
             Operations.VALUE_STRING_CHANGE_ACTION, Operations.ACCESSIBILITY_SEMANTICS,
+            // REM-20 P2 group-B sub-batch 2 (base ops).
+            Operations.LAYOUT_IMAGE, Operations.LAYOUT_TEXT, Operations.LAYOUT_FIT_BOX,
+            Operations.LAYOUT_COLLAPSIBLE_COLUMN, Operations.MODIFIER_BORDER,
+            Operations.MODIFIER_ROUNDED_CLIP_RECT, Operations.MODIFIER_WIDTH_IN, Operations.MODIFIER_HEIGHT_IN,
+            Operations.MODIFIER_ZINDEX, Operations.MODIFIER_TOUCH_DOWN, Operations.MODIFIER_TOUCH_UP,
+            Operations.MODIFIER_TOUCH_CANCEL, Operations.VALUE_INTEGER_CHANGE_ACTION, Operations.CLICK_AREA,
+            Operations.MODIFIER_SCROLL, Operations.MODIFIER_COLLAPSIBLE_PRIORITY,
         )
         for (op in groupA + groupB) {
             assertTrue(Operations.isValid(op, 7, 0), "${Operations.name(op)} not resolvable at api 7")

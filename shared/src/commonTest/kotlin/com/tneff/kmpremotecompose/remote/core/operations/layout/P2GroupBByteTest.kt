@@ -139,6 +139,90 @@ class P2GroupBByteTest {
         assertRoundTrips(CoreSemantics(-2, 3, -7, 1, 2, enabled = true, clickable = true), CoreSemantics)
     }
 
+    // ---- sub-batch 2: spec-anchored byte-exact (upstream apply() verbatim) ----
+
+    @Test fun touchDown_writesExactBytes() {
+        assertContentEquals(bytes(0xDB), writeBytes(TouchDownModifier())) // 219
+    }
+
+    @Test fun valueIntegerChangeAction_writesExactBytes() {
+        // 212 (0xD4) + valueId 7 + value -2.
+        assertContentEquals(bytes(0xD4, 0x00, 0x00, 0x00, 0x07, 0xFF, 0xFF, 0xFF, 0xFE), writeBytes(ValueIntegerChangeAction(7, -2)))
+    }
+
+    @Test fun zIndex_writesExactBytes() {
+        // 223 (0xDF) + 2.5f (0x40200000).
+        assertContentEquals(bytes(0xDF, 0x40, 0x20, 0x00, 0x00), writeBytes(ZIndexModifier(2.5f)))
+    }
+
+    @Test fun textLayout_writesExactBytes() {
+        // 208 (0xD0) + 11 distinct fields (catches field-order bugs in the largest layout op).
+        assertContentEquals(
+            bytes(
+                0xD0,
+                0xFF, 0xFF, 0xFF, 0xFD, // componentId -3
+                0xFF, 0xFF, 0xFF, 0xFF, // animationId -1
+                0x00, 0x00, 0x00, 0x05, // textId 5
+                0x11, 0x22, 0x33, 0x44, // color
+                0x3F, 0x80, 0x00, 0x00, // fontSize 1f
+                0x00, 0x00, 0x00, 0x02, // fontStyle 2
+                0x40, 0x40, 0x00, 0x00, // fontWeight 3f
+                0xFF, 0xFF, 0xFF, 0xF9, // fontFamilyId -7
+                0x00, 0x00, 0x00, 0x01, // textAlign 1
+                0x00, 0x00, 0x00, 0x00, // overflow 0
+                0x00, 0x00, 0x00, 0x63, // maxLines 99
+            ),
+            writeBytes(TextLayout(-3, -1, 5, 0x11223344, 1f, 2, 3f, -7, 1, 0, 99)),
+        )
+    }
+
+    // ---- sub-batch 2: round-trips (write → read → re-write byte-identical + fields equal) ----
+
+    @Test fun allP2GroupBSubBatch2_roundTrip() {
+        assertRoundTrips(ImageLayout(-3, -1, 5, 2, 0.5f), ImageLayout)
+        assertRoundTrips(TextLayout(-3, -1, 5, 0x11223344, 1f, 2, 3f, -7, 1, 0, 99), TextLayout)
+        assertRoundTrips(FitBoxLayout(-3, -1, 1, 4), FitBoxLayout)
+        assertRoundTrips(CollapsibleColumnLayout(-3, -1, 1, 4, 6.25f), CollapsibleColumnLayout)
+        // LAYOUT_FLOW deferred (golden 5-field vs source 7-field skew) — see LayoutOps note.
+        assertRoundTrips(BorderModifier(1, 42, 0, 0, 2f, 4f, 0.1f, 0.2f, 0.3f, 1f, 2), BorderModifier)
+        assertRoundTrips(RoundedClipRectModifier(1f, 2f, 3f, 4f), RoundedClipRectModifier)
+        assertRoundTrips(WidthInModifier(10f, 200f), WidthInModifier)
+        assertRoundTrips(HeightInModifier(10f, 200f), HeightInModifier)
+        assertRoundTrips(ZIndexModifier(2.5f), ZIndexModifier)
+        assertRoundTrips(TouchDownModifier(), TouchDownModifier)
+        assertRoundTrips(TouchUpModifier(), TouchUpModifier)
+        assertRoundTrips(TouchCancelModifier(), TouchCancelModifier)
+        assertRoundTrips(ValueIntegerChangeAction(7, -2), ValueIntegerChangeAction)
+        assertRoundTrips(ClickArea(1, 42, 0f, 0f, 100f, 50f, -1), ClickArea)
+        assertRoundTrips(ScrollModifier(1, 0.5f, 100f, 10f), ScrollModifier)
+        assertRoundTrips(CollapsiblePriorityModifier(1, 3.5f), CollapsiblePriorityModifier)
+        assertRoundTrips(AlignByModifier(2.5f, 1), AlignByModifier)
+    }
+
+    @Test fun register_subBatch2_baseAndExperimentalOverlay() {
+        Operations.resetReaders()
+        LayoutOps.register()
+        for (op in listOf(
+            Operations.LAYOUT_IMAGE, Operations.LAYOUT_TEXT, Operations.LAYOUT_FIT_BOX,
+            Operations.LAYOUT_COLLAPSIBLE_COLUMN, Operations.MODIFIER_BORDER, Operations.MODIFIER_ROUNDED_CLIP_RECT,
+            Operations.MODIFIER_WIDTH_IN, Operations.MODIFIER_HEIGHT_IN, Operations.MODIFIER_ZINDEX,
+            Operations.MODIFIER_TOUCH_DOWN, Operations.MODIFIER_TOUCH_UP, Operations.MODIFIER_TOUCH_CANCEL,
+            Operations.VALUE_INTEGER_CHANGE_ACTION, Operations.CLICK_AREA, Operations.MODIFIER_SCROLL,
+            Operations.MODIFIER_COLLAPSIBLE_PRIORITY,
+        )) {
+            assertTrue(Operations.isValid(op, 6, 0), "v6 ${Operations.name(op)}")
+            assertTrue(Operations.isValid(op, 7, 0), "v7 ${Operations.name(op)}")
+        }
+        // LAYOUT_FLOW deferred (golden/source field-count skew); MODIFIER_ALIGN_BY is the live overlay op.
+        for (op in listOf(Operations.MODIFIER_ALIGN_BY)) {
+            assertFalse(Operations.isValid(op, 7, 0), "not baseline ${Operations.name(op)}")
+            assertTrue(
+                Operations.isValid(op, 7, Operations.PROFILE_ANDROIDX or Operations.PROFILE_EXPERIMENTAL),
+                "androidx+exp ${Operations.name(op)}",
+            )
+        }
+    }
+
     // ---- registration: base ops in V6+V7 baseline; LAYOUT_COMPUTE in experimental overlays ----
 
     @Test fun register_baseOps() {
