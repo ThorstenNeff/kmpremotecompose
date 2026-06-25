@@ -45,4 +45,20 @@ class RcConformanceP0Test {
         val result = ConformanceEngine.roundTrip("F5", golden, RcDocumentCodec)
         assertConformancePasses(result)
     }
+
+    // --- P1 ---
+
+    @Test
+    fun roundTrip_small_animated() {
+        val golden = RcCorpus.readFixture("small_animated.rc") // 106 B, F3 — Text + continuousSeconds-Expression
+        val result = ConformanceEngine.roundTrip("F3", golden, RcDocumentCodec)
+        assertConformancePasses(result)
+    }
+
+    @Test
+    fun roundTrip_c_text() {
+        val golden = RcCorpus.readFixture("c_text.rc") // 265 B, F6 — column + mehrere Strings + Styling
+        val result = ConformanceEngine.roundTrip("F6", golden, RcDocumentCodec)
+        assertConformancePasses(result)
+    }
 }
