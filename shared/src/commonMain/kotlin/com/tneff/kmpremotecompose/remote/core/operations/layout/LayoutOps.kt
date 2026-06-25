@@ -63,5 +63,30 @@ object LayoutOps {
         // LAYOUT_COMPUTE: ANDROIDX + WIDGETS *experimental* overlays. REM-20.
         Operations.registerInOverlay(Operations.Layer.V7_ANDROIDX_EXPERIMENTAL, Operations.LAYOUT_COMPUTE, LayoutCompute)
         Operations.registerInOverlay(Operations.Layer.V7_WIDGETS_EXPERIMENTAL, Operations.LAYOUT_COMPUTE, LayoutCompute)
+
+        // REM-20 P2 group-B sub-batch 2 — base ops (DEFAULT_SET → V6 + V7_BASE).
+        Operations.registerInBase(Operations.LAYOUT_IMAGE, ImageLayout)
+        Operations.registerInBase(Operations.LAYOUT_TEXT, TextLayout)
+        Operations.registerInBase(Operations.LAYOUT_FIT_BOX, FitBoxLayout)
+        Operations.registerInBase(Operations.LAYOUT_COLLAPSIBLE_COLUMN, CollapsibleColumnLayout)
+        Operations.registerInBase(Operations.MODIFIER_BORDER, BorderModifier)
+        Operations.registerInBase(Operations.MODIFIER_ROUNDED_CLIP_RECT, RoundedClipRectModifier)
+        Operations.registerInBase(Operations.MODIFIER_WIDTH_IN, WidthInModifier)
+        Operations.registerInBase(Operations.MODIFIER_HEIGHT_IN, HeightInModifier)
+        Operations.registerInBase(Operations.MODIFIER_ZINDEX, ZIndexModifier)
+        Operations.registerInBase(Operations.MODIFIER_TOUCH_DOWN, TouchDownModifier)
+        Operations.registerInBase(Operations.MODIFIER_TOUCH_UP, TouchUpModifier)
+        Operations.registerInBase(Operations.MODIFIER_TOUCH_CANCEL, TouchCancelModifier)
+        Operations.registerInBase(Operations.VALUE_INTEGER_CHANGE_ACTION, ValueIntegerChangeAction)
+        Operations.registerInBase(Operations.CLICK_AREA, ClickArea)
+        Operations.registerInBase(Operations.MODIFIER_SCROLL, ScrollModifier)
+        Operations.registerInBase(Operations.MODIFIER_COLLAPSIBLE_PRIORITY, CollapsiblePriorityModifier)
+
+        // REM-20 SB2 experimental-overlay op: MODIFIER_ALIGN_BY (237).
+        // NOTE: LAYOUT_FLOW (240) DEFERRED — the committed golden c_flow.rc encodes FLOW with 5 fields
+        // (RowLayout shape) while the current ./androidx FlowLayout.apply/read use 7 (maxItemsInEachRow,
+        // maxLines). Stale-golden vs source skew → PO/PO-assistant call before we pin the wire shape.
+        Operations.registerInOverlay(Operations.Layer.V7_ANDROIDX_EXPERIMENTAL, Operations.MODIFIER_ALIGN_BY, AlignByModifier)
+        Operations.registerInOverlay(Operations.Layer.V7_WIDGETS_EXPERIMENTAL, Operations.MODIFIER_ALIGN_BY, AlignByModifier)
     }
 }
