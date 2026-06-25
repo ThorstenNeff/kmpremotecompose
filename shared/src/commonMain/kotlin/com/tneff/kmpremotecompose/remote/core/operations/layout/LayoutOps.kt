@@ -59,6 +59,9 @@ object LayoutOps {
         Operations.registerInBase(Operations.RUN_ACTION, RunAction)
         Operations.registerInBase(Operations.HOST_ACTION, HostAction)
         Operations.registerInBase(Operations.HOST_METADATA_ACTION, HostMetadataAction)
+        // REM-28 R6 tail (base): HAPTIC_FEEDBACK (177), VALUE_FLOAT_EXPRESSION_CHANGE_ACTION (227).
+        Operations.registerInBase(Operations.HAPTIC_FEEDBACK, HapticFeedback)
+        Operations.registerInBase(Operations.VALUE_FLOAT_EXPRESSION_CHANGE_ACTION, ValueFloatExpressionChangeAction)
 
         // ROOT_CONTENT_BEHAVIOR: V6 base only + (API ≥ 7) deprecated overlays — NOT V7_BASE.
         // No base helper covers a V6-only op, so register V6 directly + the overlays via registerInOverlay.

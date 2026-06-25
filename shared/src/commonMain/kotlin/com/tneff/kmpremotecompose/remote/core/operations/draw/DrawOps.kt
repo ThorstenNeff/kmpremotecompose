@@ -58,5 +58,10 @@ object DrawOps {
         Operations.registerInBase(Operations.DRAW_TWEEN_PATH, DrawTweenPath)
         Operations.registerInBase(Operations.DRAW_TEXT_ON_PATH, DrawTextOnPath)
         Operations.registerInBase(Operations.DRAW_CONTENT, DrawContent)
+        // REM-28 R6 tail (all base): CLIP_PATH (38, ≠ CLIP_RECT 39), DRAW_BITMAP_FONT_TEXT_RUN (48),
+        // PARTICLE_DEFINE (161, ParticlesCreate — PaintOperation → group B).
+        Operations.registerInBase(Operations.CLIP_PATH, ClipPath)
+        Operations.registerInBase(Operations.DRAW_BITMAP_FONT_TEXT_RUN, DrawBitmapFontText)
+        Operations.registerInBase(Operations.PARTICLE_DEFINE, ParticlesCreate)
     }
 }
