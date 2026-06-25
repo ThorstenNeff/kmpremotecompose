@@ -1,8 +1,5 @@
 package com.tneff.kmpremotecompose.conformance
 
-import okio.FileSystem
-import okio.Path
-import okio.Path.Companion.toPath
 import kotlin.test.assertTrue
 import kotlin.test.fail
 
@@ -51,31 +48,5 @@ fun assertConformancePasses(result: ByteEqualityResult) {
                 append('\n').append(result.report)
             }
         },
-    )
-}
-
-/**
- * **PROVISORISCHE** Host-Test-Auflösung der Korpus-Wurzel.
- *
- * Die plattformspezifische [RcCorpus] `fixtureRoot()` (Android-Assets / iOS `NSBundle`) ist
- * REM-7-offen (siehe `conformance/README.md`). Bis dahin lokalisiert dieser Helfer das
- * `rc-corpus/`-Verzeichnis relativ zum Test-Arbeitsverzeichnis (Gradle-Modul `shared/` bzw.
- * Repo-Wurzel) und liefert die Wurzel, die [RcCorpus.rootOverride] erwartet (Verzeichnis, das
- * `rc-corpus/` enthält). Wirft mit klarer Meldung, wenn nichts gefunden wird — kein stiller Fehlpfad.
- */
-fun resolveCorpusRoot(): Path {
-    val fs = FileSystem.SYSTEM
-    val candidates = listOf(
-        "src/commonTest/resources",
-        "shared/src/commonTest/resources",
-        "../shared/src/commonTest/resources",
-    )
-    for (c in candidates) {
-        val root = c.toPath()
-        if (fs.exists(root / RcCorpus.DIR / "procedure_simple1.rc")) return root
-    }
-    error(
-        "rc-corpus nicht auffindbar (geprüft relativ zum CWD: $candidates). " +
-            "Provisorische Host-Test-Root-Auflösung; plattform-portable Auflösung ist REM-7-offen.",
     )
 }
