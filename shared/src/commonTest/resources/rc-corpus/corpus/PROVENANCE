@@ -1,0 +1,24 @@
+P2 decode-smoke corpus — provenance
+====================================
+
+Contents: 173 .rc demo documents, verbatim byte-identical copies of the upstream
+oracle corpus. Source (read-only reference tree, NOT built):
+
+  androidx/compose/remote/integration-tests/player-view-demos/src/main/res/raw/*.rc
+
+Verification at copy time (test-1 / QA):
+  - count: 173 source == 173 copied
+  - full per-file SHA-256 compare: all 173 byte-identical (0 mismatches)
+  - F1-F6 corpus copies confirmed identical to the merged rc-corpus/ fixtures
+
+Purpose: P2 broad decode-smoke. ConformanceEngine.runCorpus decodes every file via
+the real reader; this set is NOT writer-byte-equality (that is the F1-F6 P0/P1 set in
+rc-corpus/ proper). The sweep surfaces, authoritatively:
+  - real DATA_BITMAP(101) usage incl. non-default packed type/encoding
+    (heuristic prelim flagged only demo_bitmap_drawing_bit_draw1/2.rc as credible
+     non-default; the type=0xFF80 cluster was signaling-NaN-float false positives)
+  - fail-closed decode-errors: URL/FILE image encodings, CORE_TEXT(239) param ids
+    outside the PARAM_TYPE width table (richer TextStyles than F6 exercised)
+
+A file that fails to decode is an op-gap / unimplemented-path signal, NOT a fixture bug.
+Upstream tree is the read-only oracle; these copies are kept byte-faithful.
