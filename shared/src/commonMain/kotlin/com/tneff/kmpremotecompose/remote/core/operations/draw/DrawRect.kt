@@ -49,7 +49,8 @@ class DrawRect(
         this === other ||
             (
                 other is DrawRect &&
-                    left == other.left && top == other.top && right == other.right && bottom == other.bottom
+                    left.toRawBits() == other.left.toRawBits() && top.toRawBits() == other.top.toRawBits() &&
+                    right.toRawBits() == other.right.toRawBits() && bottom.toRawBits() == other.bottom.toRawBits()
                 )
 
     override fun hashCode(): Int =

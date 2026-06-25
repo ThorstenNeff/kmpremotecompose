@@ -13,7 +13,7 @@
  * See the License for the specific language governing permissions and
  * limitations under the License.
  */
-package com.tneff.kmpremotecompose.remote.core.operations.layout
+package com.tneff.kmpremotecompose.remote.core.operations.draw
 
 import com.tneff.kmpremotecompose.remote.core.operations.Operation
 import com.tneff.kmpremotecompose.remote.core.operations.OperationReader
@@ -21,32 +21,28 @@ import com.tneff.kmpremotecompose.remote.core.operations.Operations
 import com.tneff.kmpremotecompose.remote.wire.WireBuffer
 
 /**
- * `MODIFIER_HEIGHT` (opcode [Operations.MODIFIER_HEIGHT]) — sets a component's height.
+ * `DRAW_PATH` (opcode [Operations.DRAW_PATH]) — draw a previously stored path by id.
  *
- * Wire layout: opcode byte + int [DimensionType] ordinal + big-endian float `value` (mirrors
- * upstream `HeightModifierOperation`). `value` may carry a NaN-encoded id; raw bits preserved.
+ * Wire layout: opcode byte + int `id` (mirrors upstream `DrawPath`).
  */
-class HeightModifier(val type: DimensionType, val value: Float) : Operation {
+class DrawPath(val id: Int) : Operation {
 
-    override val opcode: Int get() = Operations.MODIFIER_HEIGHT
+    override val opcode: Int get() = Operations.DRAW_PATH
 
     override fun write(buffer: WireBuffer) {
         buffer.writeByte(opcode)
-        buffer.writeInt(type.ordinal)
-        buffer.writeFloat(value)
+        buffer.writeInt(id)
     }
 
-    override fun dump(): String = "MODIFIER_HEIGHT type=$type value=$value"
+    override fun dump(): String = "DRAW_PATH id=$id"
 
-    override fun equals(other: Any?): Boolean =
-        this === other ||
-            (other is HeightModifier && type == other.type && value.toRawBits() == other.value.toRawBits())
+    override fun equals(other: Any?): Boolean = this === other || (other is DrawPath && id == other.id)
 
-    override fun hashCode(): Int = 31 * type.ordinal + value.hashCode()
+    override fun hashCode(): Int = id
 
     companion object : OperationReader {
         override fun read(buffer: WireBuffer, operations: MutableList<Operation>) {
-            operations += HeightModifier(DimensionType.fromInt(buffer.readInt()), buffer.readFloat())
+            operations += DrawPath(buffer.readInt())
         }
     }
 }

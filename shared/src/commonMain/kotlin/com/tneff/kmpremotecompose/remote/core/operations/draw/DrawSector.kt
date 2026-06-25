@@ -53,8 +53,10 @@ class DrawSector(
     override fun equals(other: Any?): Boolean =
         this === other || (
             other is DrawSector &&
-                left == other.left && top == other.top && right == other.right &&
-                bottom == other.bottom && startAngle == other.startAngle && sweepAngle == other.sweepAngle
+                left.toRawBits() == other.left.toRawBits() && top.toRawBits() == other.top.toRawBits() &&
+                right.toRawBits() == other.right.toRawBits() && bottom.toRawBits() == other.bottom.toRawBits() &&
+                startAngle.toRawBits() == other.startAngle.toRawBits() &&
+                sweepAngle.toRawBits() == other.sweepAngle.toRawBits()
             )
 
     override fun hashCode(): Int {

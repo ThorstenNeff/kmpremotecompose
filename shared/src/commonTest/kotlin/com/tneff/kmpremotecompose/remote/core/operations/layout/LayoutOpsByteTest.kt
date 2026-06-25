@@ -102,6 +102,64 @@ class LayoutOpsByteTest {
         )
     }
 
+    @Test
+    fun backgroundModifier_writesExactBytes() {
+        // opcode 55 (0x37) + flags/colorId/reserve1/reserve2 = 0 + rgba = 1.0 (3F800000) + shape 0.
+        // Matches the screenshottest.rc golden (white background) verbatim — 37 bytes.
+        assertContentEquals(
+            bytes(
+                0x37,
+                0x00, 0x00, 0x00, 0x00,
+                0x00, 0x00, 0x00, 0x00,
+                0x00, 0x00, 0x00, 0x00,
+                0x00, 0x00, 0x00, 0x00,
+                0x3F, 0x80, 0x00, 0x00,
+                0x3F, 0x80, 0x00, 0x00,
+                0x3F, 0x80, 0x00, 0x00,
+                0x3F, 0x80, 0x00, 0x00,
+                0x00, 0x00, 0x00, 0x00,
+            ),
+            writeBytes(BackgroundModifier(0, 0, 0, 0, 1f, 1f, 1f, 1f, 0)),
+        )
+    }
+
+    @Test
+    fun boxLayout_writesExactBytes() {
+        // opcode 202 (0xCA) + componentId -3 + animationId -1 + hPos 2 + vPos 2.
+        // Matches the screenshottest.rc golden (Box component) verbatim — 17 bytes.
+        assertContentEquals(
+            bytes(
+                0xCA,
+                0xFF, 0xFF, 0xFF, 0xFD,
+                0xFF, 0xFF, 0xFF, 0xFF,
+                0x00, 0x00, 0x00, 0x02,
+                0x00, 0x00, 0x00, 0x02,
+            ),
+            writeBytes(BoxLayout(componentId = -3, animationId = -1, horizontalPositioning = 2, verticalPositioning = 2)),
+        )
+    }
+
+    @Test
+    fun layoutContent_writesExactBytes() {
+        // opcode 201 (0xC9) + componentId -4. Matches the screenshottest.rc golden.
+        assertContentEquals(bytes(0xC9, 0xFF, 0xFF, 0xFF, 0xFC), writeBytes(LayoutContent(-4)))
+    }
+
+    @Test
+    fun rootContentBehavior_writesExactBytes() {
+        // opcode 65 (0x41) + scroll/alignment/sizing/mode (spec-anchored distinct ints).
+        assertContentEquals(
+            bytes(
+                0x41,
+                0x00, 0x00, 0x00, 0x01,
+                0x00, 0x00, 0x00, 0x02,
+                0x00, 0x00, 0x00, 0x03,
+                0x00, 0x00, 0x00, 0x04,
+            ),
+            writeBytes(RootContentBehavior(scroll = 1, alignment = 2, sizing = 3, mode = 4)),
+        )
+    }
+
     // ---------------------------------------------------------------------------------------------
     // Round-trip: write → read (opcode consumed) → re-write byte-identical + fields equal.
     // ---------------------------------------------------------------------------------------------
@@ -126,6 +184,10 @@ class LayoutOpsByteTest {
         assertRoundTrips(ClickModifier(), ClickModifier)
         assertRoundTrips(WidthModifier(DimensionType.EXACT, 120f), WidthModifier)
         assertRoundTrips(HeightModifier(DimensionType.WEIGHT, 2.5f), HeightModifier)
+        assertRoundTrips(BackgroundModifier(1, 42, 0, 0, 0.25f, 0.5f, 0.75f, 1f, 2), BackgroundModifier)
+        assertRoundTrips(BoxLayout(-3, -1, 2, 2), BoxLayout)
+        assertRoundTrips(LayoutContent(-4), LayoutContent)
+        assertRoundTrips(RootContentBehavior(1, 2, 3, 4), RootContentBehavior)
     }
 
     @Test
@@ -150,10 +212,28 @@ class LayoutOpsByteTest {
         val opcodes = listOf(
             Operations.LAYOUT_ROOT, Operations.CONTAINER_END, Operations.COMPONENT_START,
             Operations.MODIFIER_WIDTH, Operations.MODIFIER_HEIGHT, Operations.MODIFIER_CLICK,
+            Operations.MODIFIER_BACKGROUND, Operations.LAYOUT_BOX, Operations.LAYOUT_CONTENT,
         )
         for (op in opcodes) {
             assertTrue(Operations.isValid(op, 6, Operations.PROFILE_BASELINE), "v6 ${Operations.name(op)}")
             assertTrue(Operations.isValid(op, 7, Operations.PROFILE_BASELINE), "v7 ${Operations.name(op)}")
         }
+    }
+
+    @Test
+    fun register_rootContentBehaviorIsV6PlusDeprecatedOverlays() {
+        Operations.resetReaders()
+        LayoutOps.register()
+        val op = Operations.ROOT_CONTENT_BEHAVIOR
+        // API 6: always present.
+        assertTrue(Operations.isValid(op, 6, Operations.PROFILE_BASELINE), "v6")
+        // API 7 base / plain androidx: NOT present (overlay is deprecated-only).
+        assertFalse(Operations.isValid(op, 7, Operations.PROFILE_BASELINE), "v7 base")
+        assertFalse(Operations.isValid(op, 7, Operations.PROFILE_ANDROIDX), "v7 androidx (non-deprecated)")
+        // API 7 androidx + deprecated overlay: present.
+        assertTrue(
+            Operations.isValid(op, 7, Operations.PROFILE_ANDROIDX or Operations.PROFILE_DEPRECATED),
+            "v7 androidx+deprecated",
+        )
     }
 }

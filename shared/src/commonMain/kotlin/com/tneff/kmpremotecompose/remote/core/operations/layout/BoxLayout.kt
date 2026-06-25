@@ -21,49 +21,46 @@ import com.tneff.kmpremotecompose.remote.core.operations.Operations
 import com.tneff.kmpremotecompose.remote.wire.WireBuffer
 
 /**
- * `COMPONENT_START` (opcode [Operations.COMPONENT_START]) — begins a component definition.
+ * `LAYOUT_BOX` (opcode [Operations.LAYOUT_BOX]) — a box layout container.
  *
- * Wire layout: opcode byte + int `type` + int `componentId` + **float `width` + float `height`**
- * (mirrors upstream `ComponentStart.apply`/`read` exactly — all four fields). Omitting width/height
- * desyncs every following operation, so the byte length here is fixed at 17 bytes.
+ * Wire layout: opcode byte + int `componentId` + int `animationId` + int `horizontalPositioning` +
+ * int `verticalPositioning` (mirrors upstream `BoxLayout.apply`/`read`, all four ints; remaining
+ * geometry fields are runtime-only).
  */
-class ComponentStart(
-    val type: Int,
+class BoxLayout(
     val componentId: Int,
-    val width: Float,
-    val height: Float,
+    val animationId: Int,
+    val horizontalPositioning: Int,
+    val verticalPositioning: Int,
 ) : Operation {
 
-    override val opcode: Int get() = Operations.COMPONENT_START
+    override val opcode: Int get() = Operations.LAYOUT_BOX
 
     override fun write(buffer: WireBuffer) {
         buffer.writeByte(opcode)
-        buffer.writeInt(type)
         buffer.writeInt(componentId)
-        buffer.writeFloat(width)
-        buffer.writeFloat(height)
+        buffer.writeInt(animationId)
+        buffer.writeInt(horizontalPositioning)
+        buffer.writeInt(verticalPositioning)
     }
 
-    override fun dump(): String = "COMPONENT_START type=$type id=$componentId w=$width h=$height"
+    override fun dump(): String =
+        "LAYOUT_BOX id=$componentId anim=$animationId hPos=$horizontalPositioning vPos=$verticalPositioning"
 
     override fun equals(other: Any?): Boolean =
         this === other || (
-            other is ComponentStart &&
-                type == other.type && componentId == other.componentId &&
-                width.toRawBits() == other.width.toRawBits() && height.toRawBits() == other.height.toRawBits()
+            other is BoxLayout &&
+                componentId == other.componentId && animationId == other.animationId &&
+                horizontalPositioning == other.horizontalPositioning &&
+                verticalPositioning == other.verticalPositioning
             )
 
     override fun hashCode(): Int =
-        31 * (31 * (31 * type + componentId) + width.hashCode()) + height.hashCode()
+        31 * (31 * (31 * componentId + animationId) + horizontalPositioning) + verticalPositioning
 
     companion object : OperationReader {
         override fun read(buffer: WireBuffer, operations: MutableList<Operation>) {
-            operations += ComponentStart(
-                buffer.readInt(),
-                buffer.readInt(),
-                buffer.readFloat(),
-                buffer.readFloat(),
-            )
+            operations += BoxLayout(buffer.readInt(), buffer.readInt(), buffer.readInt(), buffer.readInt())
         }
     }
 }

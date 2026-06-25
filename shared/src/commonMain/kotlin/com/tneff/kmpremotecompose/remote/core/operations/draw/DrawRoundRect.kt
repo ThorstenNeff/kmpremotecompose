@@ -52,8 +52,9 @@ class DrawRoundRect(
     override fun equals(other: Any?): Boolean =
         this === other || (
             other is DrawRoundRect &&
-                left == other.left && top == other.top && right == other.right &&
-                bottom == other.bottom && radiusX == other.radiusX && radiusY == other.radiusY
+                left.toRawBits() == other.left.toRawBits() && top.toRawBits() == other.top.toRawBits() &&
+                right.toRawBits() == other.right.toRawBits() && bottom.toRawBits() == other.bottom.toRawBits() &&
+                radiusX.toRawBits() == other.radiusX.toRawBits() && radiusY.toRawBits() == other.radiusY.toRawBits()
             )
 
     override fun hashCode(): Int {

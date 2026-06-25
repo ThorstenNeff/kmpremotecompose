@@ -47,7 +47,11 @@ class DrawLine(
 
     override fun equals(other: Any?): Boolean =
         this === other ||
-            (other is DrawLine && x1 == other.x1 && y1 == other.y1 && x2 == other.x2 && y2 == other.y2)
+            (
+                other is DrawLine &&
+                    x1.toRawBits() == other.x1.toRawBits() && y1.toRawBits() == other.y1.toRawBits() &&
+                    x2.toRawBits() == other.x2.toRawBits() && y2.toRawBits() == other.y2.toRawBits()
+                )
 
     override fun hashCode(): Int =
         31 * (31 * (31 * x1.hashCode() + y1.hashCode()) + x2.hashCode()) + y2.hashCode()

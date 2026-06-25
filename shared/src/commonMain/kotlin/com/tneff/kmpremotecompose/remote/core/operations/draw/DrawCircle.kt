@@ -47,7 +47,12 @@ class DrawCircle(
 
     override fun equals(other: Any?): Boolean =
         this === other ||
-            (other is DrawCircle && centerX == other.centerX && centerY == other.centerY && radius == other.radius)
+            (
+                other is DrawCircle &&
+                    centerX.toRawBits() == other.centerX.toRawBits() &&
+                    centerY.toRawBits() == other.centerY.toRawBits() &&
+                    radius.toRawBits() == other.radius.toRawBits()
+                )
 
     override fun hashCode(): Int = (31 * (31 * centerX.hashCode() + centerY.hashCode())) + radius.hashCode()
 

@@ -21,32 +21,29 @@ import com.tneff.kmpremotecompose.remote.core.operations.Operations
 import com.tneff.kmpremotecompose.remote.wire.WireBuffer
 
 /**
- * `MODIFIER_HEIGHT` (opcode [Operations.MODIFIER_HEIGHT]) — sets a component's height.
+ * `LAYOUT_CONTENT` (opcode [Operations.LAYOUT_CONTENT]) — a component's content container.
  *
- * Wire layout: opcode byte + int [DimensionType] ordinal + big-endian float `value` (mirrors
- * upstream `HeightModifierOperation`). `value` may carry a NaN-encoded id; raw bits preserved.
+ * Wire layout: opcode byte + int `componentId` (mirrors upstream `LayoutComponentContent`).
  */
-class HeightModifier(val type: DimensionType, val value: Float) : Operation {
+class LayoutContent(val componentId: Int) : Operation {
 
-    override val opcode: Int get() = Operations.MODIFIER_HEIGHT
+    override val opcode: Int get() = Operations.LAYOUT_CONTENT
 
     override fun write(buffer: WireBuffer) {
         buffer.writeByte(opcode)
-        buffer.writeInt(type.ordinal)
-        buffer.writeFloat(value)
+        buffer.writeInt(componentId)
     }
 
-    override fun dump(): String = "MODIFIER_HEIGHT type=$type value=$value"
+    override fun dump(): String = "LAYOUT_CONTENT id=$componentId"
 
     override fun equals(other: Any?): Boolean =
-        this === other ||
-            (other is HeightModifier && type == other.type && value.toRawBits() == other.value.toRawBits())
+        this === other || (other is LayoutContent && componentId == other.componentId)
 
-    override fun hashCode(): Int = 31 * type.ordinal + value.hashCode()
+    override fun hashCode(): Int = componentId
 
     companion object : OperationReader {
         override fun read(buffer: WireBuffer, operations: MutableList<Operation>) {
-            operations += HeightModifier(DimensionType.fromInt(buffer.readInt()), buffer.readFloat())
+            operations += LayoutContent(buffer.readInt())
         }
     }
 }
