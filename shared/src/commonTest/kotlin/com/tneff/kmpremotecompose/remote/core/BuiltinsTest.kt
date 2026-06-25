@@ -57,11 +57,23 @@ class BuiltinsTest {
             Operations.DRAW_TEXT_RUN, Operations.DATA_PATH, Operations.DRAW_PATH,
             Operations.LAYOUT_COLUMN, // REM-15
             Operations.DRAW_TEXT_ANCHOR, // REM-16 (F3)
+            Operations.MODIFIER_PADDING, // REM-17 (F6)
         )
         for (op in groupA + groupB) {
             assertTrue(Operations.isValid(op, 7, 0), "${Operations.name(op)} not resolvable at api 7")
             assertTrue(Operations.isValid(op, 6, 0), "${Operations.name(op)} not resolvable at api 6")
         }
+    }
+
+    /** `CORE_TEXT` (REM-17, F6) is an overlay op: resolves under androidx/widgets, not the v7 baseline. */
+    @Test
+    fun register_coreText_isAndroidxAndWidgetsOverlay() {
+        Operations.resetReaders()
+        Builtins.register()
+        val op = Operations.CORE_TEXT
+        assertFalse(Operations.isValid(op, 7, 0), "must not resolve at v7 baseline")
+        assertTrue(Operations.isValid(op, 7, Operations.PROFILE_ANDROIDX), "androidx overlay")
+        assertTrue(Operations.isValid(op, 7, Operations.PROFILE_WIDGETS), "widgets overlay")
     }
 
     /**

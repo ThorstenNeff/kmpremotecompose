@@ -182,6 +182,47 @@ class LayoutOpsByteTest {
         )
     }
 
+    @Test
+    fun paddingModifier_writesExactBytes() {
+        // opcode 58 (0x3A) + 4× 20f. Anchored to the real c_text.rc golden @ byte 0x65 — 17 bytes.
+        assertContentEquals(
+            bytes(
+                0x3A,
+                0x41, 0xA0, 0x00, 0x00,
+                0x41, 0xA0, 0x00, 0x00,
+                0x41, 0xA0, 0x00, 0x00,
+                0x41, 0xA0, 0x00, 0x00,
+            ),
+            writeBytes(PaddingModifier(20f, 20f, 20f, 20f)),
+        )
+    }
+
+    @Test
+    fun coreText_writesExactBytes() {
+        // opcode 239 (0xEF) + textId 42 + count 3 + params (id1=0xFFFFFFFB, id5=40f, id7=700f).
+        // Anchored to the real c_text.rc golden (first CORE_TEXT @ byte 0xB3) — 22 bytes.
+        assertContentEquals(
+            bytes(
+                0xEF,
+                0x00, 0x00, 0x00, 0x2A,
+                0x00, 0x03,
+                0x01, 0xFF, 0xFF, 0xFF, 0xFB,
+                0x05, 0x42, 0x20, 0x00, 0x00,
+                0x07, 0x44, 0x2F, 0x00, 0x00,
+            ),
+            writeBytes(
+                CoreText(
+                    textId = 42,
+                    params = listOf(
+                        CoreText.Param(1, bytes(0xFF, 0xFF, 0xFF, 0xFB)),
+                        CoreText.Param(5, bytes(0x42, 0x20, 0x00, 0x00)),
+                        CoreText.Param(7, bytes(0x44, 0x2F, 0x00, 0x00)),
+                    ),
+                ),
+            ),
+        )
+    }
+
     // ---------------------------------------------------------------------------------------------
     // Round-trip: write → read (opcode consumed) → re-write byte-identical + fields equal.
     // ---------------------------------------------------------------------------------------------
@@ -211,6 +252,19 @@ class LayoutOpsByteTest {
         assertRoundTrips(ColumnLayout(-3, -1, 1, 4, 12.5f), ColumnLayout)
         assertRoundTrips(LayoutContent(-4), LayoutContent)
         assertRoundTrips(RootContentBehavior(1, 2, 3, 4), RootContentBehavior)
+        assertRoundTrips(PaddingModifier(1f, 2f, 3f, 4f), PaddingModifier)
+        // CoreText with mixed param types: FLOAT (4B), BOOLEAN (1B), PA_INT (short count + ints).
+        assertRoundTrips(
+            CoreText(
+                textId = 99,
+                params = listOf(
+                    CoreText.Param(5, bytes(0x42, 0x20, 0x00, 0x00)), // fontSize float
+                    CoreText.Param(18, bytes(0x01)), // underline boolean
+                    CoreText.Param(20, bytes(0x00, 0x01, 0x00, 0x00, 0x00, 0x07)), // fontAxis PA_INT count=1
+                ),
+            ),
+            CoreText,
+        )
     }
 
     @Test
@@ -236,12 +290,23 @@ class LayoutOpsByteTest {
             Operations.LAYOUT_ROOT, Operations.CONTAINER_END, Operations.COMPONENT_START,
             Operations.MODIFIER_WIDTH, Operations.MODIFIER_HEIGHT, Operations.MODIFIER_CLICK,
             Operations.MODIFIER_BACKGROUND, Operations.LAYOUT_BOX, Operations.LAYOUT_CONTENT,
-            Operations.LAYOUT_COLUMN,
+            Operations.LAYOUT_COLUMN, Operations.MODIFIER_PADDING,
         )
         for (op in opcodes) {
             assertTrue(Operations.isValid(op, 6, Operations.PROFILE_BASELINE), "v6 ${Operations.name(op)}")
             assertTrue(Operations.isValid(op, 7, Operations.PROFILE_BASELINE), "v7 ${Operations.name(op)}")
         }
+    }
+
+    @Test
+    fun register_coreTextIsAndroidxAndWidgetsOverlayOnly() {
+        Operations.resetReaders()
+        LayoutOps.register()
+        val op = Operations.CORE_TEXT
+        // Overlay-only: not in the v7 baseline, present under androidx and widgets profiles.
+        assertFalse(Operations.isValid(op, 7, Operations.PROFILE_BASELINE), "must not resolve at v7 baseline")
+        assertTrue(Operations.isValid(op, 7, Operations.PROFILE_ANDROIDX), "androidx overlay")
+        assertTrue(Operations.isValid(op, 7, Operations.PROFILE_WIDGETS), "widgets overlay")
     }
 
     @Test
