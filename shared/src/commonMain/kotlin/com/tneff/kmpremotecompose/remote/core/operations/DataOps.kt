@@ -16,12 +16,12 @@
 package com.tneff.kmpremotecompose.remote.core.operations
 
 /**
- * Registration entry point for the REM-4 op-group A (document + data) operations.
+ * Registration entry point for op-group A (document + data) operations.
  *
- * These are all in the upstream default set, so they register into V6 **and** V7_BASE via
- * [Operations.registerInBase] (which validates layer membership). The central builtin registrar
- * ([Builtins]) calls this once together with the other groups before decoding real documents.
- * Per-op byte tests register/reset locally and do not depend on it.
+ * Most register into the base layers (V6 **and** V7_BASE) via [Operations.registerInBase]; a few
+ * are profile-overlay ops and use [Operations.registerInOverlay] / [Operations.registerInLayer] for
+ * their exact layer footprint. The central builtin registrar ([Builtins]) calls this once together
+ * with the other groups before decoding real documents. Per-op byte tests register/reset locally.
  */
 object DataOps {
     fun register() {
@@ -33,5 +33,20 @@ object DataOps {
         Operations.registerInBase(Operations.DATA_BITMAP, BitmapData)
         Operations.registerInBase(Operations.ROOT_CONTENT_DESCRIPTION, RootContentDescription)
         Operations.registerInBase(Operations.TEXT_FROM_FLOAT, TextFromFloat)
+
+        // REM-19 P2 batch — base group-A ops.
+        Operations.registerInBase(Operations.ANIMATED_FLOAT, FloatExpression)
+        Operations.registerInBase(Operations.NAMED_VARIABLE, NamedVariable)
+        Operations.registerInBase(Operations.COLOR_EXPRESSIONS, ColorExpression)
+        Operations.registerInBase(Operations.FLOAT_LIST, DataListFloat)
+        Operations.registerInBase(Operations.ID_MAP, DataMapIds)
+
+        // COLOR_THEME is a profile-overlay op (androidx + widgets), not part of the base set.
+        Operations.registerInOverlay(Operations.Layer.V7_ANDROIDX, Operations.COLOR_THEME, ColorTheme)
+        Operations.registerInOverlay(Operations.Layer.V7_WIDGETS, Operations.COLOR_THEME, ColorTheme)
+
+        // DATA_SHADER is V6 base AND the V7 androidx overlay (never V7_BASE / V7_WIDGETS).
+        Operations.registerInLayer(Operations.Layer.V6, Operations.DATA_SHADER, ShaderData)
+        Operations.registerInOverlay(Operations.Layer.V7_ANDROIDX, Operations.DATA_SHADER, ShaderData)
     }
 }
