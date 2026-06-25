@@ -44,6 +44,10 @@ class RcConformanceBreadthTest {
                 }
             }
         }
+        // Immer (grün wie rot) die Summenzeile ausgeben, damit der ok-Stand auch bei
+        // Vollabdeckung (kein Failure-Dump) als Evidenz sichtbar ist.
+        println("P2-SWEEP-RESULT total=${report.total} passed=${report.passed} failed=${report.failures.size}")
+
         // Sweep, kein Gate: sammelt ALLES (runCorpus ist nicht fail-fast); die Message trägt den
         // vollständigen Per-Doc-Dump für die Aggregation. Grün, sobald alle Ops gebaut sind.
         assertTrue(report.allPassed, dump)
