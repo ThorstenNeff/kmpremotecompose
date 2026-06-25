@@ -43,6 +43,7 @@ object DrawOps {
             Operations.register(layer, Operations.DRAW_ROUND_RECT, DrawRoundRect)
             Operations.register(layer, Operations.DRAW_ARC, DrawArc)
             Operations.register(layer, Operations.DRAW_SECTOR, DrawSector)
+            Operations.register(layer, Operations.PAINT_VALUES, PaintData)
         }
     }
 }
