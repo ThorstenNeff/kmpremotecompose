@@ -16,6 +16,7 @@
 package com.tneff.kmpremotecompose.remote.core.document
 
 import com.tneff.kmpremotecompose.remote.core.debug.OpSpan
+import com.tneff.kmpremotecompose.remote.core.operations.Builtins
 import com.tneff.kmpremotecompose.remote.core.operations.Header
 import com.tneff.kmpremotecompose.remote.core.operations.Operation
 import com.tneff.kmpremotecompose.remote.core.operations.Operations
@@ -49,7 +50,7 @@ object DocumentReader {
     }
 
     private fun inflateInternal(bytes: ByteArray, trace: MutableList<OpSpan>?): RemoteComposeDocument {
-        Operations.registerDefaults()
+        Builtins.register()
         val buffer = WireBuffer.fromBytes(bytes)
         val operations = mutableListOf<Operation>()
         if (!buffer.available()) return RemoteComposeDocument(operations)

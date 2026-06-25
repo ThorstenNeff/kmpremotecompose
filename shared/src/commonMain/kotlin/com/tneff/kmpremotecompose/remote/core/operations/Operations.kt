@@ -355,7 +355,7 @@ object Operations {
     private var layers: Map<Layer, Map<Int, OperationReader>> = emptyLayers()
 
     @Volatile
-    private var defaultsRegistered = false
+    private var builtinsRegistered = false
 
     // ---------------------------------------------------------------------------------------------
     // Authoritative per-layer opcode membership (mirrors upstream Operations.java exactly).
@@ -567,24 +567,22 @@ object Operations {
     }
 
     /**
-     * Register the built-in operation readers (idempotent). The reader/writer facades call this
-     * before they touch the registry, so real documents resolve without manual wiring. Each op is
-     * registered in the profile-independent base layers (V6 + V7_BASE), matching the upstream
-     * `fillDefaultVersionMap`. REM-4 adds the document/data ops; later stories extend this.
+     * One-shot guard for the central builtin registration ([com.tneff.kmpremotecompose.remote.core.operations.Builtins.register]).
+     * Returns true exactly once (and arms the flag); subsequent calls return false so the aggregator
+     * registers every group only once. The flag lives here so [resetReaders] can clear it for tests.
      */
-    fun registerDefaults() {
-        if (defaultsRegistered) return
-        defaultsRegistered = true
-        inBase(HEADER, Header)
-        inBase(DATA_TEXT, TextData)
-        inBase(DATA_FLOAT, FloatConstant)
-        inBase(DATA_INT, IntegerConstant)
-        inBase(COLOR_CONSTANT, ColorConstant)
-        inBase(DATA_BITMAP, BitmapData)
+    internal fun tryBeginBuiltinRegistration(): Boolean {
+        if (builtinsRegistered) return false
+        builtinsRegistered = true
+        return true
     }
 
-    /** Register [reader] for [opcode] in both profile-independent base layers (V6 and V7_BASE). */
-    private fun inBase(opcode: Int, reader: OperationReader) {
+    /**
+     * Register [reader] for [opcode] in both profile-independent base layers (V6 and V7_BASE).
+     * Validates that the opcode is a base-layer member (catches a wrong-layer registration). This is
+     * the blessed path for op-group registrars (DataOps, DrawOps, LayoutOps, …).
+     */
+    fun registerInBase(opcode: Int, reader: OperationReader) {
         require(opcode in MEMBERSHIP.getValue(Layer.V6) && opcode in MEMBERSHIP.getValue(Layer.V7_BASE)) {
             "opcode $opcode (${name(opcode)}) is not a base-layer member — wrong layer"
         }
@@ -592,9 +590,22 @@ object Operations {
         register(Layer.V7_BASE, opcode, reader)
     }
 
+    /**
+     * Register [reader] for an overlay-only [opcode] in a profile [layer] (e.g. V7_ANDROIDX). For
+     * operations that exist only under a profile, not in the base set. Validates membership against
+     * the target overlay layer. (No consumer yet — overlay-only ops land with later op groups.)
+     */
+    fun registerInOverlay(layer: Layer, opcode: Int, reader: OperationReader) {
+        require(layer != Layer.V6 && layer != Layer.V7_BASE) { "$layer is a base layer, use registerInBase" }
+        require(opcode in MEMBERSHIP.getValue(layer)) {
+            "opcode $opcode (${name(opcode)}) is not a member of $layer — wrong layer"
+        }
+        register(layer, opcode, reader)
+    }
+
     /** Test/maintenance hook: drop all registered readers (does not touch opcode constants). */
     internal fun resetReaders() {
         layers = emptyLayers()
-        defaultsRegistered = false
+        builtinsRegistered = false
     }
 }
