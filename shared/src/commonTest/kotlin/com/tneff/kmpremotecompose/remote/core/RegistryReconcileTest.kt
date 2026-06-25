@@ -152,10 +152,10 @@ class RegistryReconcileTest {
             val members = Operations.MEMBERSHIP.getValue(layer)
             assertTrue(members.containsAll(registered), "layer $layer registered non-members: ${registered - members}")
         }
-        // The REM-4 data ops + header are registered in both base layers.
+        // The group-A data ops + header are registered in both base layers.
         val expectedBase = setOf(
             Operations.HEADER, Operations.DATA_TEXT, Operations.DATA_FLOAT, Operations.DATA_INT,
-            Operations.COLOR_CONSTANT, Operations.DATA_BITMAP,
+            Operations.COLOR_CONSTANT, Operations.DATA_BITMAP, Operations.ROOT_CONTENT_DESCRIPTION,
         )
         assertTrue(Operations.registeredOpcodes(Layer.V6).containsAll(expectedBase))
         assertTrue(Operations.registeredOpcodes(Layer.V7_BASE).containsAll(expectedBase))

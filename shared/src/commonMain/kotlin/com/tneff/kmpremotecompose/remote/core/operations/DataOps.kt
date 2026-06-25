@@ -31,5 +31,6 @@ object DataOps {
         Operations.registerInBase(Operations.DATA_INT, IntegerConstant)
         Operations.registerInBase(Operations.COLOR_CONSTANT, ColorConstant)
         Operations.registerInBase(Operations.DATA_BITMAP, BitmapData)
+        Operations.registerInBase(Operations.ROOT_CONTENT_DESCRIPTION, RootContentDescription)
     }
 }
