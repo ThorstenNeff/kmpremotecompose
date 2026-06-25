@@ -83,5 +83,14 @@ object DataOps {
         Operations.registerInOverlay(Operations.Layer.V7_WIDGETS, Operations.ID_LOOKUP, IdLookup)
         Operations.registerInOverlay(Operations.Layer.V7_ANDROIDX, Operations.TEXT_TRANSFORM, TextTransform)
         Operations.registerInOverlay(Operations.Layer.V7_WIDGETS, Operations.TEXT_TRANSFORM, TextTransform)
+
+        // REM-27 P2 group-A tail — base ops; MATRIX_VECTOR_MATH is a V7_BASE always-on (NOT V6).
+        Operations.registerInBase(Operations.DATA_BITMAP_FONT, BitmapFontData)
+        Operations.registerInBase(Operations.INTEGER_EXPRESSION, IntegerExpression)
+        Operations.registerInBase(Operations.TEXT_MEASURE, TextMeasure)
+        Operations.registerInBase(Operations.DATA_MAP_LOOKUP, DataMapLookup)
+        Operations.registerInBase(Operations.ATTRIBUTE_TEXT, TextAttribute)
+        Operations.registerInBase(Operations.ATTRIBUTE_TIME, TimeAttribute)
+        Operations.registerInLayer(Operations.Layer.V7_BASE, Operations.MATRIX_VECTOR_MATH, MatrixVectorMath)
     }
 }
