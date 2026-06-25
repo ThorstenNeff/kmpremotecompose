@@ -103,6 +103,32 @@ class DrawOpsByteTest {
         assertContentEquals(expected, writeBytes(DrawOval(1f, 2f, 3f, 4f)))
     }
 
+    // 6-float draws: 1f..6f = 3F800000,40000000,40400000,40800000,40A00000,40C00000
+    private fun sixFloatBytes(opcode: Int): ByteArray = bytes(
+        opcode,
+        0x3F, 0x80, 0x00, 0x00,
+        0x40, 0x00, 0x00, 0x00,
+        0x40, 0x40, 0x00, 0x00,
+        0x40, 0x80, 0x00, 0x00,
+        0x40, 0xA0, 0x00, 0x00,
+        0x40, 0xC0, 0x00, 0x00,
+    )
+
+    @Test
+    fun drawRoundRect_writesExactBytes() {
+        assertContentEquals(sixFloatBytes(0x33), writeBytes(DrawRoundRect(1f, 2f, 3f, 4f, 5f, 6f)))
+    }
+
+    @Test
+    fun drawArc_writesExactBytes() {
+        assertContentEquals(sixFloatBytes(0x98), writeBytes(DrawArc(1f, 2f, 3f, 4f, 5f, 6f)))
+    }
+
+    @Test
+    fun drawSector_writesExactBytes() {
+        assertContentEquals(sixFloatBytes(0x34), writeBytes(DrawSector(1f, 2f, 3f, 4f, 5f, 6f)))
+    }
+
     // ---------------------------------------------------------------------------------------------
     // Round-trip: write → read (opcode consumed by loop) → re-write byte-identical + fields equal.
     // ---------------------------------------------------------------------------------------------
@@ -117,6 +143,9 @@ class DrawOpsByteTest {
             is DrawRect -> DrawRect.read(buffer, decoded)
             is DrawLine -> DrawLine.read(buffer, decoded)
             is DrawOval -> DrawOval.read(buffer, decoded)
+            is DrawRoundRect -> DrawRoundRect.read(buffer, decoded)
+            is DrawArc -> DrawArc.read(buffer, decoded)
+            is DrawSector -> DrawSector.read(buffer, decoded)
             else -> error("unexpected op $op")
         }
         assertEquals(1, decoded.size)
@@ -131,6 +160,9 @@ class DrawOpsByteTest {
         assertRoundTrips(DrawRect(1f, 2f, 3f, 4f))
         assertRoundTrips(DrawLine(-1.5f, 0f, 12.25f, 1000f))
         assertRoundTrips(DrawOval(1f, 2f, 3f, 4f))
+        assertRoundTrips(DrawRoundRect(1f, 2f, 3f, 4f, 8f, 8f))
+        assertRoundTrips(DrawArc(0f, 0f, 100f, 100f, 45f, 270f))
+        assertRoundTrips(DrawSector(0f, 0f, 50f, 50f, -90f, 180f))
     }
 
     /** A float field carrying a NaN-encoded variable id must survive read→write bit-for-bit. */
@@ -156,7 +188,11 @@ class DrawOpsByteTest {
     fun register_putsDrawOpsInBaseLayers() {
         Operations.resetReaders()
         DrawOps.register()
-        for (op in listOf(Operations.DRAW_CIRCLE, Operations.DRAW_RECT, Operations.DRAW_LINE, Operations.DRAW_OVAL)) {
+        val drawOpcodes = listOf(
+            Operations.DRAW_CIRCLE, Operations.DRAW_RECT, Operations.DRAW_LINE, Operations.DRAW_OVAL,
+            Operations.DRAW_ROUND_RECT, Operations.DRAW_ARC, Operations.DRAW_SECTOR,
+        )
+        for (op in drawOpcodes) {
             assertTrue(Operations.isValid(op, 6, Operations.PROFILE_BASELINE), "v6 ${Operations.name(op)}")
             assertTrue(Operations.isValid(op, 7, Operations.PROFILE_BASELINE), "v7 base ${Operations.name(op)}")
             assertTrue(Operations.isValid(op, 7, Operations.PROFILE_ANDROIDX), "v7 androidx ${Operations.name(op)}")

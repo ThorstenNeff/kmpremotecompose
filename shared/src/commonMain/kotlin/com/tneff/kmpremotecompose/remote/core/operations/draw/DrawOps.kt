@@ -40,6 +40,9 @@ object DrawOps {
             Operations.register(layer, Operations.DRAW_RECT, DrawRect)
             Operations.register(layer, Operations.DRAW_LINE, DrawLine)
             Operations.register(layer, Operations.DRAW_OVAL, DrawOval)
+            Operations.register(layer, Operations.DRAW_ROUND_RECT, DrawRoundRect)
+            Operations.register(layer, Operations.DRAW_ARC, DrawArc)
+            Operations.register(layer, Operations.DRAW_SECTOR, DrawSector)
         }
     }
 }
