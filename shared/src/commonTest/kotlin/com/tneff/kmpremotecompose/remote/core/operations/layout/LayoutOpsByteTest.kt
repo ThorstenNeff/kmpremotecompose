@@ -102,6 +102,27 @@ class LayoutOpsByteTest {
         )
     }
 
+    @Test
+    fun backgroundModifier_writesExactBytes() {
+        // opcode 55 (0x37) + flags/colorId/reserve1/reserve2 = 0 + rgba = 1.0 (3F800000) + shape 0.
+        // Matches the screenshottest.rc golden (white background) verbatim — 37 bytes.
+        assertContentEquals(
+            bytes(
+                0x37,
+                0x00, 0x00, 0x00, 0x00,
+                0x00, 0x00, 0x00, 0x00,
+                0x00, 0x00, 0x00, 0x00,
+                0x00, 0x00, 0x00, 0x00,
+                0x3F, 0x80, 0x00, 0x00,
+                0x3F, 0x80, 0x00, 0x00,
+                0x3F, 0x80, 0x00, 0x00,
+                0x3F, 0x80, 0x00, 0x00,
+                0x00, 0x00, 0x00, 0x00,
+            ),
+            writeBytes(BackgroundModifier(0, 0, 0, 0, 1f, 1f, 1f, 1f, 0)),
+        )
+    }
+
     // ---------------------------------------------------------------------------------------------
     // Round-trip: write → read (opcode consumed) → re-write byte-identical + fields equal.
     // ---------------------------------------------------------------------------------------------
@@ -126,6 +147,7 @@ class LayoutOpsByteTest {
         assertRoundTrips(ClickModifier(), ClickModifier)
         assertRoundTrips(WidthModifier(DimensionType.EXACT, 120f), WidthModifier)
         assertRoundTrips(HeightModifier(DimensionType.WEIGHT, 2.5f), HeightModifier)
+        assertRoundTrips(BackgroundModifier(1, 42, 0, 0, 0.25f, 0.5f, 0.75f, 1f, 2), BackgroundModifier)
     }
 
     @Test
@@ -150,6 +172,7 @@ class LayoutOpsByteTest {
         val opcodes = listOf(
             Operations.LAYOUT_ROOT, Operations.CONTAINER_END, Operations.COMPONENT_START,
             Operations.MODIFIER_WIDTH, Operations.MODIFIER_HEIGHT, Operations.MODIFIER_CLICK,
+            Operations.MODIFIER_BACKGROUND,
         )
         for (op in opcodes) {
             assertTrue(Operations.isValid(op, 6, Operations.PROFILE_BASELINE), "v6 ${Operations.name(op)}")

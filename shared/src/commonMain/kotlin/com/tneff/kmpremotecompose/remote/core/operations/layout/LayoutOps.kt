@@ -36,6 +36,7 @@ object LayoutOps {
             Operations.register(layer, Operations.MODIFIER_WIDTH, WidthModifier)
             Operations.register(layer, Operations.MODIFIER_HEIGHT, HeightModifier)
             Operations.register(layer, Operations.MODIFIER_CLICK, ClickModifier)
+            Operations.register(layer, Operations.MODIFIER_BACKGROUND, BackgroundModifier)
         }
     }
 }
