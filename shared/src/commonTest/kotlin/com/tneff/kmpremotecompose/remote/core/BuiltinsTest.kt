@@ -95,6 +95,8 @@ class BuiltinsTest {
             // REM-28 P2 group-B round 6 tail (base ops).
             Operations.CLIP_PATH, Operations.DRAW_BITMAP_FONT_TEXT_RUN, Operations.PARTICLE_DEFINE,
             Operations.HAPTIC_FEEDBACK, Operations.VALUE_FLOAT_EXPRESSION_CHANGE_ACTION,
+            // REM-29 — final P2 coverage: IMPULSE_PROCESS + PARTICLE_LOOP + DRAW_BITMAP (base); PARTICLE_COMPARE overlay.
+            Operations.IMPULSE_PROCESS, Operations.PARTICLE_LOOP, Operations.DRAW_BITMAP,
         )
         for (op in groupA + groupB) {
             assertTrue(Operations.isValid(op, 7, 0), "${Operations.name(op)} not resolvable at api 7")

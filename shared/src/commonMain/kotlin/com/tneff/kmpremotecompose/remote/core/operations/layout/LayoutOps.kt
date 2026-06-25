@@ -56,6 +56,7 @@ object LayoutOps {
         Operations.registerInBase(Operations.MODIFIER_VISIBILITY, VisibilityModifier) // REM-25 (R4)
         // REM-26 R5 action/container family (all base).
         Operations.registerInBase(Operations.IMPULSE_START, ImpulseStart)
+        Operations.registerInBase(Operations.IMPULSE_PROCESS, ImpulseProcess) // REM-29 (last P2 op)
         Operations.registerInBase(Operations.RUN_ACTION, RunAction)
         Operations.registerInBase(Operations.HOST_ACTION, HostAction)
         Operations.registerInBase(Operations.HOST_METADATA_ACTION, HostMetadataAction)

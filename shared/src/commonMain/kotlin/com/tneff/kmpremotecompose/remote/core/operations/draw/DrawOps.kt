@@ -63,5 +63,10 @@ object DrawOps {
         Operations.registerInBase(Operations.CLIP_PATH, ClipPath)
         Operations.registerInBase(Operations.DRAW_BITMAP_FONT_TEXT_RUN, DrawBitmapFontText)
         Operations.registerInBase(Operations.PARTICLE_DEFINE, ParticlesCreate)
+        // REM-29 final P2 coverage: PARTICLE_LOOP (163, base), PARTICLE_COMPARE (194, ANDROIDX+WIDGETS overlay).
+        Operations.registerInBase(Operations.PARTICLE_LOOP, ParticlesLoop)
+        Operations.registerInOverlay(Operations.Layer.V7_ANDROIDX, Operations.PARTICLE_COMPARE, ParticlesCompare)
+        Operations.registerInOverlay(Operations.Layer.V7_WIDGETS, Operations.PARTICLE_COMPARE, ParticlesCompare)
+        Operations.registerInBase(Operations.DRAW_BITMAP, DrawBitmap) // REM-29 (masked behind particles)
     }
 }
