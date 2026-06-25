@@ -48,5 +48,10 @@ object DataOps {
         // DATA_SHADER is V6 base AND the V7 androidx overlay (never V7_BASE / V7_WIDGETS).
         Operations.registerInLayer(Operations.Layer.V6, Operations.DATA_SHADER, ShaderData)
         Operations.registerInOverlay(Operations.Layer.V7_ANDROIDX, Operations.DATA_SHADER, ShaderData)
+
+        // REM-19 SB2 — COMPONENT_VALUE is base group-A; DYNAMIC_FLOAT_LIST is a profile overlay op.
+        Operations.registerInBase(Operations.COMPONENT_VALUE, ComponentValue)
+        Operations.registerInOverlay(Operations.Layer.V7_ANDROIDX, Operations.DYNAMIC_FLOAT_LIST, DataDynamicListFloat)
+        Operations.registerInOverlay(Operations.Layer.V7_WIDGETS, Operations.DYNAMIC_FLOAT_LIST, DataDynamicListFloat)
     }
 }
