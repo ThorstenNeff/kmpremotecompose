@@ -64,10 +64,18 @@ class LayoutOpsByteTest {
 
     @Test
     fun componentStart_writesExactBytes() {
-        // opcode 2 + int type=1 + int componentId=7
+        // Anchored on the upstream field spec (apply: type, componentId, width, height — verified)
+        // + independently-known IEEE-754 constants: width=1f (3F800000), height=2f (40000000).
+        // opcode 2 + int type=2 + int componentId=7 + float 1.0 + float 2.0 = 17 bytes.
         assertContentEquals(
-            bytes(0x02, 0x00, 0x00, 0x00, 0x01, 0x00, 0x00, 0x00, 0x07),
-            writeBytes(ComponentStart(type = 1, componentId = 7)),
+            bytes(
+                0x02,
+                0x00, 0x00, 0x00, 0x02,
+                0x00, 0x00, 0x00, 0x07,
+                0x3F, 0x80, 0x00, 0x00,
+                0x40, 0x00, 0x00, 0x00,
+            ),
+            writeBytes(ComponentStart(type = 2, componentId = 7, width = 1f, height = 2f)),
         )
     }
 
@@ -114,7 +122,7 @@ class LayoutOpsByteTest {
     fun allLayoutOps_roundTrip() {
         assertRoundTrips(RootLayout(-2), RootLayout)
         assertRoundTrips(ContainerEnd(), ContainerEnd)
-        assertRoundTrips(ComponentStart(3, 11), ComponentStart)
+        assertRoundTrips(ComponentStart(3, 11, 320f, 470f), ComponentStart)
         assertRoundTrips(ClickModifier(), ClickModifier)
         assertRoundTrips(WidthModifier(DimensionType.EXACT, 120f), WidthModifier)
         assertRoundTrips(HeightModifier(DimensionType.WEIGHT, 2.5f), HeightModifier)
