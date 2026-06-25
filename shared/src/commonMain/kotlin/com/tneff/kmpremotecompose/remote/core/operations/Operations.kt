@@ -345,6 +345,96 @@ object Operations {
 
     private val composedCache: MutableMap<Long, Map<Int, OperationReader>> = mutableMapOf()
 
+    private var defaultsRegistered = false
+
+    // ---------------------------------------------------------------------------------------------
+    // Authoritative per-layer opcode membership (mirrors upstream Operations.java exactly).
+    //
+    // This is the SPEC: which opcodes belong to which layer, independent of which op readers are
+    // implemented yet. Getting it wrong silently breaks profile gating, so it is pinned by a
+    // reconcile test (RegistryReconcileTest). Op classes register their reader (as they land) into
+    // the layer they are members of here. Caveats baked in below:
+    //  - DATA_SHADER and ROOT_CONTENT_BEHAVIOR are V6-base, but in V7 they live in the
+    //    androidx/widgets overlays, NOT V7_BASE.
+    //  - REM, MATRIX_CONSTANT/EXPRESSION/VECTOR_MATH are V7_BASE always-on, NOT in V6.
+    // ---------------------------------------------------------------------------------------------
+
+    /** The default operation set shared by V6 and V7 base (upstream `fillDefaultVersionMap`, 123). */
+    private val DEFAULT_SET: Set<Int> = setOf(
+        ACCESSIBILITY_SEMANTICS, ANIMATED_FLOAT, ANIMATION_SPEC, ATTRIBUTE_COLOR, ATTRIBUTE_IMAGE,
+        ATTRIBUTE_TEXT, ATTRIBUTE_TIME, CANVAS_OPERATIONS, CLICK_AREA, CLIP_PATH, CLIP_RECT,
+        COLOR_CONSTANT, COLOR_EXPRESSIONS, COMPONENT_START, COMPONENT_VALUE, CONDITIONAL_OPERATIONS,
+        CONTAINER_END, DATA_BITMAP, DATA_BITMAP_FONT, DATA_BOOLEAN, DATA_FLOAT, DATA_INT, DATA_LONG,
+        DATA_MAP_LOOKUP, DATA_PATH, DATA_TEXT, DEBUG_MESSAGE, DRAW_ARC, DRAW_BITMAP,
+        DRAW_BITMAP_FONT_TEXT_RUN, DRAW_BITMAP_INT, DRAW_BITMAP_SCALED, DRAW_CIRCLE, DRAW_CONTENT,
+        DRAW_LINE, DRAW_OVAL, DRAW_PATH, DRAW_RECT, DRAW_ROUND_RECT, DRAW_SECTOR, DRAW_TEXT_ANCHOR,
+        DRAW_TEXT_ON_CIRCLE, DRAW_TEXT_ON_PATH, DRAW_TEXT_RUN, DRAW_TWEEN_PATH, FLOAT_LIST,
+        FUNCTION_CALL, FUNCTION_DEFINE, HAPTIC_FEEDBACK, HEADER, HOST_ACTION, HOST_METADATA_ACTION,
+        HOST_NAMED_ACTION, ID_LIST, ID_MAP, IMPULSE_PROCESS, IMPULSE_START, INTEGER_EXPRESSION,
+        LAYOUT_BOX, LAYOUT_CANVAS, LAYOUT_CANVAS_CONTENT, LAYOUT_COLLAPSIBLE_COLUMN,
+        LAYOUT_COLLAPSIBLE_ROW, LAYOUT_COLUMN, LAYOUT_CONTENT, LAYOUT_FIT_BOX, LAYOUT_IMAGE,
+        LAYOUT_ROOT, LAYOUT_ROW, LAYOUT_STATE, LAYOUT_TEXT, LOOP_START, MATRIX_RESTORE, MATRIX_ROTATE,
+        MATRIX_SAVE, MATRIX_SCALE, MATRIX_SKEW, MATRIX_TRANSLATE, MODIFIER_BACKGROUND, MODIFIER_BORDER,
+        MODIFIER_CLICK, MODIFIER_CLIP_RECT, MODIFIER_COLLAPSIBLE_PRIORITY, MODIFIER_DRAW_CONTENT,
+        MODIFIER_GRAPHICS_LAYER, MODIFIER_HEIGHT, MODIFIER_HEIGHT_IN, MODIFIER_MARQUEE,
+        MODIFIER_OFFSET, MODIFIER_PADDING, MODIFIER_RIPPLE, MODIFIER_ROUNDED_CLIP_RECT,
+        MODIFIER_SCROLL, MODIFIER_TOUCH_CANCEL, MODIFIER_TOUCH_DOWN, MODIFIER_TOUCH_UP,
+        MODIFIER_VISIBILITY, MODIFIER_WIDTH, MODIFIER_WIDTH_IN, MODIFIER_ZINDEX, NAMED_VARIABLE,
+        PAINT_VALUES, PARTICLE_DEFINE, PARTICLE_LOOP, PATH_ADD, PATH_COMBINE, PATH_CREATE, PATH_TWEEN,
+        ROOT_CONTENT_DESCRIPTION, RUN_ACTION, TEXT_FROM_FLOAT, TEXT_LENGTH, TEXT_LOOKUP,
+        TEXT_LOOKUP_INT, TEXT_MEASURE, TEXT_MERGE, THEME, TOUCH_EXPRESSION, VALUE_FLOAT_CHANGE_ACTION,
+        VALUE_FLOAT_EXPRESSION_CHANGE_ACTION, VALUE_INTEGER_CHANGE_ACTION,
+        VALUE_INTEGER_EXPRESSION_CHANGE_ACTION, VALUE_STRING_CHANGE_ACTION,
+    )
+
+    /** V6 base additions on top of the default set. */
+    private val V6_EXTRA: Set<Int> = setOf(DATA_SHADER, ROOT_CONTENT_BEHAVIOR)
+
+    /** V7 base always-on additions on top of the default set. */
+    private val V7_BASE_EXTRA: Set<Int> = setOf(REM, MATRIX_CONSTANT, MATRIX_EXPRESSION, MATRIX_VECTOR_MATH)
+
+    private val ANDROIDX_OVERLAY: Set<Int> = setOf(
+        MATRIX_FROM_PATH, TEXT_SUBTEXT, BITMAP_TEXT_MEASURE, DRAW_BITMAP_FONT_TEXT_RUN_ON_PATH,
+        DRAW_BITMAP_TEXT_ANCHORED, DATA_SHADER, DATA_FONT, DRAW_TO_BITMAP, WAKE_IN, ID_LOOKUP,
+        PATH_EXPRESSION, PARTICLE_COMPARE, DYNAMIC_FLOAT_LIST, UPDATE_DYNAMIC_FLOAT_LIST, SKIP,
+        CORE_TEXT, TEXT_STYLE, TEXT_TRANSFORM, COLOR_THEME,
+    )
+
+    private val ANDROIDX_EXPERIMENTAL_OVERLAY: Set<Int> = setOf(
+        MODIFIER_ALIGN_BY, LAYOUT_COMPUTE, LAYOUT_FLOW, MODIFIER_MULTI_CLICK,
+        MODIFIER_DIMENSION_CONSTRAINTS, REFERENCED_OPERATIONS, INCLUDE_REFERENCED_OPERATIONS,
+        MACRO_DEFINE, MACRO_CALL, MACRO_ARGUMENT, MACRO_BLOCK, MACRO_FOR_EACH, LAYOUT_CUSTOM,
+        DATA_SOUND, SOUND_EXPRESSION, PLAY_SOUND,
+    )
+
+    private val WIDGETS_OVERLAY: Set<Int> = setOf(
+        MATRIX_FROM_PATH, TEXT_SUBTEXT, BITMAP_TEXT_MEASURE, DRAW_BITMAP_FONT_TEXT_RUN_ON_PATH,
+        DRAW_BITMAP_TEXT_ANCHORED, DRAW_TO_BITMAP, WAKE_IN, ID_LOOKUP, PATH_EXPRESSION,
+        PARTICLE_COMPARE, DYNAMIC_FLOAT_LIST, UPDATE_DYNAMIC_FLOAT_LIST, SKIP, CORE_TEXT, TEXT_STYLE,
+        TEXT_TRANSFORM, COLOR_THEME,
+    )
+
+    private val WIDGETS_EXPERIMENTAL_OVERLAY: Set<Int> = setOf(
+        MODIFIER_ALIGN_BY, LAYOUT_COMPUTE, LAYOUT_FLOW, MODIFIER_MULTI_CLICK,
+        MODIFIER_DIMENSION_CONSTRAINTS, REFERENCED_OPERATIONS, INCLUDE_REFERENCED_OPERATIONS,
+        MACRO_DEFINE, MACRO_CALL, MACRO_ARGUMENT, MACRO_BLOCK, MACRO_FOR_EACH, DATA_SOUND,
+        SOUND_EXPRESSION, PLAY_SOUND,
+    )
+
+    private val DEPRECATED_OVERLAY: Set<Int> = setOf(ROOT_CONTENT_BEHAVIOR)
+
+    /** Authoritative per-layer opcode membership. Pinned by RegistryReconcileTest. */
+    val MEMBERSHIP: Map<Layer, Set<Int>> = mapOf(
+        Layer.V6 to (DEFAULT_SET + V6_EXTRA),
+        Layer.V7_BASE to (DEFAULT_SET + V7_BASE_EXTRA),
+        Layer.V7_ANDROIDX to ANDROIDX_OVERLAY,
+        Layer.V7_ANDROIDX_EXPERIMENTAL to ANDROIDX_EXPERIMENTAL_OVERLAY,
+        Layer.V7_ANDROIDX_DEPRECATED to DEPRECATED_OVERLAY,
+        Layer.V7_WIDGETS to WIDGETS_OVERLAY,
+        Layer.V7_WIDGETS_EXPERIMENTAL to WIDGETS_EXPERIMENTAL_OVERLAY,
+        Layer.V7_WIDGETS_DEPRECATED to DEPRECATED_OVERLAY,
+    )
+
     /**
      * Register the [reader] for [opcode] in [layer]. Called by operation classes (REM-4) at init.
      * Registering one of the [ORPHAN_OPCODES] is a programming error.
@@ -402,6 +492,56 @@ object Operations {
     fun isValid(opcode: Int, apiLevel: Int, profiles: Int): Boolean =
         readerMapFor(apiLevel, profiles).containsKey(opcode)
 
+    /**
+     * The authoritative set of opcodes valid for a document at [apiLevel] with [profiles] — composed
+     * from [MEMBERSHIP] with the SAME rules as [readerMapFor] (base + selected overlays, multiple
+     * profiles intersected). This is the spec set (every opcode the format allows here), whereas
+     * [readerMapFor] is the implemented subset; they converge as op readers land.
+     */
+    fun membershipFor(apiLevel: Int, profiles: Int): Set<Int> {
+        if (apiLevel < 7) return MEMBERSHIP.getValue(Layer.V6)
+        val out = MEMBERSHIP.getValue(Layer.V7_BASE).toMutableSet()
+        if (profiles != 0) {
+            if ((profiles and PROFILE_ANDROID_NATIVE) != 0) {
+                throw UnsupportedOperationException("Android native profile is defined externally")
+            }
+            val overlays = mutableListOf<Set<Int>>()
+            if ((profiles and PROFILE_ANDROIDX) != 0) {
+                overlays += membershipOverlay(
+                    profiles, Layer.V7_ANDROIDX,
+                    Layer.V7_ANDROIDX_EXPERIMENTAL, Layer.V7_ANDROIDX_DEPRECATED,
+                )
+            }
+            if ((profiles and PROFILE_WIDGETS) != 0) {
+                overlays += membershipOverlay(
+                    profiles, Layer.V7_WIDGETS,
+                    Layer.V7_WIDGETS_EXPERIMENTAL, Layer.V7_WIDGETS_DEPRECATED,
+                )
+            }
+            when (overlays.size) {
+                0 -> {}
+                1 -> out += overlays[0]
+                else -> out += overlays[0].filter { op -> overlays.all { it.contains(op) } }
+            }
+        }
+        return out
+    }
+
+    private fun membershipOverlay(
+        profiles: Int,
+        base: Layer,
+        experimental: Layer,
+        deprecated: Layer,
+    ): Set<Int> {
+        val out = MEMBERSHIP.getValue(base).toMutableSet()
+        if ((profiles and PROFILE_EXPERIMENTAL) != 0) out += MEMBERSHIP.getValue(experimental)
+        if ((profiles and PROFILE_DEPRECATED) != 0) out += MEMBERSHIP.getValue(deprecated)
+        return out
+    }
+
+    /** The opcodes that currently have a registered reader in [layer] (for the reconcile test). */
+    internal fun registeredOpcodes(layer: Layer): Set<Int> = layers.getValue(layer).keys.toSet()
+
     private fun overlayFor(
         profiles: Int,
         base: Layer,
@@ -419,9 +559,36 @@ object Operations {
         return first.filter { (opcode, _) -> overlays.all { it.containsKey(opcode) } }
     }
 
+    /**
+     * Register the built-in operation readers (idempotent). The reader/writer facades call this
+     * before they touch the registry, so real documents resolve without manual wiring. Each op is
+     * registered in the profile-independent base layers (V6 + V7_BASE), matching the upstream
+     * `fillDefaultVersionMap`. REM-4 adds the document/data ops; later stories extend this.
+     */
+    fun registerDefaults() {
+        if (defaultsRegistered) return
+        defaultsRegistered = true
+        inBase(HEADER, Header)
+        inBase(DATA_TEXT, TextData)
+        inBase(DATA_FLOAT, FloatConstant)
+        inBase(DATA_INT, IntegerConstant)
+        inBase(COLOR_CONSTANT, ColorConstant)
+        inBase(DATA_BITMAP, BitmapData)
+    }
+
+    /** Register [reader] for [opcode] in both profile-independent base layers (V6 and V7_BASE). */
+    private fun inBase(opcode: Int, reader: OperationReader) {
+        require(opcode in MEMBERSHIP.getValue(Layer.V6) && opcode in MEMBERSHIP.getValue(Layer.V7_BASE)) {
+            "opcode $opcode (${name(opcode)}) is not a base-layer member — wrong layer"
+        }
+        register(Layer.V6, opcode, reader)
+        register(Layer.V7_BASE, opcode, reader)
+    }
+
     /** Test/maintenance hook: drop all registered readers (does not touch opcode constants). */
     internal fun resetReaders() {
         layers.values.forEach { it.clear() }
         composedCache.clear()
+        defaultsRegistered = false
     }
 }

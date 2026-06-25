@@ -49,6 +49,7 @@ object DocumentReader {
     }
 
     private fun inflateInternal(bytes: ByteArray, trace: MutableList<OpSpan>?): RemoteComposeDocument {
+        Operations.registerDefaults()
         val buffer = WireBuffer.fromBytes(bytes)
         val operations = mutableListOf<Operation>()
         if (!buffer.available()) return RemoteComposeDocument(operations)
