@@ -96,6 +96,9 @@ class Header private constructor(
         const val MINOR_VERSION = 1
         const val PATCH_VERSION = 0
 
+        /** Mask isolating the high 16 bits (the magic) of a magic-tagged major-version int. */
+        private const val MAGIC_HIGH_MASK = -0x10000 // 0xFFFF0000
+
         // Property keys (subset; full set lands with REM-4 op group A).
         const val DOC_WIDTH = 5
         const val DOC_HEIGHT = 6
@@ -159,6 +162,14 @@ class Header private constructor(
                 val capabilities = buffer.readLong()
                 operations += Header(major, minor, patch, null, width, height, 1f, capabilities)
                 return
+            }
+            // Fail closed on a corrupt/foreign magic instead of silently masking it away — a `.rc`
+            // is untrusted input, and the rest of the reader is fail-closed (table size, opcodes).
+            if ((major and MAGIC_HIGH_MASK) != WireTypes.MAGIC_NUMBER) {
+                throw IllegalStateException(
+                    "invalid header magic 0x${(major and MAGIC_HIGH_MASK).toUInt().toString(16)} " +
+                        "!= 0x${WireTypes.MAGIC_NUMBER.toUInt().toString(16)}",
+                )
             }
             major = major and WireTypes.MAGIC_MAJOR_MASK
             val count = buffer.readInt()
