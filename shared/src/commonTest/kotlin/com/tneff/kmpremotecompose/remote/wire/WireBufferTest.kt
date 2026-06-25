@@ -77,6 +77,19 @@ class WireBufferTest {
     // ---------------------------------------------------------------------------------------------
 
     @Test
+    fun nanId_writesExactUpstreamBytes() {
+        // asNan(42) = 0xFF80002A — a *signaling* NaN (mantissa MSB clear, payload non-zero).
+        // Pin the absolute encoded bytes against the upstream bit pattern, NOT toRawBits()-vs-
+        // toRawBits() (which both pass through the same Kotlin/Native handling) and NOT idFromNan()
+        // (which masks out bit 22, the quiet/signaling bit). If Kotlin/Native quiets the NaN on iOS
+        // (0xFF80002A -> 0xFFC0002A) the writer would emit wrong bytes; this assertion catches that
+        // here instead of silently in the player.
+        val buf = WireBuffer(16)
+        buf.writeFloat(WireTypes.asNan(42))
+        assertContentEquals(bytes(0xFF, 0x80, 0x00, 0x2A), buf.toByteArray())
+    }
+
+    @Test
     fun nanId_roundTripsBitExact() {
         val id = 42
         val nan = WireTypes.asNan(id)
@@ -86,9 +99,21 @@ class WireBufferTest {
         buf.byteIndex = 0
         val read = buf.readFloat()
 
-        // Bit-exact survival of the NaN payload through encode + decode.
+        // Round-trip through the buffer preserves the raw payload and decodes the id back.
         assertEquals(nan.toRawBits(), read.toRawBits())
         assertEquals(id, WireTypes.idFromNan(read))
+    }
+
+    @Test
+    fun signalingNaN_doublePath_writesExactBytes() {
+        // Same risk on the 8-byte path: a signaling double NaN (0x7FF0000000000001) must survive
+        // Double.toRawBits() byte-for-byte. Quieting on Kotlin/Native would flip byte 1 to 0xF8.
+        val buf = WireBuffer(16)
+        buf.writeDouble(Double.fromBits(0x7FF0000000000001L))
+        assertContentEquals(
+            bytes(0x7F, 0xF0, 0x00, 0x00, 0x00, 0x00, 0x00, 0x01),
+            buf.toByteArray(),
+        )
     }
 
     @Test
@@ -173,13 +198,15 @@ class WireBufferTest {
     }
 
     // ---------------------------------------------------------------------------------------------
-    // Conformance smoke test against the real reference fixture (screenshottest.rc).
-    // The DOC_WIDTH header TLV at offsets 0x11..0x18 is exactly: short tag(5), short len(4), int 320.
-    // Reproducing it with primitives proves big-endian short+int output is byte-exact to the oracle.
+    // Conformance smoke test against HAND-EXTRACTED golden bytes.
+    // These bytes were read by hand from a hexdump of the upstream screenshottest.rc DOC_WIDTH header
+    // TLV (offsets 0x11..0x18: short tag(5), short len(4), int 320) and confirmed against the oracle.
+    // Loading the real .rc fixture at test time is deferred to REM-7 (corpus loader); for now we pin
+    // the known-good bytes so the primitives are proven byte-exact without the file dependency.
     // ---------------------------------------------------------------------------------------------
 
     @Test
-    fun primitives_reproduceFixtureWidthTlv() {
+    fun primitives_matchHandExtractedGoldenWidthTlv() {
         val buf = WireBuffer(16)
         buf.writeShort(WireTypes.DATA_TYPE_INT shl WireTypes.TAG_TYPE_SHIFT or 5) // key 5 = DOC_WIDTH
         buf.writeShort(4)
