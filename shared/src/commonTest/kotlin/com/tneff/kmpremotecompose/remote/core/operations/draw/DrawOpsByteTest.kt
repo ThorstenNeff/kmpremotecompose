@@ -130,6 +130,42 @@ class DrawOpsByteTest {
         assertContentEquals(sixFloatBytes(0x34), writeBytes(DrawSector(1f, 2f, 3f, 4f, 5f, 6f)))
     }
 
+    @Test
+    fun drawText_writesExactBytes() {
+        // opcode 43 (0x2B) + textId 42 + start 0 + end 5 + ctxStart 0 + ctxEnd 5 + x 1f + y 2f + rtl false.
+        val expected = bytes(
+            0x2B,
+            0x00, 0x00, 0x00, 0x2A,
+            0x00, 0x00, 0x00, 0x00,
+            0x00, 0x00, 0x00, 0x05,
+            0x00, 0x00, 0x00, 0x00,
+            0x00, 0x00, 0x00, 0x05,
+            0x3F, 0x80, 0x00, 0x00,
+            0x40, 0x00, 0x00, 0x00,
+            0x00,
+        )
+        assertContentEquals(expected, writeBytes(DrawText(42, 0, 5, 0, 5, 1f, 2f, rtl = false)))
+    }
+
+    @Test
+    fun pathData_writesExactBytes() {
+        // opcode 123 (0x7B) + id 7 + count 2 + two raw float-bit ints (1f, 2f).
+        val expected = bytes(
+            0x7B,
+            0x00, 0x00, 0x00, 0x07,
+            0x00, 0x00, 0x00, 0x02,
+            0x3F, 0x80, 0x00, 0x00,
+            0x40, 0x00, 0x00, 0x00,
+        )
+        assertContentEquals(expected, writeBytes(PathData(7, intArrayOf(0x3F800000, 0x40000000))))
+    }
+
+    @Test
+    fun drawPath_writesExactBytes() {
+        // opcode 124 (0x7C) + id 42.
+        assertContentEquals(bytes(0x7C, 0x00, 0x00, 0x00, 0x2A), writeBytes(DrawPath(42)))
+    }
+
     // ---------------------------------------------------------------------------------------------
     // Round-trip: write → read (opcode consumed by loop) → re-write byte-identical + fields equal.
     // ---------------------------------------------------------------------------------------------
@@ -147,6 +183,9 @@ class DrawOpsByteTest {
             is DrawRoundRect -> DrawRoundRect.read(buffer, decoded)
             is DrawArc -> DrawArc.read(buffer, decoded)
             is DrawSector -> DrawSector.read(buffer, decoded)
+            is DrawText -> DrawText.read(buffer, decoded)
+            is PathData -> PathData.read(buffer, decoded)
+            is DrawPath -> DrawPath.read(buffer, decoded)
             else -> error("unexpected op $op")
         }
         assertEquals(1, decoded.size)
@@ -164,6 +203,9 @@ class DrawOpsByteTest {
         assertRoundTrips(DrawRoundRect(1f, 2f, 3f, 4f, 8f, 8f))
         assertRoundTrips(DrawArc(0f, 0f, 100f, 100f, 45f, 270f))
         assertRoundTrips(DrawSector(0f, 0f, 50f, 50f, -90f, 180f))
+        assertRoundTrips(DrawText(42, 0, 5, 0, 5, 1f, 2f, rtl = true))
+        assertRoundTrips(PathData(7, intArrayOf(0x3F800000.toInt(), 0, -1, WireTypes.asNan(9).toRawBits())))
+        assertRoundTrips(DrawPath(-3))
     }
 
     /** Model equality must use raw float bits, so two ops with identical NaN-id bits are equal. */
@@ -203,6 +245,7 @@ class DrawOpsByteTest {
         val drawOpcodes = listOf(
             Operations.DRAW_CIRCLE, Operations.DRAW_RECT, Operations.DRAW_LINE, Operations.DRAW_OVAL,
             Operations.DRAW_ROUND_RECT, Operations.DRAW_ARC, Operations.DRAW_SECTOR,
+            Operations.PAINT_VALUES, Operations.DRAW_TEXT_RUN, Operations.DATA_PATH, Operations.DRAW_PATH,
         )
         for (op in drawOpcodes) {
             assertTrue(Operations.isValid(op, 6, Operations.PROFILE_BASELINE), "v6 ${Operations.name(op)}")

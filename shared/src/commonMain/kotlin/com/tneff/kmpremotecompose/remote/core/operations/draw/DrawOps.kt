@@ -20,30 +20,26 @@ import com.tneff.kmpremotecompose.remote.core.operations.Operations
 /**
  * Registration entry point for the REM-5 (op-group B) draw operations.
  *
- * The base draw primitives are profile-independent and present in both the API-6 map and the API-7
- * base map upstream, so they register into [Operations.Layer.V6] **and** [Operations.Layer.V7_BASE].
- *
- * NOTE (coordination, flagged to PO): REM-3 ships the registry but no central "register all builtin
- * ops" trigger yet, and `OpFrameworkTest` drives registration explicitly + [Operations.resetReaders].
- * This [register] is dev-2's op-group entry point; the eventual central registrar (shared convention
- * with dev-1's REM-4 group A) should call both groups' `register()` once before decoding real
- * documents. Per-op byte tests do not depend on it — they register/reset locally.
+ * All of these are profile-independent base primitives (present in the API-6 map and the API-7 base
+ * map upstream), so they register via [Operations.registerInBase] — the blessed path that registers
+ * into V6 + V7_BASE **and** validates layer membership (catches a wrong-layer registration instead
+ * of letting it slip to the reconcile test). Aggregated by `Rem5Ops`, triggered by `Builtins`.
  */
 object DrawOps {
 
-    private val baseLayers = listOf(Operations.Layer.V6, Operations.Layer.V7_BASE)
-
-    /** Register all REM-5 draw-op readers into the base layers. Idempotent per layer map. */
+    /** Register all REM-5 draw-op readers into the base layers (membership-validated). */
     fun register() {
-        for (layer in baseLayers) {
-            Operations.register(layer, Operations.DRAW_CIRCLE, DrawCircle)
-            Operations.register(layer, Operations.DRAW_RECT, DrawRect)
-            Operations.register(layer, Operations.DRAW_LINE, DrawLine)
-            Operations.register(layer, Operations.DRAW_OVAL, DrawOval)
-            Operations.register(layer, Operations.DRAW_ROUND_RECT, DrawRoundRect)
-            Operations.register(layer, Operations.DRAW_ARC, DrawArc)
-            Operations.register(layer, Operations.DRAW_SECTOR, DrawSector)
-            Operations.register(layer, Operations.PAINT_VALUES, PaintData)
-        }
+        Operations.registerInBase(Operations.DRAW_CIRCLE, DrawCircle)
+        Operations.registerInBase(Operations.DRAW_RECT, DrawRect)
+        Operations.registerInBase(Operations.DRAW_LINE, DrawLine)
+        Operations.registerInBase(Operations.DRAW_OVAL, DrawOval)
+        Operations.registerInBase(Operations.DRAW_ROUND_RECT, DrawRoundRect)
+        Operations.registerInBase(Operations.DRAW_ARC, DrawArc)
+        Operations.registerInBase(Operations.DRAW_SECTOR, DrawSector)
+        Operations.registerInBase(Operations.PAINT_VALUES, PaintData)
+        // P1 text/path draws.
+        Operations.registerInBase(Operations.DRAW_TEXT_RUN, DrawText)
+        Operations.registerInBase(Operations.DATA_PATH, PathData)
+        Operations.registerInBase(Operations.DRAW_PATH, DrawPath)
     }
 }

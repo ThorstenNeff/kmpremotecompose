@@ -20,30 +20,29 @@ import com.tneff.kmpremotecompose.remote.core.operations.Operations
 /**
  * Registration entry point for the REM-5 layout / container / modifier operations.
  *
- * All of these live in upstream's `fillDefaultVersionMap` (present in the API-6 map and the API-7
- * base map), so they register into [Operations.Layer.V6] **and** [Operations.Layer.V7_BASE].
+ * The base ops live in upstream's default map (V6 + V7_BASE) and register via the membership-validated
+ * [Operations.registerInBase]. `ROOT_CONTENT_BEHAVIOR` is the exception — V6 base only, and for API ≥ 7
+ * only under the **deprecated** overlays (not V7_BASE); it uses the raw V6 registration plus
+ * [Operations.registerInOverlay] for the deprecated overlays (registerInBase would correctly reject it).
  */
 object LayoutOps {
 
-    private val baseLayers = listOf(Operations.Layer.V6, Operations.Layer.V7_BASE)
-
-    /** Register all REM-5 layout/modifier readers into the base layers. */
+    /** Register all REM-5 layout/modifier readers. */
     fun register() {
-        for (layer in baseLayers) {
-            Operations.register(layer, Operations.LAYOUT_ROOT, RootLayout)
-            Operations.register(layer, Operations.CONTAINER_END, ContainerEnd)
-            Operations.register(layer, Operations.COMPONENT_START, ComponentStart)
-            Operations.register(layer, Operations.MODIFIER_WIDTH, WidthModifier)
-            Operations.register(layer, Operations.MODIFIER_HEIGHT, HeightModifier)
-            Operations.register(layer, Operations.MODIFIER_CLICK, ClickModifier)
-            Operations.register(layer, Operations.MODIFIER_BACKGROUND, BackgroundModifier)
-            Operations.register(layer, Operations.LAYOUT_BOX, BoxLayout)
-            Operations.register(layer, Operations.LAYOUT_CONTENT, LayoutContent)
-        }
-        // ROOT_CONTENT_BEHAVIOR: API-6 base + (API ≥ 7) only the deprecated overlays, mirroring
-        // upstream — NOT the v7 base.
+        Operations.registerInBase(Operations.LAYOUT_ROOT, RootLayout)
+        Operations.registerInBase(Operations.CONTAINER_END, ContainerEnd)
+        Operations.registerInBase(Operations.COMPONENT_START, ComponentStart)
+        Operations.registerInBase(Operations.MODIFIER_WIDTH, WidthModifier)
+        Operations.registerInBase(Operations.MODIFIER_HEIGHT, HeightModifier)
+        Operations.registerInBase(Operations.MODIFIER_CLICK, ClickModifier)
+        Operations.registerInBase(Operations.MODIFIER_BACKGROUND, BackgroundModifier)
+        Operations.registerInBase(Operations.LAYOUT_BOX, BoxLayout)
+        Operations.registerInBase(Operations.LAYOUT_CONTENT, LayoutContent)
+
+        // ROOT_CONTENT_BEHAVIOR: V6 base only + (API ≥ 7) deprecated overlays — NOT V7_BASE.
+        // No base helper covers a V6-only op, so register V6 directly + the overlays via registerInOverlay.
         Operations.register(Operations.Layer.V6, Operations.ROOT_CONTENT_BEHAVIOR, RootContentBehavior)
-        Operations.register(Operations.Layer.V7_ANDROIDX_DEPRECATED, Operations.ROOT_CONTENT_BEHAVIOR, RootContentBehavior)
-        Operations.register(Operations.Layer.V7_WIDGETS_DEPRECATED, Operations.ROOT_CONTENT_BEHAVIOR, RootContentBehavior)
+        Operations.registerInOverlay(Operations.Layer.V7_ANDROIDX_DEPRECATED, Operations.ROOT_CONTENT_BEHAVIOR, RootContentBehavior)
+        Operations.registerInOverlay(Operations.Layer.V7_WIDGETS_DEPRECATED, Operations.ROOT_CONTENT_BEHAVIOR, RootContentBehavior)
     }
 }
