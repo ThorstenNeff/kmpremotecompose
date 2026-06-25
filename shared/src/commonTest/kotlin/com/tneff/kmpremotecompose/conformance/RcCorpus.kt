@@ -120,8 +120,8 @@ class RcCorpusReader(
         return ManifestParser.parse(io.readText(MANIFEST_FILE))
     }
 
-    /** Alle regulären Dateinamen unter `rc-corpus/corpus/` (P2-Smoke-Set), sortiert; leer wenn fehlend. */
-    fun corpusNames(): List<String> = io.listFiles(CORPUS_SUBDIR)
+    /** Alle `*.rc`-Dateinamen unter `rc-corpus/corpus/` (P2-Smoke-Set), sortiert; leer wenn fehlend. */
+    fun corpusNames(): List<String> = io.listFiles(CORPUS_SUBDIR).filter { it.endsWith(".rc") }
 
     companion object {
         const val MANIFEST_FILE: String = "MANIFEST.tsv"
