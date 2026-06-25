@@ -37,6 +37,13 @@ object LayoutOps {
             Operations.register(layer, Operations.MODIFIER_HEIGHT, HeightModifier)
             Operations.register(layer, Operations.MODIFIER_CLICK, ClickModifier)
             Operations.register(layer, Operations.MODIFIER_BACKGROUND, BackgroundModifier)
+            Operations.register(layer, Operations.LAYOUT_BOX, BoxLayout)
+            Operations.register(layer, Operations.LAYOUT_CONTENT, LayoutContent)
         }
+        // ROOT_CONTENT_BEHAVIOR: API-6 base + (API ≥ 7) only the deprecated overlays, mirroring
+        // upstream — NOT the v7 base.
+        Operations.register(Operations.Layer.V6, Operations.ROOT_CONTENT_BEHAVIOR, RootContentBehavior)
+        Operations.register(Operations.Layer.V7_ANDROIDX_DEPRECATED, Operations.ROOT_CONTENT_BEHAVIOR, RootContentBehavior)
+        Operations.register(Operations.Layer.V7_WIDGETS_DEPRECATED, Operations.ROOT_CONTENT_BEHAVIOR, RootContentBehavior)
     }
 }
