@@ -65,18 +65,21 @@ class Header private constructor(
     override fun write(buffer: WireBuffer) {
         buffer.writeByte(Operations.HEADER)
         val props = properties
+        // Write THIS header's version, not the lib constants: a round-tripped document must preserve
+        // its parsed version byte-for-byte (e.g. flat v1.0.0 must not re-encode as v1.1.0). New
+        // documents still stamp the current version because the factories seed major/minor/patch with
+        // the MAJOR/MINOR/PATCH constants.
         if (props != null && props.isNotEmpty()) {
-            val apiLevel = versionToApiLevel(MAJOR_VERSION, MINOR_VERSION)
             check(apiLevel >= 7) { "Header has properties but apiLevel $apiLevel < 7" }
-            buffer.writeInt(MAJOR_VERSION or WireTypes.MAGIC_NUMBER)
-            buffer.writeInt(MINOR_VERSION)
-            buffer.writeInt(PATCH_VERSION)
+            buffer.writeInt(major or WireTypes.MAGIC_NUMBER)
+            buffer.writeInt(minor)
+            buffer.writeInt(patch)
             buffer.writeInt(props.size)
             writeMap(buffer, props)
         } else {
-            buffer.writeInt(MAJOR_VERSION)
-            buffer.writeInt(MINOR_VERSION)
-            buffer.writeInt(PATCH_VERSION)
+            buffer.writeInt(major)
+            buffer.writeInt(minor)
+            buffer.writeInt(patch)
             buffer.writeInt(flatWidth)
             buffer.writeInt(flatHeight)
             buffer.writeLong(flatCapabilities)

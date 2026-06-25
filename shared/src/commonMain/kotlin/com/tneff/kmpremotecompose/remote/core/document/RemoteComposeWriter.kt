@@ -15,6 +15,7 @@
  */
 package com.tneff.kmpremotecompose.remote.core.document
 
+import com.tneff.kmpremotecompose.remote.core.operations.Builtins
 import com.tneff.kmpremotecompose.remote.core.operations.Header
 import com.tneff.kmpremotecompose.remote.core.operations.Operation
 import com.tneff.kmpremotecompose.remote.core.operations.Operations
@@ -43,7 +44,7 @@ class RemoteComposeWriter(
     val apiLevel: Int = Header.versionToApiLevel(Header.MAJOR_VERSION, Header.MINOR_VERSION)
 
     init {
-        Operations.registerDefaults()
+        Builtins.register()
         val properties = LinkedHashMap<Int, Any>()
         properties[Header.DOC_WIDTH] = width
         properties[Header.DOC_HEIGHT] = height

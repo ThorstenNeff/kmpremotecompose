@@ -15,6 +15,7 @@
  */
 package com.tneff.kmpremotecompose.remote.core
 
+import com.tneff.kmpremotecompose.remote.core.operations.Builtins
 import com.tneff.kmpremotecompose.remote.core.operations.Operations
 import com.tneff.kmpremotecompose.remote.core.operations.Operations.Layer
 import kotlin.test.AfterTest
@@ -145,7 +146,7 @@ class RegistryReconcileTest {
     @Test
     fun registeredReaders_stayWithinTheirLayerMembership() {
         Operations.resetReaders()
-        Operations.registerDefaults()
+        Builtins.register()
         for (layer in Layer.entries) {
             val registered = Operations.registeredOpcodes(layer)
             val members = Operations.MEMBERSHIP.getValue(layer)
