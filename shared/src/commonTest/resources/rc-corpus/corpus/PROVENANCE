@@ -22,3 +22,20 @@ rc-corpus/ proper). The sweep surfaces, authoritatively:
 
 A file that fails to decode is an op-gap / unimplemented-path signal, NOT a fixture bug.
 Upstream tree is the read-only oracle; these copies are kept byte-faithful.
+
+ADAPTED (non-verbatim) FIXTURES — human-authorized
+--------------------------------------------------
+Most files here are pristine verbatim copies. The following were deliberately adapted
+(human policy: when the committed golden is stale vs the current upstream source, adapt
+the fixture). These are NO LONGER byte-identical to the committed upstream .rc — they are
+source-derived adaptations. Tracked explicitly so it stays transparent which fixtures are
+pristine and which are adapted.
+
+  c_flow.rc — FLOW op (240 / 0xF0) was stale at 5 fields (RowLayout shape) while the current
+    ./androidx FlowLayout.apply/read encode 7 fields. Adapted: spliced 2 int fields
+    (maxItemsInEachRow, maxLines) immediately after the spacedBy float at FLOW-opcode-offset+21.
+    Both defaults = Integer.MAX_VALUE (0x7FFFFFFF), source-derived from FlowLayout. Doc length +8
+    (1037 -> 1045 bytes). FLOW op region: F0 | compId | animId | hPos | vPos | spacedBy |
+    7FFFFFFF | 7FFFFFFF | <next op 0x10>. Spec by assist (source-derived).
+    Verification: structural splice + spec-level FLOW-7 decode->re-encode byte-identical confirmed;
+    final codec decode->re-encode byte-identity to be confirmed once dev-2's FLOW-7 impl is in develop.
