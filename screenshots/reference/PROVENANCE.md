@@ -86,3 +86,12 @@ Captured on develop 167de86 (text-complete: c_text + ColorExpression + TextStyle
   MATCH their goldens → render completes despite the caught throw). ~14 gradient/color (procedure_gradient1-4, demo_graphs1,
   graph_graph2, stock, pie_chart, hydration_wave, thumb_wheel1/2, texture_basic, stock_sparkline, use_of_global) → 6b8a119
   (Color-Consumer fail-soft) target. ~11 clock/matrix/other (clocks, cube3d, winding, gmt, haptic, touch, impulse) = separate latent.
+
+## Golden round 6 (2026-06-26) — gradient/float-slot fix re-capture (dev-2 9a5422b, both platforms)
+9a5422b (resolve NaN var refs in PaintData bundle float slots) made gauge/gradient docs render proper fills/strokes on BOTH
+platforms (commonMain). Re-froze 11 Android goldens + re-rendered 11 iOS on 9a5422b (rebuilt iOS app):
+  stock_sparkline, hydration_wave, thumb_wheel2 (the 3 path-fill FAILs → now FILL, FLIP to PASS), + activity_rings,
+  battery_radial_gauge, calendar_heatmap_grid, moon_phase_dial, paths_demos, pressure_gauge, step_progress_arc, thumb_wheel1
+  (also improved: proper gradient/stroke instead of faint outlines/degenerate). All 11 current-A↔current-iOS = 96-99% PASS.
+- SLOT-FIDELITY verified: non-gradient docs (procedure_simple/c_box/maze/path) 0% diff unchanged; throws DROPPED 21→2; no
+  cursor-desync/shifted paint-ops. The float-slot fix is clean.
