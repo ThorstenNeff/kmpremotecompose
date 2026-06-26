@@ -72,19 +72,27 @@ internal class GeometryPaintDelegate(
         currentMatrix.translate(translateX, translateY)
     }
 
-    // ---- shapes ----
+    // ---- shapes (each pixel-emitting primitive bumps the honest-render draw counter, REM-8) ----
 
-    override fun drawRect(left: Float, top: Float, right: Float, bottom: Float) =
+    override fun drawRect(left: Float, top: Float, right: Float, bottom: Float) {
+        context.incrementDrawCount()
         canvas.drawRect(left, top, right, bottom, paint)
+    }
 
-    override fun drawCircle(centerX: Float, centerY: Float, radius: Float) =
+    override fun drawCircle(centerX: Float, centerY: Float, radius: Float) {
+        context.incrementDrawCount()
         canvas.drawCircle(Offset(centerX, centerY), radius, paint)
+    }
 
-    override fun drawLine(x1: Float, y1: Float, x2: Float, y2: Float) =
+    override fun drawLine(x1: Float, y1: Float, x2: Float, y2: Float) {
+        context.incrementDrawCount()
         canvas.drawLine(Offset(x1, y1), Offset(x2, y2), paint)
+    }
 
-    override fun drawOval(left: Float, top: Float, right: Float, bottom: Float) =
+    override fun drawOval(left: Float, top: Float, right: Float, bottom: Float) {
+        context.incrementDrawCount()
         canvas.drawOval(left, top, right, bottom, paint)
+    }
 
     override fun drawRoundRect(
         left: Float,
@@ -93,7 +101,10 @@ internal class GeometryPaintDelegate(
         bottom: Float,
         radiusX: Float,
         radiusY: Float,
-    ) = canvas.drawRoundRect(left, top, right, bottom, radiusX, radiusY, paint)
+    ) {
+        context.incrementDrawCount()
+        canvas.drawRoundRect(left, top, right, bottom, radiusX, radiusY, paint)
+    }
 
     override fun drawArc(
         left: Float,
@@ -102,7 +113,10 @@ internal class GeometryPaintDelegate(
         bottom: Float,
         startAngle: Float,
         sweepAngle: Float,
-    ) = canvas.drawArc(left, top, right, bottom, startAngle, sweepAngle, useCenter = false, paint)
+    ) {
+        context.incrementDrawCount()
+        canvas.drawArc(left, top, right, bottom, startAngle, sweepAngle, useCenter = false, paint)
+    }
 
     override fun drawSector(
         left: Float,
@@ -111,13 +125,17 @@ internal class GeometryPaintDelegate(
         bottom: Float,
         startAngle: Float,
         sweepAngle: Float,
-    ) = canvas.drawArc(left, top, right, bottom, startAngle, sweepAngle, useCenter = true, paint)
+    ) {
+        context.incrementDrawCount()
+        canvas.drawArc(left, top, right, bottom, startAngle, sweepAngle, useCenter = true, paint)
+    }
 
     // ---- bitmaps ----
 
     /** Draw the whole bitmap [id] into the destination rect. */
     override fun drawBitmap(id: Int, left: Float, top: Float, right: Float, bottom: Float) {
         val image = context.getBitmap(id) ?: return
+        context.incrementDrawCount()
         canvas.drawImageRect(
             image = image,
             srcOffset = IntOffset.Zero,
@@ -143,6 +161,7 @@ internal class GeometryPaintDelegate(
         cdId: Int,
     ) {
         val image = context.getBitmap(imageId) ?: return
+        context.incrementDrawCount()
         canvas.drawImageRect(
             image = image,
             srcOffset = IntOffset(srcLeft, srcTop),
@@ -155,11 +174,15 @@ internal class GeometryPaintDelegate(
 
     // ---- path geometry ----
 
-    override fun drawPath(id: Int, start: Float, end: Float) =
+    override fun drawPath(id: Int, start: Float, end: Float) {
+        context.incrementDrawCount()
         canvas.drawPath(PathGeometry.buildPath(context, id, start, end, deferredPaintTags), paint)
+    }
 
-    override fun drawTweenPath(path1Id: Int, path2Id: Int, tween: Float, start: Float, end: Float) =
+    override fun drawTweenPath(path1Id: Int, path2Id: Int, tween: Float, start: Float, end: Float) {
+        context.incrementDrawCount()
         canvas.drawPath(PathGeometry.buildTweenPath(context, path1Id, path2Id, tween, start, end), paint)
+    }
 
     /** Interpolate two paths' data and store the result under [out] (no draw). */
     override fun tweenPath(out: Int, path1: Int, path2: Int, tween: Float) {

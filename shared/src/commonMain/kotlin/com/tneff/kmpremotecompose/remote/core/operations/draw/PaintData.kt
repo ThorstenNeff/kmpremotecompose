@@ -18,6 +18,9 @@ package com.tneff.kmpremotecompose.remote.core.operations.draw
 import com.tneff.kmpremotecompose.remote.core.operations.Operation
 import com.tneff.kmpremotecompose.remote.core.operations.OperationReader
 import com.tneff.kmpremotecompose.remote.core.operations.Operations
+import com.tneff.kmpremotecompose.remote.player.core.PaintContext
+import com.tneff.kmpremotecompose.remote.player.core.PaintOperation
+import com.tneff.kmpremotecompose.remote.player.core.RemoteContext
 import com.tneff.kmpremotecompose.remote.wire.WireBuffer
 
 /**
@@ -36,7 +39,7 @@ import com.tneff.kmpremotecompose.remote.wire.WireBuffer
  * no wire bytes; it is out of REM-5 scope. A semantic builder for the common scalar attributes is
  * provided ([Builder]); the full attribute/gradient/shader set is deferred (creation layer).
  */
-class PaintData(val values: IntArray) : Operation {
+class PaintData(val values: IntArray) : PaintOperation {
 
     override val opcode: Int get() = Operations.PAINT_VALUES
 
@@ -44,6 +47,11 @@ class PaintData(val values: IntArray) : Operation {
         buffer.writeByte(opcode)
         buffer.writeInt(values.size)
         for (v in values) buffer.writeInt(v)
+    }
+
+    /** L2 render: dispatch to the geometry adapter via the paint context (REM-8). */
+    override fun paint(context: RemoteContext, paint: PaintContext) {
+        paint.applyPaint(this)
     }
 
     override fun dump(): String = "PAINT_VALUES count=${values.size}"

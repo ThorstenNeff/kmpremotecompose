@@ -18,6 +18,9 @@ package com.tneff.kmpremotecompose.remote.core.operations.draw
 import com.tneff.kmpremotecompose.remote.core.operations.Operation
 import com.tneff.kmpremotecompose.remote.core.operations.OperationReader
 import com.tneff.kmpremotecompose.remote.core.operations.Operations
+import com.tneff.kmpremotecompose.remote.player.core.PaintContext
+import com.tneff.kmpremotecompose.remote.player.core.PaintOperation
+import com.tneff.kmpremotecompose.remote.player.core.RemoteContext
 import com.tneff.kmpremotecompose.remote.wire.WireBuffer
 
 /**
@@ -32,7 +35,7 @@ class DrawCircle(
     val centerX: Float,
     val centerY: Float,
     val radius: Float,
-) : Operation {
+) : PaintOperation {
 
     override val opcode: Int get() = Operations.DRAW_CIRCLE
 
@@ -41,6 +44,11 @@ class DrawCircle(
         buffer.writeFloat(centerX)
         buffer.writeFloat(centerY)
         buffer.writeFloat(radius)
+    }
+
+    /** L2 render: dispatch to the geometry adapter via the paint context (REM-8). */
+    override fun paint(context: RemoteContext, paint: PaintContext) {
+        paint.drawCircle(centerX, centerY, radius)
     }
 
     override fun dump(): String = "DRAW_CIRCLE cx=$centerX cy=$centerY r=$radius"
