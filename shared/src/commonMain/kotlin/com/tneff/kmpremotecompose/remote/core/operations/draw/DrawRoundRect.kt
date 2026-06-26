@@ -21,6 +21,8 @@ import com.tneff.kmpremotecompose.remote.core.operations.Operations
 import com.tneff.kmpremotecompose.remote.player.core.PaintContext
 import com.tneff.kmpremotecompose.remote.player.core.PaintOperation
 import com.tneff.kmpremotecompose.remote.player.core.RemoteContext
+import com.tneff.kmpremotecompose.remote.player.core.VariableSupport
+import com.tneff.kmpremotecompose.remote.player.core.resolveCoord
 import com.tneff.kmpremotecompose.remote.wire.WireBuffer
 
 /**
@@ -36,9 +38,26 @@ class DrawRoundRect(
     val bottom: Float,
     val radiusX: Float,
     val radiusY: Float,
-) : PaintOperation {
+) : PaintOperation, VariableSupport {
 
     override val opcode: Int get() = Operations.DRAW_ROUND_RECT
+
+    // REM-36 E3: NaN data-var coords resolved at render time; raw fields untouched (byte-safe).
+    var rLeft: Float = left
+    var rTop: Float = top
+    var rRight: Float = right
+    var rBottom: Float = bottom
+    var rRadiusX: Float = radiusX
+    var rRadiusY: Float = radiusY
+
+    override fun updateVariables(context: RemoteContext) {
+        rLeft = context.resolveCoord(left)
+        rTop = context.resolveCoord(top)
+        rRight = context.resolveCoord(right)
+        rBottom = context.resolveCoord(bottom)
+        rRadiusX = context.resolveCoord(radiusX)
+        rRadiusY = context.resolveCoord(radiusY)
+    }
 
     override fun write(buffer: WireBuffer) {
         buffer.writeByte(opcode)
@@ -52,7 +71,7 @@ class DrawRoundRect(
 
     /** L2 render: dispatch to the geometry adapter via the paint context (REM-8). */
     override fun paint(context: RemoteContext, paint: PaintContext) {
-        paint.drawRoundRect(left, top, right, bottom, radiusX, radiusY)
+        paint.drawRoundRect(rLeft, rTop, rRight, rBottom, rRadiusX, rRadiusY)
     }
 
     override fun dump(): String = "DRAW_ROUND_RECT l=$left t=$top r=$right b=$bottom rx=$radiusX ry=$radiusY"

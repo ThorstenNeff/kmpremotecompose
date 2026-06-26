@@ -21,6 +21,8 @@ import com.tneff.kmpremotecompose.remote.core.operations.Operations
 import com.tneff.kmpremotecompose.remote.player.core.PaintContext
 import com.tneff.kmpremotecompose.remote.player.core.PaintOperation
 import com.tneff.kmpremotecompose.remote.player.core.RemoteContext
+import com.tneff.kmpremotecompose.remote.player.core.VariableSupport
+import com.tneff.kmpremotecompose.remote.player.core.resolveCoord
 import com.tneff.kmpremotecompose.remote.wire.WireBuffer
 
 /**
@@ -35,9 +37,20 @@ class DrawCircle(
     val centerX: Float,
     val centerY: Float,
     val radius: Float,
-) : PaintOperation {
+) : PaintOperation, VariableSupport {
 
     override val opcode: Int get() = Operations.DRAW_CIRCLE
+
+    // REM-36 E3: NaN data-var coords resolved at render time; raw fields untouched (byte-safe).
+    var rCenterX: Float = centerX
+    var rCenterY: Float = centerY
+    var rRadius: Float = radius
+
+    override fun updateVariables(context: RemoteContext) {
+        rCenterX = context.resolveCoord(centerX)
+        rCenterY = context.resolveCoord(centerY)
+        rRadius = context.resolveCoord(radius)
+    }
 
     override fun write(buffer: WireBuffer) {
         buffer.writeByte(opcode)
@@ -48,7 +61,7 @@ class DrawCircle(
 
     /** L2 render: dispatch to the geometry adapter via the paint context (REM-8). */
     override fun paint(context: RemoteContext, paint: PaintContext) {
-        paint.drawCircle(centerX, centerY, radius)
+        paint.drawCircle(rCenterX, rCenterY, rRadius)
     }
 
     override fun dump(): String = "DRAW_CIRCLE cx=$centerX cy=$centerY r=$radius"
