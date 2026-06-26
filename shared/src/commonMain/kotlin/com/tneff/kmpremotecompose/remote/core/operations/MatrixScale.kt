@@ -18,6 +18,8 @@ package com.tneff.kmpremotecompose.remote.core.operations
 import com.tneff.kmpremotecompose.remote.player.core.PaintContext
 import com.tneff.kmpremotecompose.remote.player.core.PaintOperation
 import com.tneff.kmpremotecompose.remote.player.core.RemoteContext
+import com.tneff.kmpremotecompose.remote.player.core.VariableSupport
+import com.tneff.kmpremotecompose.remote.player.core.resolveCoord
 import com.tneff.kmpremotecompose.remote.wire.WireBuffer
 
 /**
@@ -29,8 +31,25 @@ class MatrixScale(
     val scaleY: Float,
     val centerX: Float,
     val centerY: Float,
-) : PaintOperation {
+) : PaintOperation, VariableSupport {
     override val opcode: Int get() = Operations.MATRIX_SCALE
+
+    // REM-36 E3: NaN data-variable coords resolved at render time; raw fields untouched (byte-safe).
+    /** Render-resolved [scaleX] (REM-36 E3). */
+    var rScaleX: Float = scaleX
+    /** Render-resolved [scaleY] (REM-36 E3). */
+    var rScaleY: Float = scaleY
+    /** Render-resolved [centerX] (REM-36 E3). */
+    var rCenterX: Float = centerX
+    /** Render-resolved [centerY] (REM-36 E3). */
+    var rCenterY: Float = centerY
+
+    override fun updateVariables(context: RemoteContext) {
+        rScaleX = context.resolveCoord(scaleX)
+        rScaleY = context.resolveCoord(scaleY)
+        rCenterX = context.resolveCoord(centerX)
+        rCenterY = context.resolveCoord(centerY)
+    }
 
     override fun write(buffer: WireBuffer) {
         buffer.writeByte(opcode)
@@ -42,7 +61,7 @@ class MatrixScale(
 
     /** L2 render: drive the canvas transform via the paint context (REM-33). */
     override fun paint(context: RemoteContext, paint: PaintContext) {
-        paint.matrixScale(scaleX, scaleY, centerX, centerY)
+        paint.matrixScale(rScaleX, rScaleY, rCenterX, rCenterY)
     }
 
     override fun dump(): String = "MATRIX_SCALE s=[$scaleX,$scaleY] c=[$centerX,$centerY]"
