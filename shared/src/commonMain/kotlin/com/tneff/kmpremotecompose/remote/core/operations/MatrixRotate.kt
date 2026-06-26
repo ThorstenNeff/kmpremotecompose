@@ -15,13 +15,16 @@
  */
 package com.tneff.kmpremotecompose.remote.core.operations
 
+import com.tneff.kmpremotecompose.remote.player.core.PaintContext
+import com.tneff.kmpremotecompose.remote.player.core.PaintOperation
+import com.tneff.kmpremotecompose.remote.player.core.RemoteContext
 import com.tneff.kmpremotecompose.remote.wire.WireBuffer
 
 /**
  * Rotate the canvas matrix about a pivot (`MATRIX_ROTATE`).
  * Wire layout: opcode, `float rotate`, `float pivotX`, `float pivotY`.
  */
-class MatrixRotate(val rotate: Float, val pivotX: Float, val pivotY: Float) : Operation {
+class MatrixRotate(val rotate: Float, val pivotX: Float, val pivotY: Float) : PaintOperation {
     override val opcode: Int get() = Operations.MATRIX_ROTATE
 
     override fun write(buffer: WireBuffer) {
@@ -29,6 +32,11 @@ class MatrixRotate(val rotate: Float, val pivotX: Float, val pivotY: Float) : Op
         buffer.writeFloat(rotate)
         buffer.writeFloat(pivotX)
         buffer.writeFloat(pivotY)
+    }
+
+    /** L2 render: drive the canvas transform via the paint context (REM-33). */
+    override fun paint(context: RemoteContext, paint: PaintContext) {
+        paint.matrixRotate(rotate, pivotX, pivotY)
     }
 
     override fun dump(): String = "MATRIX_ROTATE r=$rotate pivot=[$pivotX,$pivotY]"

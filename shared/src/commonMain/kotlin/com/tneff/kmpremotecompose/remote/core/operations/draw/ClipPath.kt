@@ -18,6 +18,9 @@ package com.tneff.kmpremotecompose.remote.core.operations.draw
 import com.tneff.kmpremotecompose.remote.core.operations.Operation
 import com.tneff.kmpremotecompose.remote.core.operations.OperationReader
 import com.tneff.kmpremotecompose.remote.core.operations.Operations
+import com.tneff.kmpremotecompose.remote.player.core.PaintContext
+import com.tneff.kmpremotecompose.remote.player.core.PaintOperation
+import com.tneff.kmpremotecompose.remote.player.core.RemoteContext
 import com.tneff.kmpremotecompose.remote.wire.WireBuffer
 
 /**
@@ -28,7 +31,7 @@ import com.tneff.kmpremotecompose.remote.wire.WireBuffer
  * the path id (low 20 bits) and the region op (`>> 24`); we carry the raw packed int verbatim so it
  * round-trips byte-exact (bits 20–23 are preserved, which a decompose/recompose would drop).
  */
-class ClipPath(val packed: Int) : Operation {
+class ClipPath(val packed: Int) : PaintOperation {
 
     /** Path id — low 20 bits of [packed] (upstream `pack & 0xFFFFF`). */
     val id: Int get() = packed and 0xFFFFF
@@ -41,6 +44,11 @@ class ClipPath(val packed: Int) : Operation {
     override fun write(buffer: WireBuffer) {
         buffer.writeByte(opcode)
         buffer.writeInt(packed)
+    }
+
+    /** L2 render: bind this op to the paint context (REM-33). */
+    override fun paint(context: RemoteContext, paint: PaintContext) {
+        paint.clipPath(id, regionOp)
     }
 
     override fun dump(): String = "CLIP_PATH id=$id regionOp=$regionOp"

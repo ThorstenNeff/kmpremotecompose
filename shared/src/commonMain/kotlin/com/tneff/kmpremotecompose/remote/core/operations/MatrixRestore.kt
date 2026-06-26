@@ -15,12 +15,20 @@
  */
 package com.tneff.kmpremotecompose.remote.core.operations
 
+import com.tneff.kmpremotecompose.remote.player.core.PaintContext
+import com.tneff.kmpremotecompose.remote.player.core.PaintOperation
+import com.tneff.kmpremotecompose.remote.player.core.RemoteContext
 import com.tneff.kmpremotecompose.remote.wire.WireBuffer
 
 /** Restore the previously saved canvas matrix (`MATRIX_RESTORE`). Wire layout: opcode only. */
-class MatrixRestore : Operation {
+class MatrixRestore : PaintOperation {
     override val opcode: Int get() = Operations.MATRIX_RESTORE
     override fun write(buffer: WireBuffer) = buffer.writeByte(opcode)
+    /** L2 render: drive the canvas transform via the paint context (REM-33). */
+    override fun paint(context: RemoteContext, paint: PaintContext) {
+        paint.matrixRestore()
+    }
+
     override fun dump(): String = "MATRIX_RESTORE"
     override fun equals(other: Any?): Boolean = this === other || other is MatrixRestore
     override fun hashCode(): Int = Operations.MATRIX_RESTORE

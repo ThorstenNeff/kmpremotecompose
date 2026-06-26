@@ -18,6 +18,9 @@ package com.tneff.kmpremotecompose.remote.core.operations.draw
 import com.tneff.kmpremotecompose.remote.core.operations.Operation
 import com.tneff.kmpremotecompose.remote.core.operations.OperationReader
 import com.tneff.kmpremotecompose.remote.core.operations.Operations
+import com.tneff.kmpremotecompose.remote.player.core.PaintContext
+import com.tneff.kmpremotecompose.remote.player.core.PaintOperation
+import com.tneff.kmpremotecompose.remote.player.core.RemoteContext
 import com.tneff.kmpremotecompose.remote.wire.WireBuffer
 
 /**
@@ -32,7 +35,7 @@ class ClipRect(
     val y1: Float,
     val x2: Float,
     val y2: Float,
-) : Operation {
+) : PaintOperation {
 
     override val opcode: Int get() = Operations.CLIP_RECT
 
@@ -42,6 +45,11 @@ class ClipRect(
         buffer.writeFloat(y1)
         buffer.writeFloat(x2)
         buffer.writeFloat(y2)
+    }
+
+    /** L2 render: bind this op to the paint context (REM-33). */
+    override fun paint(context: RemoteContext, paint: PaintContext) {
+        paint.clipRect(x1, y1, x2, y2)
     }
 
     override fun dump(): String = "CLIP_RECT x1=$x1 y1=$y1 x2=$x2 y2=$y2"
