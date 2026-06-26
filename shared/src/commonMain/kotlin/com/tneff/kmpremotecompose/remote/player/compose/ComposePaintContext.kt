@@ -189,11 +189,14 @@ class ComposePaintContext(
     // --- text: dev-1 L2-S3 basis (CMP TextMeasurer/Paragraph via [textRenderer], → [canvas]) -----
 
     /**
-     * The CMP text engine, built lazily from the pass density. The [text] half needs the [canvas]; if
-     * none was bound (S1 scaffold usage), text draws are skipped. The run color/size come from the
-     * shared paint bundle — see the paint-state seam note on [ComposeTextRenderer].
+     * The CMP text engine, built lazily from the pass density and bound to the shared [paintState]
+     * (dev-2's single instance above) — so a `PAINT_VALUES` bundle that sets `TEXT_SIZE` and the
+     * geometry color reach the text renderer. The text half needs the [canvas]; if none was bound (S1
+     * scaffold usage), text draws are skipped.
      */
-    val textRenderer: ComposeTextRenderer by lazy { ComposeTextRenderer(context.density) }
+    val textRenderer: ComposeTextRenderer by lazy {
+        ComposeTextRenderer(context.density).also { it.paintState = paintState }
+    }
 
     override fun drawTextRun(
         textId: Int,

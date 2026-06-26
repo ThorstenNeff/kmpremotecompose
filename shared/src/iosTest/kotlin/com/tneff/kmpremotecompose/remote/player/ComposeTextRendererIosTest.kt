@@ -16,10 +16,13 @@
 package com.tneff.kmpremotecompose.remote.player
 
 import androidx.compose.ui.graphics.Canvas
+import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.ImageBitmap
+import androidx.compose.ui.graphics.Paint
 import com.tneff.kmpremotecompose.remote.core.operations.BitmapFontData
-import com.tneff.kmpremotecompose.remote.player.compose.ComposeTextRenderer
 import com.tneff.kmpremotecompose.remote.player.compose.ComposePaintContext
+import com.tneff.kmpremotecompose.remote.player.compose.ComposeTextRenderer
+import com.tneff.kmpremotecompose.remote.player.compose.PlayerPaintState
 import com.tneff.kmpremotecompose.remote.player.core.RemoteContext
 import kotlin.test.Test
 import kotlin.test.assertNotNull
@@ -92,6 +95,20 @@ class ComposeTextRendererIosTest {
         r.drawBitmapFontText(canvas(), font, "AAA", 0f, 20f) { id -> if (id == 7) glyphBitmap else null }
         // unknown chars are skipped, missing bitmap is tolerated (advance only).
         r.drawBitmapFontText(canvas(), font, "AxA", 0f, 20f) { null }
+    }
+
+    @Test
+    fun renderer_readsBoundPaintState_sizeAffectsMeasure() {
+        // Read-side of the S2↔S3 seam (proposal A) on the real backend: the bound PlayerPaintState's
+        // textSizePx drives the measured style. (Headless logic is in TextPaintStateReadSideTest.)
+        val r = ComposeTextRenderer(density = 2f)
+        val small = FloatArray(4)
+        r.getTextBounds("Hi", 0, -1, 0, small) // default 16sp
+        // dev-2's real PlayerPaintState: no-arg ctor + var props.
+        r.paintState = PlayerPaintState().apply { paint = Paint().apply { color = Color.Red }; textSizePx = 80f }
+        val big = FloatArray(4)
+        r.getTextBounds("Hi", 0, -1, 0, big)
+        assertTrue(big[2] > small[2], "larger textSizePx must widen the measured bounds")
     }
 
     @Test

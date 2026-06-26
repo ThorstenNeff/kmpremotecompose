@@ -51,7 +51,7 @@ import kotlin.math.roundToInt
  * [textStyle] is settable and defaults to black/16sp; basis renders with it. Parameter parity is
  * classified in [TEXT_PARAMETER_PARITY] — complex parity (GAP-1) is deferred to L2-D1.
  */
-class ComposeTextRenderer(density: Float) {
+class ComposeTextRenderer(private val density: Float) {
 
     private val measurer: TextMeasurer = TextMeasurer(
         defaultFontFamilyResolver = createFontFamilyResolver(),
@@ -59,8 +59,19 @@ class ComposeTextRenderer(density: Float) {
         defaultLayoutDirection = LayoutDirection.Ltr,
     )
 
-    /** Current text style (color/fontSize/decoration). See the paint-state seam note above. */
+    /** Fallback text style when no [paintState] is bound (color/fontSize). */
     var textStyle: TextStyle = TextStyle(color = Color.Black, fontSize = 16.sp)
+
+    /**
+     * The shared paint-state (S2↔S3 seam, proposal A). When bound, each run's color + size come from
+     * it ([deriveTextStyle]); until dev-2's real [PlayerPaintState] lands this reads the stub. Null ⇒
+     * fall back to [textStyle].
+     */
+    var paintState: PlayerPaintState? = null
+
+    /** The effective style for this draw: derived from [paintState] if bound, else [textStyle]. */
+    private fun currentStyle(): TextStyle =
+        paintState?.let { deriveTextStyle(it.paint.color, it.textSizePx, density, textStyle) } ?: textStyle
 
     /** Substring [start,end) of [text]; end == -1 (or past the end) means "to the end". */
     private fun slice(text: String, start: Int, end: Int): String {
@@ -75,7 +86,7 @@ class ComposeTextRenderer(density: Float) {
         if (run.isEmpty()) return
         val result = measurer.measure(
             text = run,
-            style = textStyle,
+            style = currentStyle(),
             layoutDirection = if (rtl) LayoutDirection.Rtl else LayoutDirection.Ltr,
         )
         // CMP paints from the top-left; shift so the run sits on the baseline at (x, y).
@@ -97,7 +108,7 @@ class ComposeTextRenderer(density: Float) {
             bounds[0] = 0f; bounds[1] = 0f; bounds[2] = 0f; bounds[3] = 0f
             return
         }
-        val result = measurer.measure(run, style = textStyle)
+        val result = measurer.measure(run, style = currentStyle())
         val baseline = result.firstBaseline
         bounds[0] = 0f
         bounds[1] = -baseline
@@ -123,7 +134,7 @@ class ComposeTextRenderer(density: Float) {
     ): ComputedTextLayout? {
         if (text == null) return null
         val run = slice(text, start, end)
-        val style = textStyle.copy(
+        val style = currentStyle().copy(
             textAlign = alignmentToTextAlign(alignment),
             letterSpacing = if (letterSpacing != 0f) letterSpacing.sp else textStyle.letterSpacing,
             lineHeight = if (lineHeightMultiplier > 0f) lineHeightMultiplier.em else textStyle.lineHeight,
@@ -214,6 +225,17 @@ class ComposeTextRenderer(density: Float) {
     }
 
     companion object {
+        /**
+         * Read-side of the paint-state seam (proposal A): derive a [TextStyle] from the shared state's
+         * text [color] + [textSizePx] (pixels → sp via [density]). Pure (no font backend) → headless-
+         * testable. letterSpacing/decoration come from the op params, not the bundle, so they stay on
+         * [base]. `textSizePx <= 0` keeps the base size.
+         */
+        fun deriveTextStyle(color: Color, textSizePx: Float, density: Float, base: TextStyle): TextStyle {
+            val fontSize = if (textSizePx > 0f) with(Density(density)) { textSizePx.toSp() } else base.fontSize
+            return base.copy(color = color, fontSize = fontSize)
+        }
+
         // Upstream TextLayout alignment constants.
         const val TEXT_ALIGN_LEFT = 1
         const val TEXT_ALIGN_RIGHT = 2
