@@ -1,41 +1,33 @@
 #!/usr/bin/env python3
 """parity_compare — Android-Golden <-> iOS-Render perzeptueller Pixel-Diff (test-2 Stufe-B-Harness).
 
-Vertrag (render-parity-tolerance.md §4b/§5): zwei Bilder gelten als parität, wenn die Cross-Skia-
-Divergenz im Toleranzband bleibt. Graduiertes Verdikt (PO-Call 2026-06-26):
+Verdikt (PO-Call 2026-06-26, verfeinert nach 1. Voll-Sweep):
+  BLANK  Android-Golden nahezu uniform + niedriger Breach → beide Plattformen blank: Parität trivial,
+         aber NICHT gerendert (kein Render-Beweis; aus der Render-Parität ausgeschlossen).
+  PASS   clean gerenderte Übereinstimmung: breachFrac<=GEOM_BUDGET AND maxClusterFrac<=CLUSTER_GUARD.
+  FAIL   echter struktureller Defekt: SOLIDER Breach-Block (maxClusterFrac>STRUCT_CLUSTER) ODER zu viel
+         diffuse Divergenz (breach>TEXT_BUDGET).
+  TEXT   diffus / thin-line (Font-AA, Gridlines, Shape-Outlines, 1px-Linien-Offset): kleiner Cluster
+         (kein solider Block) UND breach<=TEXT_BUDGET → erwartete Cross-Skia-Divergenz, Heatmap.
 
-  PASS   geometrie-clean: breachFrac <= GEOM_BUDGET  AND  maxClusterFrac <= CLUSTER_GUARD
-  TEXT   diffuse Font-/AA-Divergenz (erwartet, Android↔iOS verschiedene Text-Renderer): nicht clean,
-         aber **diffus** (Breach gestreut, kein kompakter Cluster) und breachFrac <= TEXT_BUDGET
-         → known-text-divergence, Heatmap, akzeptabel-pending-Review (kein FAIL).
-  FAIL   strukturell: konzentrierter Breach-Cluster (verschoben/fehlend/falsch-farbig) ODER zu viel Breach.
+**Struktur-Diskriminator = Cluster-FLÄCHE (maxClusterFrac), nicht Konnektivität:** ein solider
+divergenter Block hat große Fläche; thin-lines/Gridlines/Glyph-Kanten sind verbunden-aber-dünn →
+kleine Fläche → TEXT. (1. Sweep: anchored_text/moon_phases = 1px-Linien → TEXT; color/thumb_wheel2/
+bit_draw2 = solide Blöcke → FAIL.)
 
-Diffus vs strukturell **selbst-klassifiziert** über die Cluster-Konzentration (maxCluster/nBreach):
-diffuse Font-AA streut über viele Glyph-Kanten (kleiner größter Cluster); ein struktureller Defekt
-konzentriert sich in einem Block. → kein Doc-Listen-Pflege nötig.
-
-  PER_PIXEL_DELTA  Kanal-Delta-Schwelle (AA/ε darunter = "gleich")
-  GEOM_BUDGET      Frame-Budget clean-Geometrie (Cross-Skia-AA)
-  TEXT_BUDGET      Frame-Budget diffuse Text/Font (breiter)
-  CLUSTER_GUARD    max kompakter Cluster für clean-PASS
-  DIFFUSE_RATIO    maxCluster/nBreach-Schwelle: darunter = diffus (Text/AA), darüber = strukturell
-
-Density-Handling (PO-Call Option b): iOS-Render wird auf Android-Golden-Größe **resized** (Δ≤2px =
-reines dp-Density-Rounding iOS-Dichte 3 vs Android 2.625 — Host-Canvas-Artefakt, kein Content-Bug;
-Resize-within-±2px ist legitime Behandlung). Größerer Diff wird auch resized aber geflaggt; >2.25x = ERROR.
-
-Usage:  parity_compare.py <android.png> <ios.png> <doc> [--diff-out <dir>]
-Exit:   0 = PASS|TEXT, 1 = FAIL, 2 = ERROR
+Density (PO Option b): iOS->Android resize, <=2px = dp-Rounding silent, größer geflaggt, >2.25x ERROR.
+Usage: parity_compare.py <android.png> <ios.png> <doc> [--diff-out <dir>]
 """
 import sys
-from collections import deque
+from collections import deque, Counter
 from PIL import Image
 
-PER_PIXEL_DELTA = 8       # max Kanal-Delta, darunter = "gleich"
-GEOM_BUDGET     = 0.020   # 2.0% clean-Geometrie
-TEXT_BUDGET     = 0.150   # 15% diffuse Text/Font (breiter, Startwert — am 1. Text-Batch kalibrieren)
-CLUSTER_GUARD   = 0.005   # 0.5% max kompakter Cluster für clean-PASS
-DIFFUSE_RATIO   = 0.30    # maxClusterPx/nBreach < 0.30 = diffus (Text/AA), >= = strukturell
+PER_PIXEL_DELTA = 8       # Kanal-Delta-Schwelle (AA/ε darunter = "gleich")
+GEOM_BUDGET     = 0.020   # clean-Geometrie Frame-Budget
+TEXT_BUDGET     = 0.200   # diffuse/thin Budget (linien-/AA-schwere Docs)
+CLUSTER_GUARD   = 0.005   # max kompakter Cluster für clean-PASS
+STRUCT_CLUSTER  = 0.050   # maxClusterFrac > 5% = SOLIDER struktureller Block = echter Defekt
+BLANK_MODAL     = 0.995   # Android-Golden >99.5% eine Farbe = blank/nicht-gerendert
 
 
 def load_rgb(p):
@@ -53,11 +45,13 @@ def compare(android_path, ios_path, doc, diff_out=None):
             print(f"PARITY | {doc} | a={a.size} i={i.size} | verdict=ERROR reason=size-mismatch({ratio:.2f}x)")
             return "ERROR"
         i = i.resize(a.size, Image.LANCZOS)
-        note = (" (±2px-density-resize)" if abs(dw) <= 2 and abs(dh) <= 2
-                else f" (resized {ratio:.2f}x — GRÖSSER als ±2px, prüfen)")
+        note = (" (±2px-density)" if abs(dw) <= 2 and abs(dh) <= 2
+                else f" (resized {ratio:.2f}x>±2px PRÜFEN)")
     w, h = a.size
     total = w * h
     pa = a.load(); pi = i.load()
+    cnt = Counter(pa[x, y] for y in range(0, h, 3) for x in range(0, w, 3))
+    android_blank = cnt.most_common(1)[0][1] / max(1, sum(cnt.values())) > BLANK_MODAL
     breach = bytearray(total)
     nbreach = 0
     for y in range(h):
@@ -87,28 +81,29 @@ def compare(android_path, ios_path, doc, diff_out=None):
                 if size > max_cluster:
                     max_cluster = size
     cluster_frac = max_cluster / total
-    concentration = (max_cluster / nbreach) if nbreach else 0.0
 
-    if breach_frac <= GEOM_BUDGET and cluster_frac <= CLUSTER_GUARD:
+    if android_blank and breach_frac <= GEOM_BUDGET:
+        verdict = "BLANK"
+    elif breach_frac <= GEOM_BUDGET and cluster_frac <= CLUSTER_GUARD:
         verdict = "PASS"
-    elif concentration < DIFFUSE_RATIO and breach_frac <= TEXT_BUDGET:
-        verdict = "TEXT"          # diffuse Font/AA-Divergenz, akzeptabel-pending-Review
+    elif cluster_frac > STRUCT_CLUSTER:
+        verdict = "FAIL"
+    elif breach_frac <= TEXT_BUDGET:
+        verdict = "TEXT"
     else:
-        verdict = "FAIL"          # strukturell (konzentriert) oder zu viel Breach
+        verdict = "FAIL"
 
-    if verdict in ("TEXT", "FAIL"):
-        if diff_out:
-            heat = Image.new("RGB", (w, h), (0, 0, 0))
-            ph = heat.load()
-            for p in range(total):
-                if breach[p]:
-                    ph[p % w, p // w] = (255, 0, 0)
-            outp = f"{diff_out.rstrip('/')}/diff_{doc}.png"
-            heat.save(outp)
-            verdict += f" diff={outp}"
+    label = verdict
+    if verdict in ("TEXT", "FAIL", "BLANK") and diff_out:
+        heat = Image.new("RGB", (w, h), (0, 0, 0)); ph = heat.load()
+        for p in range(total):
+            if breach[p]:
+                ph[p % w, p // w] = (255, 0, 0)
+        outp = f"{diff_out.rstrip('/')}/diff_{doc}.png"; heat.save(outp)
+        label += f" diff={outp}"
     print(f"PARITY | {doc} | {w}x{h}{note} | breachFrac={breach_frac:.4f} "
-          f"maxClusterFrac={cluster_frac:.4f} conc={concentration:.2f} | verdict={verdict}")
-    return verdict.split()[0]
+          f"maxClusterFrac={cluster_frac:.4f}{' android-blank' if android_blank else ''} | verdict={label}")
+    return verdict
 
 
 if __name__ == "__main__":
@@ -117,4 +112,4 @@ if __name__ == "__main__":
         sys.exit(2)
     diff = sys.argv[sys.argv.index("--diff-out") + 1] if "--diff-out" in sys.argv else None
     v = compare(sys.argv[1], sys.argv[2], sys.argv[3], diff)
-    sys.exit({"PASS": 0, "TEXT": 0, "FAIL": 1, "ERROR": 2}.get(v, 2))
+    sys.exit({"PASS": 0, "TEXT": 0, "BLANK": 0, "FAIL": 1, "ERROR": 2}.get(v, 2))
