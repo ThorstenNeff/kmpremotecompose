@@ -35,6 +35,23 @@ class OpArgResolutionTest {
     /** A data-variable (NaN region 2) reference for variable [id]. */
     private fun dataVar(id: Int): Float = WireTypes.asNan(0x200000 or id)
 
+    /** A system-variable (NaN region 0, e.g. WINDOW_WIDTH/TIME) reference for variable [id]. */
+    private fun systemVar(id: Int): Float = WireTypes.asNan(id)
+
+    @Test
+    fun resolvesSystemVarCoords_region0_notJustDataVars() {
+        // REM-36 fix: system vars (region 0, e.g. WINDOW_WIDTH=300) must resolve in op fields too —
+        // gating on isDataVariable(region 2) alone left them as raw NaN → drawOval(…,NaN,NaN) → blank.
+        val ctx = RemoteContext()
+        val w = systemVar(5)
+        ctx.loadFloat(WireTypes.idFromNan(w), 300f)
+        val op = MatrixScale(w, dataVar(9).also { ctx.loadFloat(WireTypes.idFromNan(it), 2f) }, 1f, 1f)
+        op.updateVariables(ctx)
+        assertEquals(300f, op.rScaleX, "system var (region 0) resolved")
+        assertEquals(2f, op.rScaleY, "data var (region 2) still resolved")
+        assertEquals(1f, op.rCenterX, "literal passes through")
+    }
+
     @Test
     fun matrixOpsAreVariableSupport() {
         assertTrue(MatrixScale(1f, 1f, 0f, 0f) is VariableSupport)
