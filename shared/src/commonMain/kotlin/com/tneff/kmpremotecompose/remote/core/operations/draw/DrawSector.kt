@@ -21,6 +21,8 @@ import com.tneff.kmpremotecompose.remote.core.operations.Operations
 import com.tneff.kmpremotecompose.remote.player.core.PaintContext
 import com.tneff.kmpremotecompose.remote.player.core.PaintOperation
 import com.tneff.kmpremotecompose.remote.player.core.RemoteContext
+import com.tneff.kmpremotecompose.remote.player.core.VariableSupport
+import com.tneff.kmpremotecompose.remote.player.core.resolveCoord
 import com.tneff.kmpremotecompose.remote.wire.WireBuffer
 
 /**
@@ -36,9 +38,26 @@ class DrawSector(
     val bottom: Float,
     val startAngle: Float,
     val sweepAngle: Float,
-) : PaintOperation {
+) : PaintOperation, VariableSupport {
 
     override val opcode: Int get() = Operations.DRAW_SECTOR
+
+    // REM-36 E3: NaN data-var coords resolved at render time; raw fields untouched (byte-safe).
+    var rLeft: Float = left
+    var rTop: Float = top
+    var rRight: Float = right
+    var rBottom: Float = bottom
+    var rStartAngle: Float = startAngle
+    var rSweepAngle: Float = sweepAngle
+
+    override fun updateVariables(context: RemoteContext) {
+        rLeft = context.resolveCoord(left)
+        rTop = context.resolveCoord(top)
+        rRight = context.resolveCoord(right)
+        rBottom = context.resolveCoord(bottom)
+        rStartAngle = context.resolveCoord(startAngle)
+        rSweepAngle = context.resolveCoord(sweepAngle)
+    }
 
     override fun write(buffer: WireBuffer) {
         buffer.writeByte(opcode)
@@ -52,7 +71,7 @@ class DrawSector(
 
     /** L2 render: dispatch to the geometry adapter via the paint context (REM-8). */
     override fun paint(context: RemoteContext, paint: PaintContext) {
-        paint.drawSector(left, top, right, bottom, startAngle, sweepAngle)
+        paint.drawSector(rLeft, rTop, rRight, rBottom, rStartAngle, rSweepAngle)
     }
 
     override fun dump(): String =

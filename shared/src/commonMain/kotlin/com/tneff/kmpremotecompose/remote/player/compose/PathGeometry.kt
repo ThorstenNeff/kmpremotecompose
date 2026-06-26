@@ -19,6 +19,7 @@ import androidx.compose.ui.graphics.Path
 import androidx.compose.ui.graphics.PathFillType
 import androidx.compose.ui.graphics.PathOperation
 import com.tneff.kmpremotecompose.remote.player.core.RemoteContext
+import com.tneff.kmpremotecompose.remote.wire.WireTypes
 
 /**
  * REM-31 (L2-S2) — player-side path-geometry helpers layered on the raw state store ([RemoteContext]).
@@ -59,7 +60,7 @@ internal object PathGeometry {
         state.getPath(id)?.let { return it }
         val path = Path()
         val pathData = state.getPathData(id) ?: return path
-        FloatsToPath.genPath(path, pathData, start, end)
+        FloatsToPath.genPath(path, resolvePathData(state, pathData), start, end)
         when (state.getPathWinding(id)) {
             WINDING_EVEN_ODD -> path.fillType = PathFillType.EvenOdd
             WINDING_INVERSE_WINDING, WINDING_INVERSE_EVEN_ODD ->
@@ -94,12 +95,29 @@ internal object PathGeometry {
         start: Float,
         end: Float,
     ): Path {
-        val data1 = state.getPathData(path1Id) ?: return Path()
-        val data2 = state.getPathData(path2Id) ?: return Path()
+        val data1 = resolvePathData(state, state.getPathData(path1Id) ?: return Path())
+        val data2 = resolvePathData(state, state.getPathData(path2Id) ?: return Path())
         val merged = tweenPathData(data1, data2, tween)
         val path = Path()
         FloatsToPath.genPath(path, merged, start, end)
         return path
+    }
+
+    /**
+     * REM-36 E3 — resolve NaN **data-variable** elements of a path-data array against the store before
+     * the path is built, so paths with variable coordinates render non-degenerate. Command markers
+     * (region 0) and plain literals pass through unchanged; **operation/RPN** NaNs (region 3) are left
+     * as-is for the RPN evaluator (E2 / E-D2). Returns the original array when it holds no data-vars
+     * (no allocation for static paths).
+     */
+    private fun resolvePathData(state: RemoteContext, data: FloatArray): FloatArray {
+        var hasDataVar = false
+        for (f in data) if (WireTypes.isDataVariable(f)) { hasDataVar = true; break }
+        if (!hasDataVar) return data
+        return FloatArray(data.size) { i ->
+            val f = data[i]
+            if (WireTypes.isDataVariable(f)) state.getFloat(WireTypes.idFromNan(f)) else f
+        }
     }
 
     /**

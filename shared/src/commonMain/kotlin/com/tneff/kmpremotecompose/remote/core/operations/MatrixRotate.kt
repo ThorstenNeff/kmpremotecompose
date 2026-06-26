@@ -18,14 +18,30 @@ package com.tneff.kmpremotecompose.remote.core.operations
 import com.tneff.kmpremotecompose.remote.player.core.PaintContext
 import com.tneff.kmpremotecompose.remote.player.core.PaintOperation
 import com.tneff.kmpremotecompose.remote.player.core.RemoteContext
+import com.tneff.kmpremotecompose.remote.player.core.VariableSupport
+import com.tneff.kmpremotecompose.remote.player.core.resolveCoord
 import com.tneff.kmpremotecompose.remote.wire.WireBuffer
 
 /**
  * Rotate the canvas matrix about a pivot (`MATRIX_ROTATE`).
  * Wire layout: opcode, `float rotate`, `float pivotX`, `float pivotY`.
  */
-class MatrixRotate(val rotate: Float, val pivotX: Float, val pivotY: Float) : PaintOperation {
+class MatrixRotate(val rotate: Float, val pivotX: Float, val pivotY: Float) : PaintOperation, VariableSupport {
     override val opcode: Int get() = Operations.MATRIX_ROTATE
+
+    // REM-36 E3: NaN data-variable coords resolved at render time; raw fields untouched (byte-safe).
+    /** Render-resolved [rotate] (REM-36 E3). */
+    var rRotate: Float = rotate
+    /** Render-resolved [pivotX] (REM-36 E3). */
+    var rPivotX: Float = pivotX
+    /** Render-resolved [pivotY] (REM-36 E3). */
+    var rPivotY: Float = pivotY
+
+    override fun updateVariables(context: RemoteContext) {
+        rRotate = context.resolveCoord(rotate)
+        rPivotX = context.resolveCoord(pivotX)
+        rPivotY = context.resolveCoord(pivotY)
+    }
 
     override fun write(buffer: WireBuffer) {
         buffer.writeByte(opcode)
@@ -36,7 +52,7 @@ class MatrixRotate(val rotate: Float, val pivotX: Float, val pivotY: Float) : Pa
 
     /** L2 render: drive the canvas transform via the paint context (REM-33). */
     override fun paint(context: RemoteContext, paint: PaintContext) {
-        paint.matrixRotate(rotate, pivotX, pivotY)
+        paint.matrixRotate(rRotate, rPivotX, rPivotY)
     }
 
     override fun dump(): String = "MATRIX_ROTATE r=$rotate pivot=[$pivotX,$pivotY]"
