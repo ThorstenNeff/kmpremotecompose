@@ -17,6 +17,7 @@ package com.tneff.kmpremotecompose.remote.player.compose
 
 import androidx.compose.ui.graphics.Canvas
 import androidx.compose.ui.text.font.FontFamily
+import com.tneff.kmpremotecompose.remote.core.operations.BitmapFontData
 import com.tneff.kmpremotecompose.remote.core.operations.draw.PaintData
 import com.tneff.kmpremotecompose.remote.player.core.ComputedTextLayout
 import com.tneff.kmpremotecompose.remote.player.core.PaintContext
@@ -221,6 +222,22 @@ class ComposePaintContext(
 
     override fun drawTextOnPath(textId: Int, pathId: Int, hOffset: Float, vOffset: Float) {
         // Approximated/deferred (flagged): needs a built Path (dev-2) + PathMeasure — L2-D1 follow-on.
+    }
+
+    override fun drawBitmapFontText(
+        textId: Int,
+        bitmapFontId: Int,
+        start: Int, end: Int,
+        x: Float, y: Float,
+        glyphSpacing: Float,
+    ) {
+        val c = canvas ?: return
+        val r = textRenderer ?: return
+        val text = context.getText(textId) ?: return
+        val font = context.getFromId(bitmapFontId) as? BitmapFontData ?: return
+        val from = start.coerceIn(0, text.length)
+        val to = if (end < 0 || end > text.length) text.length else end.coerceIn(from, text.length)
+        r.drawBitmapFontText(c, font, text.substring(from, to), x, y, glyphSpacing) { context.getBitmap(it) }
     }
 
     override fun getTextBounds(textId: Int, start: Int, end: Int, flags: Int, bounds: FloatArray) {

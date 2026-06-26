@@ -15,6 +15,9 @@
  */
 package com.tneff.kmpremotecompose.remote.core.operations
 
+import com.tneff.kmpremotecompose.remote.player.core.PaintContext
+import com.tneff.kmpremotecompose.remote.player.core.PaintOperation
+import com.tneff.kmpremotecompose.remote.player.core.RemoteContext
 import com.tneff.kmpremotecompose.remote.wire.WireBuffer
 
 /**
@@ -26,12 +29,15 @@ import com.tneff.kmpremotecompose.remote.wire.WireBuffer
  *
  * The version is derived from kerning presence (mirrors upstream), so a decoded font re-encodes
  * byte-for-byte. Entry order is preserved.
+ *
+ * Render binding (REM-35 Inc2): a data op — [paint] registers this font under [id] so a
+ * `DrawBitmapFontText` op can resolve it (the DATA-op-must-dispatch rule, like `DATA_TEXT`).
  */
 class BitmapFontData(
     val id: Int,
     val glyphs: List<Glyph>,
     val kerning: List<KerningEntry> = emptyList(),
-) : Operation {
+) : Operation, PaintOperation {
 
     /** One glyph: the [chars] it renders, its [bitmapId], margins and bitmap size (all 16-bit). */
     data class Glyph(
@@ -76,6 +82,11 @@ class BitmapFontData(
                 buffer.writeShort(k.adjustment)
             }
         }
+    }
+
+    /** Register this font under [id] so `DrawBitmapFontText` can resolve it (data-op dispatch). */
+    override fun paint(context: RemoteContext, paint: PaintContext) {
+        context.putObject(id, this)
     }
 
     override fun dump(): String = "DATA_BITMAP_FONT id=$id glyphs=${glyphs.size} kerning=${kerning.size}"

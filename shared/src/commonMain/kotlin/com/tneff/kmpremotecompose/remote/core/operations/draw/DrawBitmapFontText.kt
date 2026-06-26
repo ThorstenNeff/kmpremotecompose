@@ -18,6 +18,9 @@ package com.tneff.kmpremotecompose.remote.core.operations.draw
 import com.tneff.kmpremotecompose.remote.core.operations.Operation
 import com.tneff.kmpremotecompose.remote.core.operations.OperationReader
 import com.tneff.kmpremotecompose.remote.core.operations.Operations
+import com.tneff.kmpremotecompose.remote.player.core.PaintContext
+import com.tneff.kmpremotecompose.remote.player.core.PaintOperation
+import com.tneff.kmpremotecompose.remote.player.core.RemoteContext
 import com.tneff.kmpremotecompose.remote.wire.WireBuffer
 
 /**
@@ -37,7 +40,7 @@ class DrawBitmapFontText(
     val x: Float,
     val y: Float,
     val glyphSpacing: Float,
-) : Operation {
+) : PaintOperation {
 
     override val opcode: Int get() = Operations.DRAW_BITMAP_FONT_TEXT_RUN
 
@@ -54,6 +57,11 @@ class DrawBitmapFontText(
         buffer.writeInt(end)
         buffer.writeFloat(x)
         buffer.writeFloat(y)
+    }
+
+    /** Render: the adapter resolves text [textId] + font [bitmapFontId] + glyph bitmaps from context. */
+    override fun paint(context: RemoteContext, paint: PaintContext) {
+        paint.drawBitmapFontText(textId, bitmapFontId, start, end, x, y, glyphSpacing)
     }
 
     override fun dump(): String =

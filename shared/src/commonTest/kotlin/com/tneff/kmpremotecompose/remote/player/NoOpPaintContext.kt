@@ -61,4 +61,5 @@ open class NoOpPaintContext(context: RemoteContext) : PaintContext(context) {
     override fun endGraphicsLayer() {}
     override fun reset() {}
     override fun drawToBitmap(bitmapId: Int, mode: Int, color: Int) {}
+        override fun drawBitmapFontText(textId: Int, bitmapFontId: Int, start: Int, end: Int, x: Float, y: Float, glyphSpacing: Float) {}
 }
