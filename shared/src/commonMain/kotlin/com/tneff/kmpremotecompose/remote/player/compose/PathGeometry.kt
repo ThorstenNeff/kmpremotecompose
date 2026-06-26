@@ -18,10 +18,10 @@ package com.tneff.kmpremotecompose.remote.player.compose
 import androidx.compose.ui.graphics.Path
 import androidx.compose.ui.graphics.PathFillType
 import androidx.compose.ui.graphics.PathOperation
-import com.tneff.kmpremotecompose.remote.player.core.RcRenderState
+import com.tneff.kmpremotecompose.remote.player.core.RemoteContext
 
 /**
- * REM-31 (L2-S2) — player-side path-geometry helpers layered on the raw state store ([RcRenderState]).
+ * REM-31 (L2-S2) — player-side path-geometry helpers layered on the raw state store ([RemoteContext]).
  * Re-implemented from upstream `PathUtils.getPath` / `ComposePaintContext` path handling.
  */
 internal object PathGeometry {
@@ -32,10 +32,10 @@ internal object PathGeometry {
     /**
      * Build (or fetch the cached) Compose [Path] for [id] over the fractional segment [[start], [end]].
      * Mirrors `RemoteComposeState.getPath(id, start, end)`: cache hit → return; else build the path
-     * from path-data via [FloatsToPath], apply even-odd fill type when [RcRenderState.getPathWinding]
+     * from path-data via [FloatsToPath], apply even-odd fill type when [RemoteContext.getPathWinding]
      * is `1`, and cache it.
      */
-    fun buildPath(state: RcRenderState, id: Int, start: Float, end: Float): Path {
+    fun buildPath(state: RemoteContext, id: Int, start: Float, end: Float): Path {
         state.getPath(id)?.let { return it }
         val path = Path()
         val pathData = state.getPathData(id) ?: return path
@@ -65,7 +65,7 @@ internal object PathGeometry {
 
     /** Build a Compose [Path] from interpolated path-data over the segment [[start], [end]]. */
     fun buildTweenPath(
-        state: RcRenderState,
+        state: RemoteContext,
         path1Id: Int,
         path2Id: Int,
         tween: Float,

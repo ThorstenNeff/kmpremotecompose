@@ -27,33 +27,30 @@ import androidx.compose.ui.graphics.PathMeasure
 import androidx.compose.ui.unit.IntOffset
 import androidx.compose.ui.unit.IntSize
 import com.tneff.kmpremotecompose.remote.core.operations.draw.PaintData
-import com.tneff.kmpremotecompose.remote.player.core.RcRenderState
+import com.tneff.kmpremotecompose.remote.player.core.RemoteContext
 import kotlin.math.PI
 import kotlin.math.atan2
 
 /**
- * REM-31 (L2-S2 Geometrie-Adapter) — the geometry/paint half of the CMP paint adapter, as an
- * independent **delegate** (PO-confirmed seam, 2026-06-26). dev-1's L2-S1 `ComposePaintContext` holds
- * the `PaintContext` surface + text (S3) and forwards the non-text primitives here; the public methods
- * mirror dev-1's `GeometryDelegate` interface (which itself mirrors `PaintContext`) 1:1, so the adapter
- * forwards trivially. Zero file overlap with S1/S3.
+ * REM-31 (L2-S2 Geometrie-Adapter) — the geometry/paint half of the CMP paint adapter. Implements
+ * dev-1's [GeometryDelegate] (PO's delegate seam, 2026-06-26): [ComposePaintContext] holds the
+ * `PaintContext` surface + text (S3) and forwards the non-text primitives to this component
+ * (`composePaintContext.geometry = GeometryPaintDelegate(context, canvas)`). Zero file overlap with S1/S3.
  *
  * Re-implemented from upstream `ComposePaintContext` against `androidx.compose.ui.graphics` — one impl
  * for Android **and** iOS (CMP-iOS = Skiko). No `java.*`; PROJECT_CONTEXT §5 honored.
  *
- * **Post-merge reconcile (on the PO's "S1 gemergt" ping):** declare `: GeometryDelegate`, swap the
- * [RcRenderState] stub for dev-1's concrete `RemoteContext` (same accessor names → call sites
- * unchanged). The bodies here are final.
- *
- * @param context the document state store (L2-S1 contract; [RcRenderState] is a build-against-stubs
- *   placeholder for dev-1's `RemoteContext`).
+ * @param context the document render state ([RemoteContext]) — resolves id-referenced paths/bitmaps;
+ *   built paths cache into its `pathCache` (distinct from raw path-data), so [PathGeometry.buildPath]
+ *   never clobbers the float data.
  * @param canvas the target canvas; `var` because the adapter may redirect it (drawToBitmap / graphics
  *   layer — deferred, see below).
  */
 internal class GeometryPaintDelegate(
-    private val context: RcRenderState,
+    private val context: RemoteContext,
     var canvas: Canvas,
-) {
+) : GeometryDelegate {
+
     /** Current paint; `var` so [reset] can swap a fresh instance (upstream behavior). */
     var paint: Paint = Paint()
 
@@ -61,35 +58,35 @@ internal class GeometryPaintDelegate(
     private val matrixStack = ArrayDeque<Matrix>().apply { addLast(Matrix()) }
     private val currentMatrix: Matrix get() = matrixStack.last()
 
-    /** Paint-bundle tags encountered but outside S2 scope (text/shader/texture/path-effect). */
+    /** Paint-bundle tags encountered but outside S2 scope (text/shader/texture/path-effect/fill+stroke). */
     val deferredPaintTags: MutableSet<String> = mutableSetOf()
 
     // ---- non-matrix transforms (upstream scale/translate) ----
 
-    fun scale(scaleX: Float, scaleY: Float) {
+    override fun scale(scaleX: Float, scaleY: Float) {
         canvas.scale(scaleX, scaleY)
     }
 
-    fun translate(translateX: Float, translateY: Float) {
+    override fun translate(translateX: Float, translateY: Float) {
         canvas.translate(translateX, translateY)
         currentMatrix.translate(translateX, translateY)
     }
 
     // ---- shapes ----
 
-    fun drawRect(left: Float, top: Float, right: Float, bottom: Float) =
+    override fun drawRect(left: Float, top: Float, right: Float, bottom: Float) =
         canvas.drawRect(left, top, right, bottom, paint)
 
-    fun drawCircle(centerX: Float, centerY: Float, radius: Float) =
+    override fun drawCircle(centerX: Float, centerY: Float, radius: Float) =
         canvas.drawCircle(Offset(centerX, centerY), radius, paint)
 
-    fun drawLine(x1: Float, y1: Float, x2: Float, y2: Float) =
+    override fun drawLine(x1: Float, y1: Float, x2: Float, y2: Float) =
         canvas.drawLine(Offset(x1, y1), Offset(x2, y2), paint)
 
-    fun drawOval(left: Float, top: Float, right: Float, bottom: Float) =
+    override fun drawOval(left: Float, top: Float, right: Float, bottom: Float) =
         canvas.drawOval(left, top, right, bottom, paint)
 
-    fun drawRoundRect(
+    override fun drawRoundRect(
         left: Float,
         top: Float,
         right: Float,
@@ -98,7 +95,7 @@ internal class GeometryPaintDelegate(
         radiusY: Float,
     ) = canvas.drawRoundRect(left, top, right, bottom, radiusX, radiusY, paint)
 
-    fun drawArc(
+    override fun drawArc(
         left: Float,
         top: Float,
         right: Float,
@@ -107,7 +104,7 @@ internal class GeometryPaintDelegate(
         sweepAngle: Float,
     ) = canvas.drawArc(left, top, right, bottom, startAngle, sweepAngle, useCenter = false, paint)
 
-    fun drawSector(
+    override fun drawSector(
         left: Float,
         top: Float,
         right: Float,
@@ -119,7 +116,7 @@ internal class GeometryPaintDelegate(
     // ---- bitmaps ----
 
     /** Draw the whole bitmap [id] into the destination rect. */
-    fun drawBitmap(id: Int, left: Float, top: Float, right: Float, bottom: Float) {
+    override fun drawBitmap(id: Int, left: Float, top: Float, right: Float, bottom: Float) {
         val image = context.getBitmap(id) ?: return
         canvas.drawImageRect(
             image = image,
@@ -133,7 +130,7 @@ internal class GeometryPaintDelegate(
 
     /** Draw a src sub-rect of bitmap [imageId] into a dst rect (the `cdId` content-desc is ignored here). */
     @Suppress("UNUSED_PARAMETER")
-    fun drawBitmap(
+    override fun drawBitmap(
         imageId: Int,
         srcLeft: Int,
         srcTop: Int,
@@ -158,21 +155,21 @@ internal class GeometryPaintDelegate(
 
     // ---- path geometry ----
 
-    fun drawPath(id: Int, start: Float, end: Float) =
+    override fun drawPath(id: Int, start: Float, end: Float) =
         canvas.drawPath(PathGeometry.buildPath(context, id, start, end), paint)
 
-    fun drawTweenPath(path1Id: Int, path2Id: Int, tween: Float, start: Float, end: Float) =
+    override fun drawTweenPath(path1Id: Int, path2Id: Int, tween: Float, start: Float, end: Float) =
         canvas.drawPath(PathGeometry.buildTweenPath(context, path1Id, path2Id, tween, start, end), paint)
 
     /** Interpolate two paths' data and store the result under [out] (no draw). */
-    fun tweenPath(out: Int, path1: Int, path2: Int, tween: Float) {
+    override fun tweenPath(out: Int, path1: Int, path2: Int, tween: Float) {
         val d1 = context.getPathData(path1) ?: return
         val d2 = context.getPathData(path2) ?: return
         context.putPathData(out, PathGeometry.tweenPathData(d1, d2, tween))
     }
 
     /** Boolean-combine two cached paths and store the result under [out] (no draw). */
-    fun combinePath(out: Int, path1: Int, path2: Int, operation: Byte) {
+    override fun combinePath(out: Int, path1: Int, path2: Int, operation: Byte) {
         val p1 = PathGeometry.buildPath(context, path1, 0f, 1f)
         val p2 = PathGeometry.buildPath(context, path2, 0f, 1f)
         context.putPath(out, PathGeometry.combinePaths(p1, p2, operation))
@@ -180,41 +177,41 @@ internal class GeometryPaintDelegate(
 
     // ---- paint ----
 
-    fun savePaint() {
+    override fun savePaint() {
         paintStack.addLast(paint.copyOf())
     }
 
-    fun restorePaint() {
+    override fun restorePaint() {
         if (paintStack.isNotEmpty()) paint = paintStack.removeLast()
     }
 
     /** Apply a Layer-1 `PAINT_VALUES` bundle ([PaintData]) onto the current paint. */
-    fun applyPaint(paint: PaintData) {
+    override fun applyPaint(paint: PaintData) {
         PaintBundleApplier.applyTo(this.paint, paint.values, deferred = deferredPaintTags)
     }
 
-    fun reset() {
+    override fun reset() {
         paint = Paint()
     }
 
     // ---- matrix ----
 
-    fun matrixSave() {
+    override fun matrixSave() {
         canvas.save()
         matrixStack.addLast(Matrix(currentMatrix.values.copyOf()))
     }
 
-    fun matrixRestore() {
+    override fun matrixRestore() {
         canvas.restore()
         if (matrixStack.size > 1) matrixStack.removeLast()
     }
 
-    fun matrixTranslate(translateX: Float, translateY: Float) {
+    override fun matrixTranslate(translateX: Float, translateY: Float) {
         canvas.translate(translateX, translateY)
         currentMatrix.translate(translateX, translateY)
     }
 
-    fun matrixScale(scaleX: Float, scaleY: Float, centerX: Float, centerY: Float) {
+    override fun matrixScale(scaleX: Float, scaleY: Float, centerX: Float, centerY: Float) {
         if (centerX.isNaN()) {
             canvas.scale(scaleX, scaleY)
         } else {
@@ -225,7 +222,7 @@ internal class GeometryPaintDelegate(
         }
     }
 
-    fun matrixRotate(rotate: Float, pivotX: Float, pivotY: Float) {
+    override fun matrixRotate(rotate: Float, pivotX: Float, pivotY: Float) {
         if (pivotX.isNaN()) {
             canvas.rotate(rotate)
         } else {
@@ -235,12 +232,12 @@ internal class GeometryPaintDelegate(
         }
     }
 
-    fun matrixSkew(skewX: Float, skewY: Float) {
+    override fun matrixSkew(skewX: Float, skewY: Float) {
         canvas.skew(skewX, skewY)
     }
 
     /** Concat a matrix derived from a position (and optional tangent rotation) along path [pathId]. */
-    fun matrixFromPath(pathId: Int, fraction: Float, vOffset: Float, flags: Int) {
+    override fun matrixFromPath(pathId: Int, fraction: Float, vOffset: Float, flags: Int) {
         val path = PathGeometry.buildPath(context, pathId, 0f, 1f)
         if (path.isEmpty) return
         val measure = PathMeasure().apply { setPath(path, false) }
@@ -261,16 +258,16 @@ internal class GeometryPaintDelegate(
 
     // ---- clip ----
 
-    fun clipRect(left: Float, top: Float, right: Float, bottom: Float) =
+    override fun clipRect(left: Float, top: Float, right: Float, bottom: Float) =
         canvas.clipRect(left, top, right, bottom, ClipOp.Intersect)
 
     /** Clip to a cached path; [regionOp] `1` (upstream `ClipPath.DIFFERENCE`) → difference, else intersect. */
-    fun clipPath(pathId: Int, regionOp: Int) {
+    override fun clipPath(pathId: Int, regionOp: Int) {
         val path = PathGeometry.buildPath(context, pathId, 0f, 1f)
         canvas.clipPath(path, if (regionOp == CLIP_DIFFERENCE) ClipOp.Difference else ClipOp.Intersect)
     }
 
-    fun roundedClipRect(
+    override fun roundedClipRect(
         width: Float,
         height: Float,
         topStart: Float,
@@ -293,19 +290,19 @@ internal class GeometryPaintDelegate(
     }
 
     // ---- graphics layer / drawToBitmap: GAP-4, deferred to L2-D2 (dev-2) ----
-    // 🚩 No-op stubs so the class satisfies dev-1's GeometryDelegate interface (post-merge
-    // `: GeometryDelegate`). Docs using these render without the layer/bitmap-redirect until D2.
+    // 🚩 No-op stubs satisfying GeometryDelegate; docs using these render without the layer/bitmap-
+    // redirect until D2. Recorded in deferredPaintTags so the gap is visible, not silent.
 
     @Suppress("UNUSED_PARAMETER")
-    fun startGraphicsLayer(w: Int, h: Int) { deferredPaintTags.add("GRAPHICS_LAYER") }
+    override fun startGraphicsLayer(w: Int, h: Int) { deferredPaintTags.add("GRAPHICS_LAYER") }
 
     @Suppress("UNUSED_PARAMETER")
-    fun setGraphicsLayer(attributes: Map<Int, Any?>) { deferredPaintTags.add("GRAPHICS_LAYER") }
+    override fun setGraphicsLayer(attributes: Map<Int, Any?>) { deferredPaintTags.add("GRAPHICS_LAYER") }
 
-    fun endGraphicsLayer() { /* deferred (L2-D2) */ }
+    override fun endGraphicsLayer() { /* deferred (L2-D2) */ }
 
     @Suppress("UNUSED_PARAMETER")
-    fun drawToBitmap(bitmapId: Int, mode: Int, color: Int) { deferredPaintTags.add("DRAW_TO_BITMAP") }
+    override fun drawToBitmap(bitmapId: Int, mode: Int, color: Int) { deferredPaintTags.add("DRAW_TO_BITMAP") }
 
     private companion object {
         const val CLIP_DIFFERENCE = 1

@@ -21,10 +21,11 @@ import androidx.compose.ui.graphics.ImageBitmap
 import androidx.compose.ui.graphics.Paint
 import androidx.compose.ui.graphics.PaintingStyle
 import androidx.compose.ui.graphics.Path
+import androidx.compose.ui.graphics.PathFillType
 import androidx.compose.ui.graphics.PathMeasure
 import androidx.compose.ui.graphics.StrokeCap
 import com.tneff.kmpremotecompose.remote.core.operations.draw.PaintData
-import com.tneff.kmpremotecompose.remote.player.core.RcRenderState
+import com.tneff.kmpremotecompose.remote.player.core.RemoteContext
 import com.tneff.kmpremotecompose.remote.wire.WireTypes
 import kotlin.test.Test
 import kotlin.test.assertEquals
@@ -33,31 +34,10 @@ import kotlin.test.assertTrue
 
 /**
  * REM-31 (L2-S2) — Skia-backed tests for the geometry adapter, run on the **iOS gate** (CMP-iOS =
- * Skiko), where real `Path`/`Paint`/`Canvas` are guaranteed. These exercise the actual CMP API path;
- * the jvm host run stays graphics-free. Full render parity is Maestro-verified later (S4).
+ * Skiko), where real `Path`/`Paint`/`Canvas` are guaranteed. Runs against dev-1's real [RemoteContext]
+ * (post-S1-merge reconcile). Full render parity is Maestro-verified later (S4).
  */
 class GeometryAdapterIosTest {
-
-    /**
-     * Build-against-stubs fake of dev-1's L2-S1 state store. **Two separate maps** for built paths
-     * vs raw path-data — mirrors dev-1's `pathCache` + `idObjects` split (assist reconcile note), so
-     * `buildPath`'s getPathData→build→putPath does not overwrite the float[].
-     */
-    private class FakeState : RcRenderState {
-        val paths = mutableMapOf<Int, Path>()
-        val pathData = mutableMapOf<Int, FloatArray>()
-        val bitmaps = mutableMapOf<Int, ImageBitmap>()
-        val winding = mutableMapOf<Int, Int>()
-        override fun getPath(id: Int) = paths[id]
-        override fun putPath(id: Int, path: Path) { paths[id] = path }
-        override fun getPathData(id: Int) = pathData[id]
-        override fun putPathData(id: Int, data: FloatArray) {
-            pathData[id] = data
-            paths.remove(id) // putPathData invalidates the cached built path (faithful to dev-1 contract)
-        }
-        override fun getPathWinding(id: Int) = winding[id] ?: 0
-        override fun getBitmap(id: Int) = bitmaps[id]
-    }
 
     private fun marker(cmd: Int) = WireTypes.asNan(cmd)
 
@@ -83,11 +63,11 @@ class GeometryAdapterIosTest {
 
     @Test
     fun buildPath_appliesEvenOddFillTypeWhenWindingIsOne() {
-        val state = FakeState()
-        state.pathData[1] = triangle()
-        state.winding[1] = 1 // even-odd
-        val path = PathGeometry.buildPath(state, 1, 0f, 1f)
-        assertEquals(androidx.compose.ui.graphics.PathFillType.EvenOdd, path.fillType)
+        val context = RemoteContext()
+        context.putPathData(1, triangle())
+        context.putPathWinding(1, 1) // even-odd
+        val path = PathGeometry.buildPath(context, 1, 0f, 1f)
+        assertEquals(PathFillType.EvenOdd, path.fillType)
     }
 
     @Test
@@ -159,15 +139,18 @@ class GeometryAdapterIosTest {
 
     @Test
     fun delegate_geometrySmokeAndPaintStack() {
-        val state = FakeState()
-        state.pathData[1] = triangle()
-        state.pathData[2] = floatArrayOf(
-            marker(FloatsToPath.MOVE), 2f, 2f,
-            marker(FloatsToPath.LINE), 2f, 2f, 12f, 2f,
-            marker(FloatsToPath.LINE), 12f, 2f, 12f, 12f,
-            marker(FloatsToPath.CLOSE),
+        val context = RemoteContext()
+        context.putPathData(1, triangle())
+        context.putPathData(
+            2,
+            floatArrayOf(
+                marker(FloatsToPath.MOVE), 2f, 2f,
+                marker(FloatsToPath.LINE), 2f, 2f, 12f, 2f,
+                marker(FloatsToPath.LINE), 12f, 2f, 12f, 12f,
+                marker(FloatsToPath.CLOSE),
+            ),
         )
-        val delegate = GeometryPaintDelegate(state, Canvas(ImageBitmap(32, 32)))
+        val delegate = GeometryPaintDelegate(context, Canvas(ImageBitmap(32, 32)))
 
         // Shapes / clip / matrix — smoke (no throw).
         delegate.drawRect(0f, 0f, 10f, 10f)
@@ -197,10 +180,10 @@ class GeometryAdapterIosTest {
         delegate.restorePaint()
         assertEquals(before, delegate.paint.color, "paint restored after pop")
 
-        // Path producers store results in the state.
+        // Path producers store results in the context.
         delegate.tweenPath(3, 1, 2, 0.5f)
-        assertTrue(state.pathData.containsKey(3), "tweenPath stored data under out id")
+        assertNotNull(context.getPathData(3), "tweenPath stored data under out id")
         delegate.combinePath(4, 1, 2, 3 /* union */)
-        assertTrue(state.paths.containsKey(4), "combinePath stored result path under out id")
+        assertNotNull(context.getPath(4), "combinePath stored result path under out id")
     }
 }
