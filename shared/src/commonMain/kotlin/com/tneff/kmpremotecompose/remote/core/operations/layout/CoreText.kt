@@ -18,10 +18,12 @@ package com.tneff.kmpremotecompose.remote.core.operations.layout
 import com.tneff.kmpremotecompose.remote.core.operations.Operation
 import com.tneff.kmpremotecompose.remote.core.operations.OperationReader
 import com.tneff.kmpremotecompose.remote.core.operations.Operations
+import com.tneff.kmpremotecompose.remote.core.operations.draw.PaintData
 import com.tneff.kmpremotecompose.remote.player.core.PaintContext
 import com.tneff.kmpremotecompose.remote.player.core.PaintOperation
 import com.tneff.kmpremotecompose.remote.player.core.RemoteContext
 import com.tneff.kmpremotecompose.remote.wire.WireBuffer
+import com.tneff.kmpremotecompose.remote.wire.WireTypes
 
 /**
  * `CORE_TEXT` (opcode [Operations.CORE_TEXT]) — a styled text component (ANDROIDX/WIDGETS overlay op).
@@ -60,8 +62,48 @@ class CoreText(
      */
     override fun paint(context: RemoteContext, paint: PaintContext) {
         if (!positioned || context.getText(textId) == null) return
+        paint.savePaint()
+        applyStyle(context, paint)
         paint.drawTextRun(textId, 0, -1, 0, 1, drawX, baselineY, false)
+        paint.restorePaint()
     }
+
+    /**
+     * Apply this component's TextStyle params (REM-37) to the shared paint state via the canonical
+     * `applyPaint` seam, so the text renderer draws/measures it styled: `P_COLOR`/`P_COLOR_ID` → text
+     * color (the colorId path chains the ColorExpression eval), `P_FONT_SIZE` → text size. Float params
+     * may be NaN variable refs → resolved against the store. Call inside save/restorePaint (caller).
+     * `P_FONT_STYLE`/`P_FONT_WEIGHT` → italic/weight via [PaintContext.applyTextStyle] (read by the renderer).
+     */
+    fun applyStyle(context: RemoteContext, paint: PaintContext) {
+        var color: Int? = null
+        var size = DEFAULT_FONT_SIZE // TextStyle default when no P_FONT_SIZE param (upstream = 36, not 16)
+        var fontStyle = 0 // 0 = normal, 1 = italic
+        var fontWeight = 0 // CSS 100–900, 0 = renderer default
+        for (p in params) when (p.id) {
+            // mirror upstream applyStyle's isDefault skip: default color (black) / colorId (-1) ⇒ leave renderer default.
+            P_COLOR -> intOf(p.value).let { if (it != DEFAULT_COLOR) color = it }
+            P_COLOR_ID -> intOf(p.value).let { if (it != DEFAULT_COLOR_ID) color = context.getColor(it) }
+            P_FONT_SIZE -> {
+                val raw = Float.fromBits(intOf(p.value))
+                size = if (raw.isNaN()) context.getFloat(WireTypes.idFromNan(raw)) else raw
+            }
+            P_FONT_STYLE -> fontStyle = intOf(p.value)
+            P_FONT_WEIGHT -> {
+                val raw = Float.fromBits(intOf(p.value))
+                fontWeight = (if (raw.isNaN()) context.getFloat(WireTypes.idFromNan(raw)) else raw).toInt()
+            }
+        }
+        val b = PaintData.Builder().textSize(size)
+        color?.let { b.color(it) }
+        paint.applyPaint(b.build())
+        paint.applyTextStyle(fontStyle, fontWeight) // italic/weight → paint state (read by the renderer; dev-1)
+    }
+
+    /** Big-endian int from a 4-byte param value (wire order). */
+    private fun intOf(v: ByteArray): Int =
+        (v[0].toInt() and 0xFF shl 24) or (v[1].toInt() and 0xFF shl 16) or
+            (v[2].toInt() and 0xFF shl 8) or (v[3].toInt() and 0xFF)
 
     /** One styled parameter: its TextStyle [id] and the raw value bytes exactly as on the wire. */
     class Param(val id: Int, val value: ByteArray) {
@@ -91,6 +133,18 @@ class CoreText(
     override fun hashCode(): Int = 31 * textId + params.hashCode()
 
     companion object : OperationReader {
+
+        // TextStyle param ids used for rendering (REM-37): color, colorId, fontSize, fontStyle, fontWeight.
+        private const val P_COLOR = 3
+        private const val P_COLOR_ID = 4
+        private const val P_FONT_SIZE = 5
+        private const val P_FONT_STYLE = 6
+        private const val P_FONT_WEIGHT = 7
+
+        // Upstream TextStyle defaults — params at these values mean "renderer default" (skip applying).
+        private const val DEFAULT_COLOR = 0xFF000000.toInt()
+        private const val DEFAULT_COLOR_ID = -1
+        private const val DEFAULT_FONT_SIZE = 36f
 
         // CommandParameters value-type codes (upstream CommandParameters.P_*/PA_*).
         private const val P_INT = 1

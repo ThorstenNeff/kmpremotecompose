@@ -25,6 +25,8 @@ import androidx.compose.ui.text.TextMeasurer
 import androidx.compose.ui.text.TextPainter
 import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.font.FontFamily
+import androidx.compose.ui.text.font.FontStyle
+import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextDecoration
 import androidx.compose.ui.text.style.TextOverflow
@@ -76,7 +78,9 @@ class ComposeTextRenderer(
 
     /** The effective style for this draw: derived from [paintState] if bound, else [textStyle]. */
     private fun currentStyle(): TextStyle =
-        paintState?.let { deriveTextStyle(it.paint.color, it.textSizePx, density, textStyle) } ?: textStyle
+        paintState?.let {
+            deriveTextStyle(it.paint.color, it.textSizePx, it.fontStyle, it.fontWeight, density, textStyle)
+        } ?: textStyle
 
     /** Substring [start,end) of [text]; end == -1 (or past the end) means "to the end". */
     private fun slice(text: String, start: Int, end: Int): String {
@@ -233,13 +237,26 @@ class ComposeTextRenderer(
     companion object {
         /**
          * Read-side of the paint-state seam (proposal A): derive a [TextStyle] from the shared state's
-         * text [color] + [textSizePx] (pixels → sp via [density]). Pure (no font backend) → headless-
-         * testable. letterSpacing/decoration come from the op params, not the bundle, so they stay on
-         * [base]. `textSizePx <= 0` keeps the base size.
+         * text [color] + [textSizePx] (px → sp via [density]) + **[fontStyle]/[fontWeight]** (the
+         * TextStyle-refinement seam). Pure (no font backend) → headless-testable. letterSpacing/
+         * decoration come from the op params, not the bundle, so they stay on [base]. `textSizePx <= 0`
+         * keeps the base size. `fontStyle` 0 = normal, 1 = italic; `fontWeight` CSS 100–900 (0 ⇒ base).
          */
-        fun deriveTextStyle(color: Color, textSizePx: Float, density: Float, base: TextStyle): TextStyle {
+        fun deriveTextStyle(
+            color: Color,
+            textSizePx: Float,
+            fontStyle: Int,
+            fontWeight: Int,
+            density: Float,
+            base: TextStyle,
+        ): TextStyle {
             val fontSize = if (textSizePx > 0f) with(Density(density)) { textSizePx.toSp() } else base.fontSize
-            return base.copy(color = color, fontSize = fontSize)
+            return base.copy(
+                color = color,
+                fontSize = fontSize,
+                fontStyle = if (fontStyle == 1) FontStyle.Italic else FontStyle.Normal,
+                fontWeight = if (fontWeight > 0) FontWeight(fontWeight) else base.fontWeight,
+            )
         }
 
         // Upstream TextLayout alignment constants.

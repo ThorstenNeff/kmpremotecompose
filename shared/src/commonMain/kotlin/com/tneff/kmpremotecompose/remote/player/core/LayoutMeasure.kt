@@ -202,8 +202,12 @@ internal object LayoutMeasure {
             // node.componentId == the CoreText.textId; getTextBounds fills [left, top, right, bottom].
             val pc = context.paintContext
             if (pc != null) {
+                // Apply the CoreText TextStyle (esp. font size) before measuring so bounds match the draw.
+                pc.savePaint()
+                node.coreText?.applyStyle(context, pc)
                 val b = FloatArray(4)
                 pc.getTextBounds(node.componentId, 0, -1, 0, b)
+                pc.restorePaint()
                 node.textLeft = b[0]; node.textTop = b[1]
                 node.w = b[2] - b[0]; node.h = b[3] - b[1]
             }

@@ -246,6 +246,12 @@ class ComposePaintContext(
         r.getTextBounds(text, start, end, flags, bounds)
     }
 
+    /** REM-37: stash the component's font style/weight in the shared paint state (read by the renderer). */
+    override fun applyTextStyle(fontStyle: Int, fontWeight: Int) {
+        paintState.fontStyle = fontStyle
+        paintState.fontWeight = fontWeight
+    }
+
     override fun layoutComplexText(
         textId: Int,
         start: Int, end: Int,
