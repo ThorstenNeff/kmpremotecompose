@@ -98,3 +98,12 @@ on current develop 517fd38 (fresh emulator boot, clean-install, race-guard sweep
   (Android doesn't fill the path-area/gradient, iOS does), NOT stale goldens. ColorExpression fixed colorIds but not these path/gradient
   fills. Route as real Android path-fill/gradient gap (or iOS over-fill — needs upstream reference), NOT a re-capture.
 - demo_bitmap (iOS bitmap) + flow_control (conditional) = deferred features (both platforms). The other 133 goldens unchanged.
+
+## Golden round 6 (2026-06-26) — gradient/float-slot fix re-capture (dev-2 9a5422b, both platforms)
+9a5422b (resolve NaN var refs in PaintData bundle float slots) made gauge/gradient docs render proper fills/strokes on BOTH
+platforms (commonMain). Re-froze 11 Android goldens + re-rendered 11 iOS on 9a5422b (rebuilt iOS app):
+  stock_sparkline, hydration_wave, thumb_wheel2 (the 3 path-fill FAILs → now FILL, FLIP to PASS), + activity_rings,
+  battery_radial_gauge, calendar_heatmap_grid, moon_phase_dial, paths_demos, pressure_gauge, step_progress_arc, thumb_wheel1
+  (also improved: proper gradient/stroke instead of faint outlines/degenerate). All 11 current-A↔current-iOS = 96-99% PASS.
+- SLOT-FIDELITY verified: non-gradient docs (procedure_simple/c_box/maze/path) 0% diff unchanged; throws DROPPED 21→2; no
+  cursor-desync/shifted paint-ops. The float-slot fix is clean.
