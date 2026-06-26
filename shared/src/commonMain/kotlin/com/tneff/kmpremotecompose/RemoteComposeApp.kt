@@ -89,6 +89,8 @@ fun RemoteComposeApp(loadRc: (String) -> ByteArray, modifier: Modifier = Modifie
             doc = DocumentReader.inflate(loadRc(docName))
         } catch (t: Throwable) {
             decodeError = "doc '$docName': ${t.message ?: "not found"}"
+            // REM-37 regression diagnosis: the swallowed throw is otherwise invisible — surface the stack.
+            println("RC-THROW decode '$docName': ${t.stackTraceToString()}")
         }
     }
 
@@ -141,6 +143,8 @@ fun RemoteComposeApp(loadRc: (String) -> ByteArray, modifier: Modifier = Modifie
                         if (!committed) committed = true
                     } catch (t: Throwable) {
                         if (renderError == null) renderError = t.message ?: "render failed"
+                        // REM-37 regression diagnosis: surface the swallowed render throw (stack).
+                        println("RC-THROW render '$docName': ${t.stackTraceToString()}")
                     }
                 }
             }
