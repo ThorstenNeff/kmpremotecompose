@@ -113,6 +113,19 @@ class ComposeTextRendererIosTest {
     }
 
     @Test
+    fun composePaintContext_bitmapFontText_resolvesFontAndBitmapsFromContext() {
+        // REM-35 Inc2: the adapter resolves text + font + glyph bitmaps from context, then blits (Skiko).
+        val context = RemoteContext()
+        context.putText(3, "AA")
+        context.putObject(9, BitmapFontData(id = 9, glyphs = listOf(BitmapFontData.Glyph("A", 7, 0, 0, 0, 0, 8, 10))))
+        context.putBitmap(7, ImageBitmap(8, 10))
+        val adapter = ComposePaintContext(context, canvas(), fontFamilyResolver = createFontFamilyResolver())
+        adapter.drawBitmapFontText(textId = 3, bitmapFontId = 9, start = 0, end = -1, x = 0f, y = 12f, glyphSpacing = 1f)
+        // missing font / missing canvas tolerated (no throw).
+        adapter.drawBitmapFontText(textId = 3, bitmapFontId = 404, start = 0, end = -1, x = 0f, y = 12f, glyphSpacing = 0f)
+    }
+
+    @Test
     fun composePaintContext_textHalf_rendersThroughTheAdapter() {
         val context = RemoteContext()
         context.putText(3, "Hi")

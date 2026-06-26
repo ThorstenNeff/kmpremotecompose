@@ -82,6 +82,7 @@ class PlayerFoundationTest {
         override fun setGraphicsLayer(attributes: Map<Int, Any?>) {}
         override fun endGraphicsLayer() {}
         override fun drawToBitmap(bitmapId: Int, mode: Int, color: Int) {}
+        override fun drawBitmapFontText(textId: Int, bitmapFontId: Int, start: Int, end: Int, x: Float, y: Float, glyphSpacing: Float) {}
     }
 
     /** A draw op stand-in: it is a [PaintOperation], so the walk must dispatch it. */

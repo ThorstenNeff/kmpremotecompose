@@ -139,6 +139,15 @@ abstract class PaintContext(context: RemoteContext) {
 
     abstract fun drawTextOnPath(textId: Int, pathId: Int, hOffset: Float, vOffset: Float)
 
+    /** Draw the [start,end) run of text [textId] with bitmap font [bitmapFontId] at baseline (x,y). */
+    abstract fun drawBitmapFontText(
+        textId: Int,
+        bitmapFontId: Int,
+        start: Int, end: Int,
+        x: Float, y: Float,
+        glyphSpacing: Float,
+    )
+
     /** Fill [bounds] (left,top,right,bottom) for the run; relative to a drawTextRun at x=0,y=0. */
     abstract fun getTextBounds(textId: Int, start: Int, end: Int, flags: Int, bounds: FloatArray)
 

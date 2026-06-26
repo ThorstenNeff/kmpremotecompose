@@ -180,6 +180,7 @@ class ComposeTextRenderer(
         text: String,
         x: Float,
         y: Float,
+        glyphSpacing: Float = 0f,
         bitmapById: (Int) -> ImageBitmap?,
     ) {
         if (text.isEmpty() || font.glyphs.isEmpty()) return
@@ -200,7 +201,7 @@ class ComposeTextRenderer(
                     canvas.drawImage(bmp, Offset(penX, y - glyph.bitmapHeight + glyph.marginTop), paint)
                 }
             }
-            penX += glyph.bitmapWidth + glyph.marginRight
+            penX += glyph.bitmapWidth + glyph.marginRight + glyphSpacing
             prevChars = glyph.chars
             i += glyph.chars.length
         }
