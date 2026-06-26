@@ -36,6 +36,28 @@ class EvalE2Test {
     private fun eval(vararg exp: Float): Float = RpnFloatEvaluator.eval(exp, exp.size, RemoteContext())
 
     @Test
+    fun ed3aOperators_matchUpstreamFormulas() {
+        assertEquals(8f, eval(2f, 3f, op(8)), "POW 2^3")
+        assertEquals(-1f, eval(-5f, op(11)), "SIGN(-) [cube3d]")
+        assertEquals(1f, eval(5f, op(11)), "SIGN(+)")
+        assertEquals(0f, eval(0f, op(11)), "SIGN(0)")
+        assertEquals(1f, eval(0f, op(13)), "EXP(0)")
+        assertEquals(2f, eval(2.7f, op(14)), "FLOOR")
+        assertEquals(2f, eval(100f, op(15)), "LOG10(100)")
+        assertEquals(0f, eval(1f, op(16)), "LN(1)")
+        assertEquals(3f, eval(2.5f, op(17)), "ROUND(2.5) [cube3d, half-up]")
+        assertEquals(2f, eval(2.4f, op(17)), "ROUND(2.4)")
+        assertEquals(57.29578f, eval(1f, op(29)), "DEG (×180/PI)")
+        assertEquals(180f * 0.017453292f, eval(180f, op(30)), "RAD (×PI/180)")
+    }
+
+    @Test
+    fun offsetBoundary_isVariableNotOperator() {
+        // `> OFFSET` (assist parity fix): id == OFFSET itself is not an operator → treated as a var ref.
+        assertEquals(0f, eval(op(0)), "asNan(OFFSET) resolves as an (unset) variable → 0, no throw")
+    }
+
+    @Test
     fun mvpOperators_matchUpstreamFormulas() {
         assertEquals(5f, eval(2f, 3f, op(1)), "ADD")
         assertEquals(2f, eval(5f, 3f, op(2)), "SUB")
@@ -75,8 +97,8 @@ class EvalE2Test {
     @Test
     fun floatExpression_nonMvpOperator_degradesToZero_noCrash() {
         val ctx = RemoteContext()
-        // POW (OFFSET+8) is not in the MVP subset → evaluator throws → apply falls back to 0f.
-        FloatExpression(id = 101, value = floatArrayOf(2f, 3f, op(8))).apply(ctx)
+        // LERP (OFFSET+49) is still outside the subset (E-D3b) → evaluator throws → apply falls back to 0f.
+        FloatExpression(id = 101, value = floatArrayOf(2f, 3f, op(49))).apply(ctx)
         assertEquals(0f, ctx.getFloat(101))
     }
 

@@ -18,8 +18,14 @@ package com.tneff.kmpremotecompose.remote.player.core
 import com.tneff.kmpremotecompose.remote.wire.WireTypes
 import kotlin.math.abs
 import kotlin.math.cos
+import kotlin.math.exp
+import kotlin.math.floor
+import kotlin.math.ln
+import kotlin.math.log10
 import kotlin.math.max
 import kotlin.math.min
+import kotlin.math.pow
+import kotlin.math.sign
 import kotlin.math.sin
 import kotlin.math.sqrt
 
@@ -29,8 +35,9 @@ import kotlin.math.sqrt
  * (pushed), a **data-variable** NaN ref (resolved from the [RemoteContext] store and pushed), or a
  * **math operator** NaN id (`>= OFFSET`, pops operands and pushes the result).
  *
- * **MVP operator subset (PO-scoped, survey-extensible):** ADD/SUB/MUL/DIV/MOD, MIN/MAX/CLAMP,
- * SQRT/ABS, SIN/COS. Operators outside the subset throw [IllegalArgumentException] — the caller
+ * **Operator subset (E2 MVP + E-D3a survey extension):** ADD/SUB/MUL/DIV/MOD, MIN/MAX/CLAMP, SQRT/ABS,
+ * SIN/COS, POW, SIGN, EXP, FLOOR, LOG, LN, ROUND, DEG, RAD (`SIGN`/`ROUND` unlock the cube3d rotation
+ * exprs). Operators outside the subset throw [IllegalArgumentException] — the caller
  * ([com.tneff.kmpremotecompose.remote.core.operations.FloatExpression]) degrades that expression to a
  * documented fallback rather than rendering a silently-wrong value. The full 65-operator set is E-D3.
  *
@@ -49,11 +56,24 @@ object RpnFloatEvaluator {
     private const val OP_MOD = OFFSET + 5
     private const val OP_MIN = OFFSET + 6
     private const val OP_MAX = OFFSET + 7
+    private const val OP_POW = OFFSET + 8
     private const val OP_SQRT = OFFSET + 9
     private const val OP_ABS = OFFSET + 10
+    private const val OP_SIGN = OFFSET + 11
+    private const val OP_EXP = OFFSET + 13
+    private const val OP_FLOOR = OFFSET + 14
+    private const val OP_LOG = OFFSET + 15
+    private const val OP_LN = OFFSET + 16
+    private const val OP_ROUND = OFFSET + 17
     private const val OP_SIN = OFFSET + 18
     private const val OP_COS = OFFSET + 19
     private const val OP_CLAMP = OFFSET + 27
+    private const val OP_DEG = OFFSET + 29
+    private const val OP_RAD = OFFSET + 30
+
+    // upstream radian/degree conversion factors.
+    private const val FP_TO_RAD = 57.29578f // 180/PI (DEG: radians → degrees)
+    private const val FP_TO_DEG = 0.017453292f // PI/180 (RAD: degrees → radians)
 
     /**
      * Evaluate the first [len] elements of [exp] against the [context] variable store. Returns the
@@ -67,7 +87,7 @@ object RpnFloatEvaluator {
             val v = exp[i]
             if (v.isNaN()) {
                 val id = WireTypes.fromNaN(v)
-                if (id >= OFFSET) {
+                if (id > OFFSET) { // upstream `pos > OFFSET` (operators start at OFFSET+1; OFFSET itself is undefined)
                     sp = opEval(stack, sp, id)
                 } else {
                     // data/normal/system variable reference → resolved value from the store
@@ -89,8 +109,17 @@ object RpnFloatEvaluator {
         OP_MIN -> { stack[sp - 1] = min(stack[sp - 1], stack[sp]); sp - 1 }
         OP_MAX -> { stack[sp - 1] = max(stack[sp - 1], stack[sp]); sp - 1 }
         OP_CLAMP -> { stack[sp - 2] = min(max(stack[sp - 2], stack[sp]), stack[sp - 1]); sp - 2 }
+        OP_POW -> { stack[sp - 1] = stack[sp - 1].pow(stack[sp]); sp - 1 }
         OP_SQRT -> { stack[sp] = sqrt(stack[sp]); sp }
         OP_ABS -> { stack[sp] = abs(stack[sp]); sp }
+        OP_SIGN -> { stack[sp] = sign(stack[sp]); sp }
+        OP_EXP -> { stack[sp] = exp(stack[sp].toDouble()).toFloat(); sp }
+        OP_FLOOR -> { stack[sp] = floor(stack[sp]); sp }
+        OP_LOG -> { stack[sp] = log10(stack[sp].toDouble()).toFloat(); sp }
+        OP_LN -> { stack[sp] = ln(stack[sp].toDouble()).toFloat(); sp }
+        OP_ROUND -> { stack[sp] = floor(stack[sp] + 0.5f); sp } // upstream Math.round = floor(x+0.5)
+        OP_DEG -> { stack[sp] = stack[sp] * FP_TO_RAD; sp }
+        OP_RAD -> { stack[sp] = stack[sp] * FP_TO_DEG; sp }
         OP_SIN -> { stack[sp] = sin(stack[sp].toDouble()).toFloat(); sp }
         OP_COS -> { stack[sp] = cos(stack[sp].toDouble()).toFloat(); sp }
         else -> throw IllegalArgumentException(
