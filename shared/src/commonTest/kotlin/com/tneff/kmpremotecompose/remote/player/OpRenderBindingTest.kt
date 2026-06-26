@@ -24,7 +24,11 @@ import com.tneff.kmpremotecompose.remote.core.operations.MatrixTranslate
 import com.tneff.kmpremotecompose.remote.core.operations.Operation
 import com.tneff.kmpremotecompose.remote.core.operations.draw.ClipPath
 import com.tneff.kmpremotecompose.remote.core.operations.draw.ClipRect
+import com.tneff.kmpremotecompose.remote.core.operations.draw.DrawTweenPath
+import com.tneff.kmpremotecompose.remote.core.operations.draw.PathAppend
+import com.tneff.kmpremotecompose.remote.core.operations.draw.PathCreate
 import com.tneff.kmpremotecompose.remote.core.operations.draw.PathData
+import com.tneff.kmpremotecompose.remote.core.operations.draw.PathTween
 import com.tneff.kmpremotecompose.remote.player.core.PaintOperation
 import kotlin.test.Test
 import kotlin.test.assertTrue
@@ -49,6 +53,11 @@ class OpRenderBindingTest {
             ClipRect(0f, 0f, 1f, 1f),
             ClipPath(packed = 0),
             PathData(1, intArrayOf()),
+            // REM-33 increment 2: procedural path ops (group-B).
+            PathCreate(1, 0f, 0f),
+            PathAppend(1, floatArrayOf()),
+            PathTween(2, 1, 1, 0.5f),
+            DrawTweenPath(1, 2, 0.5f, 0f, 1f),
         )
         for (op in ops) {
             assertTrue(op is PaintOperation, "${op::class.simpleName} must implement PaintOperation (REM-33)")

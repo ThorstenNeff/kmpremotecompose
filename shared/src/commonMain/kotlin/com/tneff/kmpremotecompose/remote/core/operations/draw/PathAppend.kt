@@ -18,6 +18,10 @@ package com.tneff.kmpremotecompose.remote.core.operations.draw
 import com.tneff.kmpremotecompose.remote.core.operations.Operation
 import com.tneff.kmpremotecompose.remote.core.operations.OperationReader
 import com.tneff.kmpremotecompose.remote.core.operations.Operations
+import com.tneff.kmpremotecompose.remote.wire.WireTypes
+import com.tneff.kmpremotecompose.remote.player.core.PaintContext
+import com.tneff.kmpremotecompose.remote.player.core.PaintOperation
+import com.tneff.kmpremotecompose.remote.player.core.RemoteContext
 import com.tneff.kmpremotecompose.remote.wire.WireBuffer
 
 /**
@@ -29,7 +33,7 @@ import com.tneff.kmpremotecompose.remote.wire.WireBuffer
 class PathAppend(
     val id: Int,
     val data: FloatArray,
-) : Operation {
+) : PaintOperation {
 
     override val opcode: Int get() = Operations.PATH_ADD
 
@@ -38,6 +42,16 @@ class PathAppend(
         buffer.writeInt(id)
         buffer.writeInt(data.size)
         for (v in data) buffer.writeFloat(v)
+    }
+
+    /** L2 render: single-pass data-apply — append commands onto the path (or RESET), upstream PathAppend (REM-33). */
+    override fun paint(context: RemoteContext, paint: PaintContext) {
+        if (data.isNotEmpty() && data[0].toRawBits() == WireTypes.asNan(17).toRawBits()) {
+            context.putPathData(id, FloatArray(0)) // upstream RESET (= asNan(17)) clears the path
+            return
+        }
+        val existing = context.getPathData(id)
+        context.putPathData(id, if (existing != null) existing + data else data)
     }
 
     override fun dump(): String = "PATH_ADD id=$id data=${data.size}"

@@ -18,6 +18,10 @@ package com.tneff.kmpremotecompose.remote.core.operations.draw
 import com.tneff.kmpremotecompose.remote.core.operations.Operation
 import com.tneff.kmpremotecompose.remote.core.operations.OperationReader
 import com.tneff.kmpremotecompose.remote.core.operations.Operations
+import com.tneff.kmpremotecompose.remote.wire.WireTypes
+import com.tneff.kmpremotecompose.remote.player.core.PaintContext
+import com.tneff.kmpremotecompose.remote.player.core.PaintOperation
+import com.tneff.kmpremotecompose.remote.player.core.RemoteContext
 import com.tneff.kmpremotecompose.remote.wire.WireBuffer
 
 /**
@@ -30,7 +34,7 @@ class PathCreate(
     val id: Int,
     val startX: Float,
     val startY: Float,
-) : Operation {
+) : PaintOperation {
 
     override val opcode: Int get() = Operations.PATH_CREATE
 
@@ -39,6 +43,12 @@ class PathCreate(
         buffer.writeInt(id)
         buffer.writeFloat(startX)
         buffer.writeFloat(startY)
+    }
+
+    /** L2 render: single-pass data-apply — create the path with its initial moveTo (REM-33). */
+    override fun paint(context: RemoteContext, paint: PaintContext) {
+        // upstream PathCreate: mFloatPath = [MOVE_NAN, startX, startY] (PathData.MOVE = 10).
+        context.putPathData(id, floatArrayOf(WireTypes.asNan(10), startX, startY))
     }
 
     override fun dump(): String = "PATH_CREATE id=$id startX=$startX startY=$startY"

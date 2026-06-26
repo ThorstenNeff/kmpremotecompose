@@ -18,6 +18,10 @@ package com.tneff.kmpremotecompose.remote.core.operations.draw
 import com.tneff.kmpremotecompose.remote.core.operations.Operation
 import com.tneff.kmpremotecompose.remote.core.operations.OperationReader
 import com.tneff.kmpremotecompose.remote.core.operations.Operations
+import com.tneff.kmpremotecompose.remote.player.compose.PathGeometry
+import com.tneff.kmpremotecompose.remote.player.core.PaintContext
+import com.tneff.kmpremotecompose.remote.player.core.PaintOperation
+import com.tneff.kmpremotecompose.remote.player.core.RemoteContext
 import com.tneff.kmpremotecompose.remote.wire.WireBuffer
 
 /**
@@ -31,7 +35,7 @@ class PathTween(
     val pathId1: Int,
     val pathId2: Int,
     val tween: Float,
-) : Operation {
+) : PaintOperation {
 
     override val opcode: Int get() = Operations.PATH_TWEEN
 
@@ -41,6 +45,13 @@ class PathTween(
         buffer.writeInt(pathId1)
         buffer.writeInt(pathId2)
         buffer.writeFloat(tween)
+    }
+
+    /** L2 render: single-pass — interpolate two paths' data into the out id (REM-33). */
+    override fun paint(context: RemoteContext, paint: PaintContext) {
+        val d1 = context.getPathData(pathId1) ?: return
+        val d2 = context.getPathData(pathId2) ?: return
+        context.putPathData(outId, PathGeometry.tweenPathData(d1, d2, tween))
     }
 
     override fun dump(): String = "PATH_TWEEN outId=$outId pathId1=$pathId1 pathId2=$pathId2 tween=$tween"
