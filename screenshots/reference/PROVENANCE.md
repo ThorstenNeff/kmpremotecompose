@@ -86,3 +86,15 @@ Captured on develop 167de86 (text-complete: c_text + ColorExpression + TextStyle
   MATCH their goldens → render completes despite the caught throw). ~14 gradient/color (procedure_gradient1-4, demo_graphs1,
   graph_graph2, stock, pie_chart, hydration_wave, thumb_wheel1/2, texture_basic, stock_sparkline, use_of_global) → 6b8a119
   (Color-Consumer fail-soft) target. ~11 clock/matrix/other (clocks, cube3d, winding, gmt, haptic, touch, impulse) = separate latent.
+
+## Golden round 5 (2026-06-26) — re-capture stale goldens on current develop 517fd38 (post ColorExpression+TextStyle+colorseed)
+The round-3 goldens (frozen on 0ea4a90) predated ColorExpression/TextStyle/colorseed merges → some stale. Re-captured all 140
+on current develop 517fd38 (fresh emulator boot, clean-install, race-guard sweep); 7 had changed → re-frozen current:
+  color, color_list, color_table (ColorExpression now resolves colorIds → matches iOS), pie_chart, c_modifier_align_by_baseline,
+  c_text_auto_size (TextStyle), c_fit_box.
+- color FAIL → FIXED (was stale golden; current-Android now resolves colors = current-iOS).
+- VERIFY-DON'T-TRUST CATCH: dev-2's "4 color-cluster FAILs all stale" holds ONLY for `color`. stock_sparkline(65%), hydration_wave(82%),
+  thumb_wheel2(33%) are UNCHANGED on current develop and STILL diverge from current-iOS → GENUINE current cross-platform divergences
+  (Android doesn't fill the path-area/gradient, iOS does), NOT stale goldens. ColorExpression fixed colorIds but not these path/gradient
+  fills. Route as real Android path-fill/gradient gap (or iOS over-fill — needs upstream reference), NOT a re-capture.
+- demo_bitmap (iOS bitmap) + flow_control (conditional) = deferred features (both platforms). The other 133 goldens unchanged.
