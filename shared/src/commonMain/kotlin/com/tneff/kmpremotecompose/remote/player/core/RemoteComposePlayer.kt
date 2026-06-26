@@ -77,6 +77,10 @@ class RemoteComposePlayer(val context: RemoteContext = RemoteContext()) {
                 paint.scale(sx, sy)
             }
         }
+        // Layout-measure pass (REM-37 E-Layout, dev-2) — AFTER scale-setup, BEFORE the eval phase, so a
+        // `ComponentValue`'s measured dimension (e.g. server_clock #43/44) is in the store when the
+        // FloatExpressions that reference it evaluate. Measures in doc-space; safe no-op without a tree.
+        LayoutMeasure.measure(document, surfaceWidth, surfaceHeight, context)
         // Phase A (REM-36 Eval-Engine E1): resolve + evaluate variables BEFORE painting, so draw ops
         // read already-resolved values (the long-flagged "deferred apply-phase"). MVP evaluates every
         // VariableSupport op each frame (no dirty tracking). updateVariables (resolve NaN refs) then
