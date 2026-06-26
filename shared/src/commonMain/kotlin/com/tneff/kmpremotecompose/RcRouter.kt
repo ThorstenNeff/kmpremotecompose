@@ -31,20 +31,31 @@ object RcRouter {
     /** The default bundled fixture rendered without any deep-link (contract §2A). */
     const val DEFAULT_DOC: String = "procedure_simple1"
 
+    /**
+     * Path-safe sentinel for a deep-link that *carried* an `rc` value which was blank or contained
+     * invalid characters. It deliberately matches no bundled asset → the load fails → deterministic
+     * `rc-error` instead of a silent fallback (REM-34 rc-doc-anchor hardening, test-2). Charset-valid
+     * (no `/` or `..`) so it can never escape the `rc/` dir.
+     */
+    const val UNKNOWN_DOC: String = "__unknown__"
+
     /** The currently selected bundled doc name (no extension). Observed by `RemoteComposeApp`. */
     var docName: String by mutableStateOf(DEFAULT_DOC)
         private set
 
     /**
-     * Select a bundled doc by name from a deep-link. **Sanitized to the bundled-asset charset**
-     * (`[A-Za-z0-9_-]`) so a hostile/typo URI can't escape the `rc/` asset dir (path traversal); a
-     * rejected/blank name leaves the current selection unchanged. A *valid but unknown* name is
-     * accepted and surfaces as `rc-error` at load (the honest "unknown doc" signal).
+     * Select a bundled doc by name from a deep-link. **Deterministic** unknown-handling (test-2 fix):
+     * - `null` (no `rc` query param — a normal launch, or a param-less deep-link) → keep the current
+     *   selection, so the default-launch render (contract §2A) is preserved.
+     * - a non-null name that is blank or outside the bundled-asset charset (`[A-Za-z0-9_-]`, which also
+     *   blocks `rc/` path-traversal) → [UNKNOWN_DOC] → load fails → `rc-error` (never a silent fallback).
+     * - a valid name (known or unknown) → selected; an unknown one surfaces as `rc-error` at load.
+     *
+     * So `rc-doc` only ever carries a real, actually-rendered doc; a bad deep-link is always `rc-error`.
      */
     fun select(name: String?) {
-        val n = name?.trim().orEmpty()
-        if (n.isNotEmpty() && n.all { it.isLetterOrDigit() || it == '_' || it == '-' }) {
-            docName = n
-        }
+        if (name == null) return // no rc param → keep current (default-launch path)
+        val n = name.trim()
+        docName = if (n.isNotEmpty() && n.all { it.isLetterOrDigit() || it == '_' || it == '-' }) n else UNKNOWN_DOC
     }
 }
