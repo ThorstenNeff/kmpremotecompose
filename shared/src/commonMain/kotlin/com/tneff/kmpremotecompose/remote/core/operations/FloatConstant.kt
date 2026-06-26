@@ -15,6 +15,8 @@
  */
 package com.tneff.kmpremotecompose.remote.core.operations
 
+import com.tneff.kmpremotecompose.remote.player.core.RemoteContext
+import com.tneff.kmpremotecompose.remote.player.core.VariableSupport
 import com.tneff.kmpremotecompose.remote.wire.WireBuffer
 
 /**
@@ -22,8 +24,11 @@ import com.tneff.kmpremotecompose.remote.wire.WireBuffer
  *
  * Wire layout: opcode, `int id`, `float value`. The value is written with raw bits, so a NaN-encoded
  * id passed as the value survives byte-for-byte (see [WireBuffer.writeFloat]).
+ *
+ * Eval-Engine E1 (Stufe-min): a producer — [apply] loads [value] into the float store under [id], so a
+ * coord that is the NaN data-variable `asNan(id)` resolves to this value in the paint phase.
  */
-class FloatConstant(val id: Int, val value: Float) : Operation {
+class FloatConstant(val id: Int, val value: Float) : Operation, VariableSupport {
 
     override val opcode: Int get() = Operations.DATA_FLOAT
 
@@ -31,6 +36,11 @@ class FloatConstant(val id: Int, val value: Float) : Operation {
         buffer.writeByte(opcode)
         buffer.writeInt(id)
         buffer.writeFloat(value)
+    }
+
+    /** Load the constant into the float store (upstream `DATA_FLOAT.apply` → `loadFloat`). */
+    override fun apply(context: RemoteContext) {
+        context.loadFloat(id, value)
     }
 
     override fun dump(): String = "DATA_FLOAT id=$id value=$value"
