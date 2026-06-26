@@ -18,6 +18,9 @@ package com.tneff.kmpremotecompose.remote.core.operations.layout
 import com.tneff.kmpremotecompose.remote.core.operations.Operation
 import com.tneff.kmpremotecompose.remote.core.operations.OperationReader
 import com.tneff.kmpremotecompose.remote.core.operations.Operations
+import com.tneff.kmpremotecompose.remote.player.core.PaintContext
+import com.tneff.kmpremotecompose.remote.player.core.PaintOperation
+import com.tneff.kmpremotecompose.remote.player.core.RemoteContext
 import com.tneff.kmpremotecompose.remote.wire.WireBuffer
 
 /**
@@ -37,7 +40,28 @@ import com.tneff.kmpremotecompose.remote.wire.WireBuffer
 class CoreText(
     val textId: Int,
     val params: List<Param>,
-) : Operation {
+) : Operation, PaintOperation {
+
+    // REM-37 c_text: render-only draw origin set by LayoutMeasure — x = measured left − text bounds.left,
+    // baselineY = measured top − text bounds.top (the negative ascent). Not serialized → byte-safe.
+    private var drawX = 0f
+    private var baselineY = 0f
+    private var positioned = false
+
+    /** Called by [com.tneff.kmpremotecompose.remote.player.core.LayoutMeasure] with the measured origin. */
+    fun setTextDraw(x: Float, baseline: Float) {
+        drawX = x; baselineY = baseline; positioned = true
+    }
+
+    /**
+     * Emit the component text at its measured position (REM-37 c_text): a single-line run at the baseline
+     * via the text renderer (mirrors upstream `CoreText.paintingComponent` → `drawTextRun`). The text must
+     * already be loaded (DATA_TEXT ran earlier in the walk / the measure pre-load).
+     */
+    override fun paint(context: RemoteContext, paint: PaintContext) {
+        if (!positioned || context.getText(textId) == null) return
+        paint.drawTextRun(textId, 0, -1, 0, 1, drawX, baselineY, false)
+    }
 
     /** One styled parameter: its TextStyle [id] and the raw value bytes exactly as on the wire. */
     class Param(val id: Int, val value: ByteArray) {

@@ -17,7 +17,9 @@ package com.tneff.kmpremotecompose.remote.player.core
 
 import com.tneff.kmpremotecompose.remote.core.document.RemoteComposeDocument
 import com.tneff.kmpremotecompose.remote.core.operations.ComponentValue
+import com.tneff.kmpremotecompose.remote.core.operations.TextData
 import com.tneff.kmpremotecompose.remote.core.operations.layout.BackgroundModifier
+import com.tneff.kmpremotecompose.remote.core.operations.layout.CoreText
 import com.tneff.kmpremotecompose.remote.core.operations.layout.BorderModifier
 import com.tneff.kmpremotecompose.remote.core.operations.layout.BoxLayout
 import com.tneff.kmpremotecompose.remote.core.operations.layout.ComponentStart
@@ -77,12 +79,16 @@ internal object LayoutMeasure {
     private const val SPACE_EVENLY = 7
     private const val SPACE_AROUND = 8
 
-    private enum class Kind { ROOT, BOX, ROW, COLUMN, CONTENT, COMPONENT }
+    private enum class Kind { ROOT, BOX, ROW, COLUMN, CONTENT, COMPONENT, TEXT }
 
     private class Node(val componentId: Int, val kind: Kind, val startW: Float, val startH: Float) {
         var width: WidthModifier? = null
         var height: HeightModifier? = null
         var padding: PaddingModifier? = null
+        // REM-37 c_text: a CoreText component's op + its measured text-bounds offset (left/top, for baseline).
+        var coreText: CoreText? = null
+        var textLeft = 0f
+        var textTop = 0f
         var background: BackgroundModifier? = null
         var border: BorderModifier? = null
         var horizontalPositioning = 0
@@ -103,6 +109,9 @@ internal object LayoutMeasure {
      * no-op for documents without a layout tree.
      */
     fun measure(document: RemoteComposeDocument, surfaceW: Float, surfaceH: Float, context: RemoteContext) {
+        // REM-37 c_text: pre-load DATA_TEXT so CoreText intrinsic measure (getTextBounds) sees the text —
+        // mirrors upstream, which loads TextData at inflate (into mTextData) before any layout measure.
+        for (op in document.operations) if (op is TextData) context.putText(op.id, op.text)
         val root = buildTree(document) ?: return
         val byId = HashMap<Int, Node>()
         index(root, byId)
@@ -161,6 +170,7 @@ internal object LayoutMeasure {
                 is LayoutContent -> open(Node(op.componentId, Kind.CONTENT, Float.NaN, Float.NaN))
                 is CanvasContent -> open(Node(op.componentId, Kind.CONTENT, Float.NaN, Float.NaN))
                 is ComponentStart -> open(Node(op.componentId, Kind.COMPONENT, op.width, op.height))
+                is CoreText -> open(Node(op.textId, Kind.TEXT, Float.NaN, Float.NaN).also { it.coreText = op })
                 is WidthModifier -> stack.lastOrNull()?.let { if (it.width == null) it.width = op }
                 is HeightModifier -> stack.lastOrNull()?.let { if (it.height == null) it.height = op }
                 is PaddingModifier -> stack.lastOrNull()?.let { it.padding = op }
@@ -187,6 +197,18 @@ internal object LayoutMeasure {
 
     /** Pass 1 — sizes: EXACT/EXACT_DP/FILL/inherit top-down; WRAP aggregate (over layout children) bottom-up. */
     private fun measureSizes(node: Node, availW: Float, availH: Float, context: RemoteContext, depth: Int) {
+        if (node.kind == Kind.TEXT) {
+            // Intrinsic text size via the real text renderer (mirrors upstream CoreText.computeWrapSize).
+            // node.componentId == the CoreText.textId; getTextBounds fills [left, top, right, bottom].
+            val pc = context.paintContext
+            if (pc != null) {
+                val b = FloatArray(4)
+                pc.getTextBounds(node.componentId, 0, -1, 0, b)
+                node.textLeft = b[0]; node.textTop = b[1]
+                node.w = b[2] - b[0]; node.h = b[3] - b[1]
+            }
+            return // text size is intrinsic — ignore children / WRAP
+        }
         node.w = resolveDim(node.width?.type, node.width?.value, node.startW, availW, context)
         node.h = resolveDim(node.height?.type, node.height?.value, node.startH, availH, context)
 
@@ -297,6 +319,9 @@ internal object LayoutMeasure {
     private fun applyBounds(node: Node) {
         node.background?.setBounds(node.x, node.y, node.w, node.h)
         node.border?.setBounds(node.x, node.y, node.w, node.h)
+        // REM-37 c_text: hand the CoreText its draw origin. Baseline = top − bounds.top (bounds.top is the
+        // negative ascent), x = left − bounds.left — mirrors upstream mTextX=-bounds[0], mTextY=-bounds[1].
+        node.coreText?.setTextDraw(node.x - node.textLeft, node.y - node.textTop)
         for (c in node.children) applyBounds(c)
     }
 

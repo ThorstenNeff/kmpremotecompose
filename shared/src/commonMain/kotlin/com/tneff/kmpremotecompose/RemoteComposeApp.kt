@@ -30,6 +30,7 @@ import androidx.compose.runtime.setValue
 import androidx.compose.runtime.withFrameNanos
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalDensity
+import androidx.compose.ui.platform.LocalFontFamilyResolver
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.unit.dp
 import com.tneff.kmpremotecompose.remote.core.document.DocumentReader
@@ -110,6 +111,9 @@ fun RemoteComposeApp(loadRc: (String) -> ByteArray, modifier: Modifier = Modifie
     // Read frameTime at COMPOSITION level (live only) so each advance recomposes → the Canvas redraws.
     val renderTime = if (live) frameTime else 0f
     val density = LocalDensity.current.density
+    // The CMP font resolver for the text half (REM-37 c_text / all text docs): without it the text
+    // renderer is null and getTextBounds/drawTextRun no-op → text never renders. Supplied from composition.
+    val fontResolver = LocalFontFamilyResolver.current
     val d = doc
     // Fixed dp box on the doc dimension (density-normalized) so Android/iOS screenshots are coincident
     // (contract §1 — no fillMaxSize/wrap drift). Falls back to the corpus default until decode lands.
@@ -124,7 +128,7 @@ fun RemoteComposeApp(loadRc: (String) -> ByteArray, modifier: Modifier = Modifie
                     val canvas = drawContext.canvas
                     try {
                         val ctx = RemoteContext().also { it.setDensity(density); it.animationEnabled = live }
-                        val paintContext = ComposePaintContext(ctx, canvas)
+                        val paintContext = ComposePaintContext(ctx, canvas, fontFamilyResolver = fontResolver)
                         // Geometry shares the context's one PlayerPaintState (REM-32) with the text half.
                         paintContext.geometry =
                             GeometryPaintDelegate(ctx, canvas, paintContext.paintState)
