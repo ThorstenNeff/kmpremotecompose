@@ -18,6 +18,10 @@ package com.tneff.kmpremotecompose.remote.core.operations.layout
 import com.tneff.kmpremotecompose.remote.core.operations.Operation
 import com.tneff.kmpremotecompose.remote.core.operations.OperationReader
 import com.tneff.kmpremotecompose.remote.core.operations.Operations
+import com.tneff.kmpremotecompose.remote.core.operations.draw.PaintData
+import com.tneff.kmpremotecompose.remote.player.core.PaintContext
+import com.tneff.kmpremotecompose.remote.player.core.PaintOperation
+import com.tneff.kmpremotecompose.remote.player.core.RemoteContext
 import com.tneff.kmpremotecompose.remote.wire.WireBuffer
 
 /**
@@ -38,9 +42,47 @@ class BackgroundModifier(
     val b: Float,
     val a: Float,
     val shapeType: Int,
-) : Operation {
+) : Operation, PaintOperation {
 
     override val opcode: Int get() = Operations.MODIFIER_BACKGROUND
+
+    // REM-37 E-Layout-2: render-only absolute draw bounds, set by the measure pass; not serialized.
+    private var boundsX = 0f
+    private var boundsY = 0f
+    private var boundsW = 0f
+    private var boundsH = 0f
+
+    /** Called by [com.tneff.kmpremotecompose.remote.player.core.LayoutMeasure] with the measured bounds. */
+    fun setBounds(x: Float, y: Float, w: Float, h: Float) {
+        boundsX = x; boundsY = y; boundsW = w; boundsH = h
+    }
+
+    /**
+     * Emit the component background (REM-37 E-Layout-2): a filled rect (or circle) at the measured
+     * absolute bounds, in its own paint scope so it doesn't leak into sibling/child draws. Color comes
+     * from the `colorId` ref when set, else the literal RGBA. Skipped when unmeasured (zero bounds).
+     */
+    override fun paint(context: RemoteContext, paint: PaintContext) {
+        if (boundsW <= 0f || boundsH <= 0f) return
+        val argb = resolveArgb(context)
+        paint.savePaint()
+        paint.applyPaint(PaintData.Builder().color(argb).style(STYLE_FILL).build())
+        if (shapeType == SHAPE_CIRCLE) {
+            paint.drawCircle(boundsX + boundsW / 2f, boundsY + boundsH / 2f, minOf(boundsW, boundsH) / 2f)
+        } else {
+            paint.drawRect(boundsX, boundsY, boundsX + boundsW, boundsY + boundsH)
+        }
+        paint.restorePaint()
+    }
+
+    private fun resolveArgb(context: RemoteContext): Int {
+        if (colorId != 0) return context.getColor(colorId)
+        fun ch(v: Float): Int {
+            val c = if (v.isNaN()) context.getFloat(com.tneff.kmpremotecompose.remote.wire.WireTypes.idFromNan(v)) else v
+            return (c.coerceIn(0f, 1f) * 255f + 0.5f).toInt()
+        }
+        return (ch(a) shl 24) or (ch(r) shl 16) or (ch(g) shl 8) or ch(b)
+    }
 
     override fun write(buffer: WireBuffer) {
         buffer.writeByte(opcode)
@@ -82,6 +124,11 @@ class BackgroundModifier(
     }
 
     companion object : OperationReader {
+        /** Shape type (upstream `ShapeType`): 0 = rectangle, 1 = circle. */
+        const val SHAPE_CIRCLE = 1
+        /** PaintData style value (FILL=0, STROKE=1, FILL_AND_STROKE=2). */
+        const val STYLE_FILL = 0
+
         override fun read(buffer: WireBuffer, operations: MutableList<Operation>) {
             operations += BackgroundModifier(
                 flags = buffer.readInt(),
