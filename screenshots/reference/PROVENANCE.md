@@ -39,3 +39,25 @@ it triggers the system "Open in app?" dialog which needs the Maestro driver (ope
 dismiss; without it the app stays on the default doc. Needs the Maestro iOS driver restarted, then
 re-run the iOS cropOn captures. procedure_simple1's iOS golden + 100% A<->iOS parity already exist
 (merged REM-8). Only the 2 new path docs' iOS goldens + their parity are pending the driver fix.
+
+## Golden round 3 (2026-06-26) — 137-doc visual-correctness baseline (the 138-render block)
+ANDROID goldens (cropOn rc-canvas, doc-sized surface) for the rendering corpus, captured on develop
+`0ea4a90` (window+time+deref+E-Layout-1+E-Layout-2, render-order complete) via the verified-173-asset
+APK (asset-count hardening: `unzip -l app.apk | grep -c assets/rc = 173`) and the race-free rc-doc==RC
+sweep (rsweep_b0-3.yaml, settle + stale-frame guard).
+
+- Count: **137** docs (the 138 rendering-something docs MINUS cube3d).
+- Scale/position: **correct-by-design** (dev-2 source-verified: c_box=fixed size(200), FILL fills parent,
+  top-left = upstream RootLayout default). surface = doc-sized → Android/iOS coincident (REM-8 §1 holds).
+- Distinctness: race-free sweep + distinctness cross-check (near-neighbors confirmed legit dups, e.g.
+  maze1≈maze2, clock_slow≈fast). 3 spot-verified visually correct via color_theme-first stale test:
+  c_box (red box), c_modifier_background (red+blue), c_column.
+- **EXCLUDED — cube3d**: on 0ea4a90 it renders a flat dark disc (pre-3D-matrix-engine). Its golden is
+  frozen only AFTER REM-? cube3d-3D (5c333a4) merges + test-2's wireframe-correctness check passes.
+- Nature: these are **current-render drift-detection baselines** (distinct, not stale, positions
+  correct-by-design). The 3 spot-checked are correctness-confirmed; the rest are current-state baselines
+  to catch future render regressions.
+- CI re-render note: full render_parity re-rendering needs the doc set bundled in the committed app
+  (currently 67-68 committed: 19 showcase + 48 c_* + cube3d-branch). Bundling the full rendering set is
+  the follow-up that makes all 137 CI-reproducible; the captures themselves are of byte-identical corpus docs.
+- iOS goldens for this set: pending the Maestro iOS driver restart (test-2 lane).
