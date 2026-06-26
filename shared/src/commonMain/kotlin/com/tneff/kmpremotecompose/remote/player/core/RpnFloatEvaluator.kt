@@ -1,0 +1,100 @@
+/*
+ * Copyright 2026 The KmpRemoteCompose Authors
+ *
+ * Licensed under the Apache License, Version 2.0 (the "License");
+ * you may not use this file except in compliance with the License.
+ * You may obtain a copy of the License at
+ *
+ *      http://www.apache.org/licenses/LICENSE-2.0
+ *
+ * Unless required by applicable law or agreed to in writing, software
+ * distributed under the License is distributed on an "AS IS" BASIS,
+ * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+ * See the License for the specific language governing permissions and
+ * limitations under the License.
+ */
+package com.tneff.kmpremotecompose.remote.player.core
+
+import com.tneff.kmpremotecompose.remote.wire.WireTypes
+import kotlin.math.abs
+import kotlin.math.cos
+import kotlin.math.max
+import kotlin.math.min
+import kotlin.math.sin
+import kotlin.math.sqrt
+
+/**
+ * The RPN float-expression evaluator (REM-37, Eval-Engine E2) — port of upstream
+ * `AnimatedFloatExpression.eval`. A stack machine over a postfix `exp`: each element is a literal
+ * (pushed), a **data-variable** NaN ref (resolved from the [RemoteContext] store and pushed), or a
+ * **math operator** NaN id (`>= OFFSET`, pops operands and pushes the result).
+ *
+ * **MVP operator subset (PO-scoped, survey-extensible):** ADD/SUB/MUL/DIV/MOD, MIN/MAX/CLAMP,
+ * SQRT/ABS, SIN/COS. Operators outside the subset throw [IllegalArgumentException] — the caller
+ * ([com.tneff.kmpremotecompose.remote.core.operations.FloatExpression]) degrades that expression to a
+ * documented fallback rather than rendering a silently-wrong value. The full 65-operator set is E-D3.
+ *
+ * Formulas/arity mirror upstream `opEval` verbatim (binary ops consume 2 → `sp-1`; unary → `sp`;
+ * CLAMP consumes 3 → `sp-2`). Trig uses `Double` math then narrows to `Float`, as upstream does.
+ */
+object RpnFloatEvaluator {
+
+    /** Math-operator id base (upstream `AnimatedFloatExpression.OFFSET`). ids `>= OFFSET` are operators. */
+    const val OFFSET: Int = 0x310_000
+
+    private const val OP_ADD = OFFSET + 1
+    private const val OP_SUB = OFFSET + 2
+    private const val OP_MUL = OFFSET + 3
+    private const val OP_DIV = OFFSET + 4
+    private const val OP_MOD = OFFSET + 5
+    private const val OP_MIN = OFFSET + 6
+    private const val OP_MAX = OFFSET + 7
+    private const val OP_SQRT = OFFSET + 9
+    private const val OP_ABS = OFFSET + 10
+    private const val OP_SIN = OFFSET + 18
+    private const val OP_COS = OFFSET + 19
+    private const val OP_CLAMP = OFFSET + 27
+
+    /**
+     * Evaluate the first [len] elements of [exp] against the [context] variable store. Returns the
+     * single remaining stack value, or `0f` for an empty expression.
+     */
+    fun eval(exp: FloatArray, len: Int, context: RemoteContext): Float {
+        if (len <= 0) return 0f
+        val stack = FloatArray(len)
+        var sp = -1
+        for (i in 0 until len) {
+            val v = exp[i]
+            if (v.isNaN()) {
+                val id = WireTypes.fromNaN(v)
+                if (id >= OFFSET) {
+                    sp = opEval(stack, sp, id)
+                } else {
+                    // data/normal/system variable reference → resolved value from the store
+                    stack[++sp] = context.getFloat(WireTypes.idFromNan(v))
+                }
+            } else {
+                stack[++sp] = v
+            }
+        }
+        return if (sp >= 0) stack[sp] else 0f
+    }
+
+    private fun opEval(stack: FloatArray, sp: Int, id: Int): Int = when (id) {
+        OP_ADD -> { stack[sp - 1] = stack[sp - 1] + stack[sp]; sp - 1 }
+        OP_SUB -> { stack[sp - 1] = stack[sp - 1] - stack[sp]; sp - 1 }
+        OP_MUL -> { stack[sp - 1] = stack[sp - 1] * stack[sp]; sp - 1 }
+        OP_DIV -> { stack[sp - 1] = stack[sp - 1] / stack[sp]; sp - 1 }
+        OP_MOD -> { stack[sp - 1] = stack[sp - 1] % stack[sp]; sp - 1 }
+        OP_MIN -> { stack[sp - 1] = min(stack[sp - 1], stack[sp]); sp - 1 }
+        OP_MAX -> { stack[sp - 1] = max(stack[sp - 1], stack[sp]); sp - 1 }
+        OP_CLAMP -> { stack[sp - 2] = min(max(stack[sp - 2], stack[sp]), stack[sp - 1]); sp - 2 }
+        OP_SQRT -> { stack[sp] = sqrt(stack[sp]); sp }
+        OP_ABS -> { stack[sp] = abs(stack[sp]); sp }
+        OP_SIN -> { stack[sp] = sin(stack[sp].toDouble()).toFloat(); sp }
+        OP_COS -> { stack[sp] = cos(stack[sp].toDouble()).toFloat(); sp }
+        else -> throw IllegalArgumentException(
+            "unsupported eval operator id=0x${id.toString(16)} (E2 MVP: ADD..MOD/MIN/MAX/CLAMP/SQRT/ABS/SIN/COS; E-D3 extends)",
+        )
+    }
+}
