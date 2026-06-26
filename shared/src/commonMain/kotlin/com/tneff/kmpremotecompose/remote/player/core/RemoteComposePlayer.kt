@@ -58,7 +58,7 @@ class RemoteComposePlayer(val context: RemoteContext = RemoteContext()) {
         // gives none (<= 0) fall back to the document's header dims (upstream `RemoteContext.header`).
         val w = if (windowWidth > 0f) windowWidth else document.width.toFloat()
         val h = if (windowHeight > 0f) windowHeight else document.height.toFloat()
-        context.seedSystemVariables(w, h)
+        context.seedSystemVariables(w, h, frameTimeSeconds)
         // Phase A (REM-36 Eval-Engine E1): resolve + evaluate variables BEFORE painting, so draw ops
         // read already-resolved values (the long-flagged "deferred apply-phase"). MVP evaluates every
         // VariableSupport op each frame (no dirty tracking). updateVariables (resolve NaN refs) then
