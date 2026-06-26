@@ -15,6 +15,9 @@
  */
 package com.tneff.kmpremotecompose.remote.core.operations
 
+import com.tneff.kmpremotecompose.remote.player.core.PaintContext
+import com.tneff.kmpremotecompose.remote.player.core.PaintOperation
+import com.tneff.kmpremotecompose.remote.player.core.RemoteContext
 import com.tneff.kmpremotecompose.remote.wire.WireBuffer
 
 /**
@@ -26,7 +29,7 @@ class MatrixScale(
     val scaleY: Float,
     val centerX: Float,
     val centerY: Float,
-) : Operation {
+) : PaintOperation {
     override val opcode: Int get() = Operations.MATRIX_SCALE
 
     override fun write(buffer: WireBuffer) {
@@ -35,6 +38,11 @@ class MatrixScale(
         buffer.writeFloat(scaleY)
         buffer.writeFloat(centerX)
         buffer.writeFloat(centerY)
+    }
+
+    /** L2 render: drive the canvas transform via the paint context (REM-33). */
+    override fun paint(context: RemoteContext, paint: PaintContext) {
+        paint.matrixScale(scaleX, scaleY, centerX, centerY)
     }
 
     override fun dump(): String = "MATRIX_SCALE s=[$scaleX,$scaleY] c=[$centerX,$centerY]"

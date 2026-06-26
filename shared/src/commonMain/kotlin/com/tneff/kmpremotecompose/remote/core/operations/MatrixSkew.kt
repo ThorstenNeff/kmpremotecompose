@@ -15,16 +15,24 @@
  */
 package com.tneff.kmpremotecompose.remote.core.operations
 
+import com.tneff.kmpremotecompose.remote.player.core.PaintContext
+import com.tneff.kmpremotecompose.remote.player.core.PaintOperation
+import com.tneff.kmpremotecompose.remote.player.core.RemoteContext
 import com.tneff.kmpremotecompose.remote.wire.WireBuffer
 
 /** Skew the canvas matrix (`MATRIX_SKEW`). Wire layout: opcode, `float skewX`, `float skewY`. */
-class MatrixSkew(val skewX: Float, val skewY: Float) : Operation {
+class MatrixSkew(val skewX: Float, val skewY: Float) : PaintOperation {
     override val opcode: Int get() = Operations.MATRIX_SKEW
 
     override fun write(buffer: WireBuffer) {
         buffer.writeByte(opcode)
         buffer.writeFloat(skewX)
         buffer.writeFloat(skewY)
+    }
+
+    /** L2 render: drive the canvas transform via the paint context (REM-33). */
+    override fun paint(context: RemoteContext, paint: PaintContext) {
+        paint.matrixSkew(skewX, skewY)
     }
 
     override fun dump(): String = "MATRIX_SKEW x=$skewX y=$skewY"

@@ -15,16 +15,24 @@
  */
 package com.tneff.kmpremotecompose.remote.core.operations
 
+import com.tneff.kmpremotecompose.remote.player.core.PaintContext
+import com.tneff.kmpremotecompose.remote.player.core.PaintOperation
+import com.tneff.kmpremotecompose.remote.player.core.RemoteContext
 import com.tneff.kmpremotecompose.remote.wire.WireBuffer
 
 /** Translate the canvas matrix (`MATRIX_TRANSLATE`). Wire layout: opcode, `float x`, `float y`. */
-class MatrixTranslate(val translateX: Float, val translateY: Float) : Operation {
+class MatrixTranslate(val translateX: Float, val translateY: Float) : PaintOperation {
     override val opcode: Int get() = Operations.MATRIX_TRANSLATE
 
     override fun write(buffer: WireBuffer) {
         buffer.writeByte(opcode)
         buffer.writeFloat(translateX)
         buffer.writeFloat(translateY)
+    }
+
+    /** L2 render: drive the canvas transform via the paint context (REM-33). */
+    override fun paint(context: RemoteContext, paint: PaintContext) {
+        paint.matrixTranslate(translateX, translateY)
     }
 
     override fun dump(): String = "MATRIX_TRANSLATE x=$translateX y=$translateY"

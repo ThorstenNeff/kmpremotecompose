@@ -18,6 +18,9 @@ package com.tneff.kmpremotecompose.remote.core.operations.draw
 import com.tneff.kmpremotecompose.remote.core.operations.Operation
 import com.tneff.kmpremotecompose.remote.core.operations.OperationReader
 import com.tneff.kmpremotecompose.remote.core.operations.Operations
+import com.tneff.kmpremotecompose.remote.player.core.PaintContext
+import com.tneff.kmpremotecompose.remote.player.core.PaintOperation
+import com.tneff.kmpremotecompose.remote.player.core.RemoteContext
 import com.tneff.kmpremotecompose.remote.wire.WireBuffer
 
 /**
@@ -30,7 +33,7 @@ import com.tneff.kmpremotecompose.remote.wire.WireBuffer
  * verbatim, so it round-trips byte-exact (the winding split and id-remap are Layer-2 / Loom concerns).
  * `count` is bounded to `0..`[MAX_PATH_LENGTH] on read (upstream corruption guard).
  */
-class PathData(val id: Int, val data: IntArray) : Operation {
+class PathData(val id: Int, val data: IntArray) : PaintOperation {
 
     override val opcode: Int get() = Operations.DATA_PATH
 
@@ -39,6 +42,11 @@ class PathData(val id: Int, val data: IntArray) : Operation {
         buffer.writeInt(id)
         buffer.writeInt(data.size)
         for (bits in data) buffer.writeInt(bits)
+    }
+
+    /** L2 render: single-pass data-apply — store path floats so a later DRAW_PATH can build it (REM-33). */
+    override fun paint(context: RemoteContext, paint: PaintContext) {
+        context.putPathData(id, FloatArray(data.size) { Float.fromBits(data[it]) })
     }
 
     override fun dump(): String = "DATA_PATH id=$id count=${data.size}"
