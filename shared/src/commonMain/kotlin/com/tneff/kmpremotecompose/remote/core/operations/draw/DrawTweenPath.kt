@@ -18,6 +18,9 @@ package com.tneff.kmpremotecompose.remote.core.operations.draw
 import com.tneff.kmpremotecompose.remote.core.operations.Operation
 import com.tneff.kmpremotecompose.remote.core.operations.OperationReader
 import com.tneff.kmpremotecompose.remote.core.operations.Operations
+import com.tneff.kmpremotecompose.remote.player.core.PaintContext
+import com.tneff.kmpremotecompose.remote.player.core.PaintOperation
+import com.tneff.kmpremotecompose.remote.player.core.RemoteContext
 import com.tneff.kmpremotecompose.remote.wire.WireBuffer
 
 /**
@@ -32,7 +35,7 @@ class DrawTweenPath(
     val tween: Float,
     val start: Float,
     val stop: Float,
-) : Operation {
+) : PaintOperation {
 
     override val opcode: Int get() = Operations.DRAW_TWEEN_PATH
 
@@ -43,6 +46,11 @@ class DrawTweenPath(
         buffer.writeFloat(tween)
         buffer.writeFloat(start)
         buffer.writeFloat(stop)
+    }
+
+    /** L2 render: draw the interpolated path via the paint context (REM-33). */
+    override fun paint(context: RemoteContext, paint: PaintContext) {
+        paint.drawTweenPath(path1Id, path2Id, tween, start, stop)
     }
 
     override fun dump(): String = "DRAW_TWEEN_PATH path1=$path1Id path2=$path2Id tween=$tween start=$start stop=$stop"
