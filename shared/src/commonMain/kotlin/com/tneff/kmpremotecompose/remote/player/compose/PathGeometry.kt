@@ -104,20 +104,47 @@ internal object PathGeometry {
     }
 
     /**
-     * REM-36 E3 — resolve NaN **data-variable** elements of a path-data array against the store before
-     * the path is built, so paths with variable coordinates render non-degenerate. Command markers
-     * (region 0) and plain literals pass through unchanged; **operation/RPN** NaNs (region 3) are left
-     * as-is for the RPN evaluator (E2 / E-D2). Returns the original array when it holds no data-vars
-     * (no allocation for static paths).
+     * REM-36 (position-aware) — resolve NaN **variable** coordinates of a path-data array against the
+     * store before the path is built, while NEVER touching the **command markers**. The walk mirrors
+     * [FloatsToPath.genPath]'s command lengths: the float at each command position is a marker (left raw
+     * — it dispatches MOVE/LINE/…), every following float in that command is a coordinate (dereferenced
+     * if it is a variable NaN). This is what makes path system-variable coords (region 0 — WINDOW_WIDTH/
+     * TIME) resolvable **without** the byte-collision that blocks element-wise region-0 resolution
+     * (markers and system-var ids share region 0; only POSITION distinguishes them). Operators (region 3)
+     * + literals pass through; unknown marker → stop (mirrors genPath fail-soft). Allocation-free when no
+     * coordinate needs resolving (static paths return the original array).
      */
-    private fun resolvePathData(state: RemoteContext, data: FloatArray): FloatArray {
-        var hasDataVar = false
-        for (f in data) if (WireTypes.isDataVariable(f)) { hasDataVar = true; break }
-        if (!hasDataVar) return data
-        return FloatArray(data.size) { i ->
-            val f = data[i]
-            if (WireTypes.isDataVariable(f)) state.getFloat(WireTypes.idFromNan(f)) else f
+    internal fun resolvePathData(state: RemoteContext, data: FloatArray): FloatArray {
+        if (data.isEmpty()) return data
+        var out: FloatArray? = null
+        var i = 0
+        while (i < data.size) {
+            // The float at a command position is a MARKER (left raw — it dispatches the command);
+            // command lengths mirror FloatsToPath.genPath exactly.
+            val len = when (WireTypes.idFromNan(data[i])) {
+                FloatsToPath.MOVE -> 3
+                FloatsToPath.LINE -> 5
+                FloatsToPath.QUADRATIC -> 7
+                FloatsToPath.CONIC -> 8
+                FloatsToPath.CUBIC -> 9
+                FloatsToPath.CLOSE, FloatsToPath.DONE -> 1
+                else -> break // unknown marker — leave the remainder untouched (genPath stops too)
+            }
+            // Positions i+1 .. i+len-1 are COORDINATES: dereference any variable NaN (system R0 / normal
+            // R1 / data R2). The marker at i is never resolved → the R0 marker/system-var byte-collision
+            // is avoided by POSITION, not region. Operators (R3) + literals pass through.
+            var j = i + 1
+            while (j < i + len && j < data.size) {
+                val f = data[j]
+                if (f.isNaN() && !WireTypes.isOperationVariable(f)) {
+                    if (out == null) out = data.copyOf()
+                    out!![j] = state.getFloat(WireTypes.idFromNan(f))
+                }
+                j++
+            }
+            i += len
         }
+        return out ?: data
     }
 
     /**
