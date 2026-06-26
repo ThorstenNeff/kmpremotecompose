@@ -29,21 +29,24 @@ import androidx.compose.ui.graphics.Path
  * (`FloatsToPath`/`PathMeasure`) is the **delegate's** job (S2), not the context's
  * (see [com.tneff.kmpremotecompose.remote.player.compose.PathGeometry]).
  *
- * 🚩 Note: dev-1's `RemoteContext` exposes no `getPathWinding` — even-odd fill handling has no home in
- * the contract yet (flagged to PO 2026-06-26). Until resolved the delegate defaults to non-zero winding.
+ * Path winding has a home in the final contract (dev-1 `bc58d69`, PO opt-1): [getPathWinding] mirrors
+ * upstream `RemoteComposeState.getPathWinding` (`1` = even-odd).
  */
 interface RcRenderState {
-    /** Cached, already-built [Path] for [id], or null if only raw path-data is present. */
+    /** Cached, already-built [Path] for [id] (dev-1's separate `pathCache`), or null. */
     fun getPath(id: Int): Path?
 
-    /** Cache a built [Path] under [id]. */
+    /** Cache a built [Path] under [id] (into the path cache, distinct from the data store). */
     fun putPath(id: Int, path: Path)
 
     /** Raw float-array path-data for [id] (NaN-encoded command stream), or null. */
     fun getPathData(id: Int): FloatArray?
 
-    /** Store raw float-array path-data under [id]. */
+    /** Store raw float-array path-data under [id] (invalidates any cached built [Path] for [id]). */
     fun putPathData(id: Int, data: FloatArray)
+
+    /** Winding rule for path [id]: `1` = even-odd, else non-zero. Default 0 (`getPathWinding`). */
+    fun getPathWinding(id: Int): Int
 
     /** The decoded [ImageBitmap] for [id], or null. */
     fun getBitmap(id: Int): ImageBitmap?

@@ -47,10 +47,15 @@ class GeometryAdapterIosTest {
         val paths = mutableMapOf<Int, Path>()
         val pathData = mutableMapOf<Int, FloatArray>()
         val bitmaps = mutableMapOf<Int, ImageBitmap>()
+        val winding = mutableMapOf<Int, Int>()
         override fun getPath(id: Int) = paths[id]
         override fun putPath(id: Int, path: Path) { paths[id] = path }
         override fun getPathData(id: Int) = pathData[id]
-        override fun putPathData(id: Int, data: FloatArray) { pathData[id] = data }
+        override fun putPathData(id: Int, data: FloatArray) {
+            pathData[id] = data
+            paths.remove(id) // putPathData invalidates the cached built path (faithful to dev-1 contract)
+        }
+        override fun getPathWinding(id: Int) = winding[id] ?: 0
         override fun getBitmap(id: Int) = bitmaps[id]
     }
 
@@ -74,6 +79,15 @@ class GeometryAdapterIosTest {
         assertTrue(!path.isEmpty, "path should not be empty")
         val len = pathLength(path)
         assertTrue(len in 33f..35f, "closed-triangle perimeter ~34.14, was $len")
+    }
+
+    @Test
+    fun buildPath_appliesEvenOddFillTypeWhenWindingIsOne() {
+        val state = FakeState()
+        state.pathData[1] = triangle()
+        state.winding[1] = 1 // even-odd
+        val path = PathGeometry.buildPath(state, 1, 0f, 1f)
+        assertEquals(androidx.compose.ui.graphics.PathFillType.EvenOdd, path.fillType)
     }
 
     @Test
