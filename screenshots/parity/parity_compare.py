@@ -29,6 +29,12 @@ CLUSTER_GUARD   = 0.005   # max kompakter Cluster für clean-PASS
 STRUCT_CLUSTER  = 0.050   # maxClusterFrac > 5% = SOLIDER struktureller Block = echter Defekt
 BLANK_MODAL     = 0.995   # Android-Golden >99.5% eine Farbe = blank/nicht-gerendert
 
+# Produkt-Call-Override (PO 2026-06-26): Docs, die der Area-Diskriminator als FAIL flaggt, aber
+# nachweislich TEXT-Klasse sind (großer Bold-Text → Glyph-Block >5% Fläche, font-metrik-bedingt,
+# kein Geometrie-Defekt). Transparent als "TEXT(override)" gelabelt. PROPER FIX = glyph-edge-density-
+# Guard (Cluster-Fill-Ratio: solide Blöcke füllen ihre Bbox, Text nicht) — Follow-up, nicht-dringend.
+TEXT_PRODUCT_OVERRIDE = {"c_fit_box"}
+
 
 def load_rgb(p):
     return Image.open(p).convert("RGB")
@@ -93,7 +99,11 @@ def compare(android_path, ios_path, doc, diff_out=None):
     else:
         verdict = "FAIL"
 
-    label = verdict
+    override = verdict == "FAIL" and doc in TEXT_PRODUCT_OVERRIDE
+    if override:
+        verdict = "TEXT"
+
+    label = verdict + ("(override:font-metric)" if override else "")
     if verdict in ("TEXT", "FAIL", "BLANK") and diff_out:
         heat = Image.new("RGB", (w, h), (0, 0, 0)); ph = heat.load()
         for p in range(total):
