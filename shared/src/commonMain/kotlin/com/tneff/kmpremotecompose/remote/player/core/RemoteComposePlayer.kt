@@ -16,7 +16,9 @@
 package com.tneff.kmpremotecompose.remote.player.core
 
 import com.tneff.kmpremotecompose.remote.core.document.RemoteComposeDocument
+import com.tneff.kmpremotecompose.remote.core.operations.FloatExpression
 import com.tneff.kmpremotecompose.remote.core.operations.layout.RootContentBehavior
+import com.tneff.kmpremotecompose.remote.wire.WireTypes
 
 /**
  * The Layer 2 player op-walk skeleton (REM-30, L2-S1): renders a decoded [RemoteComposeDocument] by
@@ -97,6 +99,25 @@ class RemoteComposePlayer(val context: RemoteContext = RemoteContext()) {
                 op.paint(context, paint)
             }
         }
+        // Animation (REM-36 E-D1): a time-driven doc (references CONTINUOUS_SEC/TIME_* — clocks, the
+        // cube3d spin) requests a continuous repaint so the host loop advances [frameTimeSeconds] and
+        // re-renders. Gated by [RemoteContext.animationEnabled] (off ⇒ a single static frame, e.g. the
+        // t=0 golden). The walk/eval re-run unchanged each pass (the S1 frame-time seam).
+        if (context.isAnimationEnabled() && isTimeDriven(document)) context.wakeIn(CONTINUOUS)
         return context.wakeInSeconds
+    }
+
+    companion object {
+        /** Render-loop contract for [paint]'s return ([RemoteContext.wakeInSeconds]): */
+        /** no repaint requested — render a single static frame. */
+        const val STATIC = -1f
+        /** repaint as soon as possible (next frame) — continuous animation. */
+        const val CONTINUOUS = 0f
+
+        /** True if the document references a time/clock system variable (ids 1–4) → animated. */
+        fun isTimeDriven(document: RemoteComposeDocument): Boolean =
+            document.operations.any { op ->
+                op is FloatExpression && op.value.any { it.isNaN() && WireTypes.fromNaN(it) in 1..4 }
+            }
     }
 }
