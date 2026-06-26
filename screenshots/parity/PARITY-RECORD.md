@@ -1,33 +1,35 @@
 # Cross-Platform Render-Parität — Abschluss-Record (Android ↔ iOS)
 
-> **Stand:** develop `de76d1b` (current-vs-current, beide Seiten current). **Harness:** `parity_compare.py`
-> + `parity_sweep.py` (Stufe-B perzeptueller Pixel-Diff, `cropOn rc-canvas`, ±2px-Density-Resize).
-> Erzeugt von test-2 (QA). Der eine-Codebasis→Android==iOS-Beweis über den vollen 140-Doc-Korpus.
+> **Stand:** develop `be636e9` (current-vs-current, beide Seiten current, nach Gradient-Fix `9a5422b`).
+> **Harness:** `parity_compare.py` + `parity_sweep.py` (Stufe-B perzeptueller Pixel-Diff, `cropOn rc-canvas`,
+> ±2px-Density-Resize). Erzeugt von test-2 (QA). Der eine-Codebasis→Android==iOS-Beweis über den 140-Doc-Korpus.
 
-## 🎯 Render-Parität: **125 / 130 = 96.2%**
-(von den **gerenderten** Docs; 10 both-blank/nicht-gerendert ausgeschlossen.)
+## 🎯 Render-Parität: **129 / 131 = 98.5%**
+(von den **gerenderten** Docs; 9 both-blank/nicht-gerendert ausgeschlossen.)
+**Die einzigen 2 verbleibenden FAILs sind deferred Features** — d.h. für alle gebauten Features ist die
+Android↔iOS-Render-Parität effektiv vollständig.
 
 | Bucket | n | Bedeutung |
 |---|---|---|
-| **PASS** | 94 | clean pixel-identisch (breach ≤2%, kein Cluster) |
-| **TEXT** | 31 | diffuse Cross-Skia-Font/AA/thin-line-Divergenz (erwartet, Heatmap-belegt) |
-| **BLANK** | 10 | beide Plattformen blank — **nicht gerendert** (Feature-Gaps, aus Parität ausgeschlossen) |
-| **FAIL** | 5 | echte strukturelle Render-Divergenz |
+| **PASS** | 97 | clean pixel-identisch (breach ≤2%, kein Cluster) |
+| **TEXT** | 32 | diffuse Cross-Skia-Font/AA/thin-line-Divergenz (erwartet, Heatmap-belegt) |
+| **BLANK** | 9 | beide Plattformen blank — **nicht gerendert** (Feature-Gaps, aus Parität ausgeschlossen) |
+| **FAIL** | 2 | nur noch deferred Features (s.u.) |
 | ERROR | 0 | — |
 
-## Die 5 strukturellen FAILs
-**Echte Geometrie-Defekte (→ dev-2 geroutet) — Android füllt nicht, iOS schon (`android-blank`-Flag):**
-- `stock_sparkline` (breach 34%) · `hydration_wave` (17%) · `thumb_wheel2` (67%) — **Android-Path-Fill/Gradient-Gap.**
-
-**Deferred Features (kein Parität-Fix, warten auf Feature):**
+## Die 2 verbleibenden FAILs — beide deferred Features (kein Parität-Bug)
 - `demo_bitmap_drawing_bit_draw2` — iOS-blank (Bitmap-Draw deferred).
-- `flow_control_checks_test_conditional` — gefüllter Kreis divergiert (Conditional/Fill).
+- `flow_control_checks_test_conditional` — gefüllter Kreis divergiert (Conditional/Fill deferred).
 
-## BLANK-10 (nicht gerendert auf beiden — Feature-Gaps, kein Parität-Thema)
+## ✅ Gefixt (Gradient-Fix `9a5422b`): die 3 Path-Fill-Divergenzen sind weg
+`stock_sparkline` (34%→1.6%, TEXT) · `hydration_wave` (17%→1.0%, PASS) · `thumb_wheel2` (67%→0.0%, **pixel-identisch**).
+Android füllt jetzt Path/Gradient korrekt. (Nebenbei: Throws im Korpus 21→2 durch denselben NaN-Gradient-Fix.)
+
+## BLANK-9 (nicht gerendert auf beiden — Feature-Gaps, kein Parität-Thema)
 `base · c_modifier_fill_max_size · c_modifier_fill_parent_max_size · c_modifier_vertical_scroll ·
-c_state_layout · plot3 · plot4 · stock · themed_plot1 · thumb_wheel1`
+c_state_layout · plot3 · plot4 · stock · themed_plot1`
 
-## TEXT-31 (akzeptabel, Cross-Skia Font/AA)
+## TEXT-32 (akzeptabel, Cross-Skia Font/AA)
 Diffuse Glyph-Kanten / Gridlines / 1px-Linien-Offsets / AA — Heatmaps zeigen Kanten, keine soliden Blöcke.
 Enthält `c_fit_box` als **Produkt-Call-Override** (PO 2026-06-26): die Fit-Box auto-sized „SCALED" nach
 Plattform-Font-Metriken (A↔iOS inhärent verschieden) → Text-Klasse, kein Geometrie-Bug; vom Area-
