@@ -4,5 +4,16 @@
 <dict>
 	<key>CADisableMinimumFrameDurationOnPhone</key>
 	<true/>
+	<key>CFBundleURLTypes</key>
+	<array>
+		<dict>
+			<key>CFBundleURLName</key>
+			<string>com.tneff.kmpremotecompose.render</string>
+			<key>CFBundleURLSchemes</key>
+			<array>
+				<string>kmprc</string>
+			</array>
+		</dict>
+	</array>
 </dict>
 </plist>

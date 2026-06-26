@@ -51,30 +51,38 @@ import com.tneff.kmpremotecompose.remote.player.core.RemoteContext
  * decode-OK pass that draws nothing surfaces `rc-error "rendered empty"` instead of false-greening. The
  * `rc-draw-count` node carries the primitive count for Maestro's independent `^[1-9][0-9]*$` check.
  *
- * @param loadRc platform byte source for the bundled fixture (Android assets / iOS bundle) — injected
- *   by the entry point so `commonMain` stays free of platform IO. May throw → surfaced as `rc-error`.
+ * @param loadRc platform byte source for a bundled fixture **by name** (Android assets / iOS bundle) —
+ *   injected by the entry point so `commonMain` stays free of platform IO. Throws on an unknown name
+ *   → surfaced as `rc-error` (contract §2B). The name comes from [RcRouter] (default or deep-link).
  * @param modifier applied to the root; the Android entry passes `semantics { testTagsAsResourceId =
  *   true }` (Android-only API) so Maestro can address the hooks by `id`. iOS maps testTag → a11y id.
  */
 @Composable
-fun RemoteComposeApp(loadRc: () -> ByteArray, modifier: Modifier = Modifier) {
+fun RemoteComposeApp(loadRc: (String) -> ByteArray, modifier: Modifier = Modifier) {
+    // The selected bundled doc (REM-34): default, or a deep-link `kmprc://render?rc=<name>` via RcRouter.
+    val docName = RcRouter.docName
     var doc by remember { mutableStateOf<RemoteComposeDocument?>(null) }
     var decodeError by remember { mutableStateOf<String?>(null) }
-
-    LaunchedEffect(Unit) {
-        try {
-            Builtins.register()
-            doc = DocumentReader.inflate(loadRc())
-        } catch (t: Throwable) {
-            decodeError = t.message ?: "decode failed"
-        }
-    }
-
-    val density = LocalDensity.current.density
     var committed by remember { mutableStateOf(false) }
     var drawCount by remember { mutableStateOf(0) }
     var renderError by remember { mutableStateOf<String?>(null) }
 
+    // Re-runs when the selected doc changes (deep-link) — reset per-doc render state, then load by name.
+    LaunchedEffect(docName) {
+        doc = null
+        decodeError = null
+        renderError = null
+        committed = false
+        drawCount = 0
+        try {
+            Builtins.register()
+            doc = DocumentReader.inflate(loadRc(docName))
+        } catch (t: Throwable) {
+            decodeError = "doc '$docName': ${t.message ?: "not found"}"
+        }
+    }
+
+    val density = LocalDensity.current.density
     val d = doc
     // Fixed dp box on the doc dimension (density-normalized) so Android/iOS screenshots are coincident
     // (contract §1 — no fillMaxSize/wrap drift). Falls back to the corpus default until decode lands.
