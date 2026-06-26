@@ -11,7 +11,7 @@ import platform.posix.memcpy
 
 // REM-8: render the bundled default fixture from the iOS app bundle (path A, no params).
 fun MainViewController() = ComposeUIViewController {
-    RemoteComposeApp { loadBundledRc("procedure_simple1") }
+    RemoteComposeApp(loadRc = { loadBundledRc("procedure_simple1") })
 }
 
 @OptIn(ExperimentalForeignApi::class)

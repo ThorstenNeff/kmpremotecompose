@@ -27,12 +27,9 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
-import androidx.compose.ui.ExperimentalComposeUiApi
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.platform.testTag
-import androidx.compose.ui.semantics.semantics
-import androidx.compose.ui.semantics.testTagsAsResourceId
 import androidx.compose.ui.unit.dp
 import com.tneff.kmpremotecompose.remote.core.document.DocumentReader
 import com.tneff.kmpremotecompose.remote.core.document.RemoteComposeDocument
@@ -56,10 +53,11 @@ import com.tneff.kmpremotecompose.remote.player.core.RemoteContext
  *
  * @param loadRc platform byte source for the bundled fixture (Android assets / iOS bundle) — injected
  *   by the entry point so `commonMain` stays free of platform IO. May throw → surfaced as `rc-error`.
+ * @param modifier applied to the root; the Android entry passes `semantics { testTagsAsResourceId =
+ *   true }` (Android-only API) so Maestro can address the hooks by `id`. iOS maps testTag → a11y id.
  */
-@OptIn(ExperimentalComposeUiApi::class)
 @Composable
-fun RemoteComposeApp(loadRc: () -> ByteArray) {
+fun RemoteComposeApp(loadRc: () -> ByteArray, modifier: Modifier = Modifier) {
     var doc by remember { mutableStateOf<RemoteComposeDocument?>(null) }
     var decodeError by remember { mutableStateOf<String?>(null) }
 
@@ -83,7 +81,7 @@ fun RemoteComposeApp(loadRc: () -> ByteArray) {
     val widthDp = if (d != null && d.width > 0) (d.width / density).dp else 500.dp
     val heightDp = if (d != null && d.height > 0) (d.height / density).dp else 500.dp
 
-    Column(Modifier.safeContentPadding().semantics { testTagsAsResourceId = true }) {
+    Column(modifier.safeContentPadding()) {
         // rc-canvas = the render surface (this is what render_smoke crops for parity).
         Box(Modifier.size(widthDp, heightDp).testTag("rc-canvas")) {
             if (d != null && decodeError == null) {
