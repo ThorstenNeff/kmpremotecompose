@@ -34,17 +34,28 @@ class TextPaintStateReadSideTest {
     @Test
     fun deriveTextStyle_mapsColorAndPxSizeIntoStyle() {
         val base = TextStyle(color = Color.Black, fontSize = 16.sp)
-        // textSizePx 24 at density 2.0 → 12sp (px / density).
-        val style = ComposeTextRenderer.deriveTextStyle(Color.Red, textSizePx = 24f, density = 2f, base = base)
+        // textSizePx 24 at density 2.0 → 12sp (px / density). fontStyle/fontWeight default (normal).
+        val style = ComposeTextRenderer.deriveTextStyle(Color.Red, 24f, fontStyle = 0, fontWeight = 0, density = 2f, base = base)
         assertEquals(Color.Red, style.color)
         assertEquals(with(Density(2f)) { 24f.toSp() }, style.fontSize)
         assertEquals(12.sp, style.fontSize)
+        assertEquals(androidx.compose.ui.text.font.FontStyle.Normal, style.fontStyle)
+    }
+
+    @Test
+    fun deriveTextStyle_mapsItalicAndWeight() {
+        val base = TextStyle(color = Color.Black, fontSize = 16.sp)
+        // "Italic Blue": fontStyle=1 (italic), fontWeight=700 (bold).
+        val style = ComposeTextRenderer.deriveTextStyle(Color.Blue, 0f, fontStyle = 1, fontWeight = 700, density = 2f, base = base)
+        assertEquals(androidx.compose.ui.text.font.FontStyle.Italic, style.fontStyle)
+        assertEquals(androidx.compose.ui.text.font.FontWeight(700), style.fontWeight)
+        assertEquals(Color.Blue, style.color)
     }
 
     @Test
     fun deriveTextStyle_keepsBaseSizeWhenPxUnset() {
         val base = TextStyle(color = Color.Black, fontSize = 16.sp)
-        val style = ComposeTextRenderer.deriveTextStyle(Color.Blue, textSizePx = 0f, density = 3f, base = base)
+        val style = ComposeTextRenderer.deriveTextStyle(Color.Blue, 0f, fontStyle = 0, fontWeight = 0, density = 3f, base = base)
         assertEquals(Color.Blue, style.color)
         assertEquals(16.sp, style.fontSize, "textSizePx<=0 keeps the base size")
     }
