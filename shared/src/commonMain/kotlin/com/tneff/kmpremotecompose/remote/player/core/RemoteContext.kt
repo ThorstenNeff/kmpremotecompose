@@ -162,20 +162,6 @@ class RemoteContext {
         loadFloat(ID_TIME_IN_MIN, hourOfDay * 60f + minuteOfHour)
         loadFloat(ID_TIME_IN_HR, hourOfDay.toFloat())
         loadFloat(ID_OFFSET_TO_UTC, 0f)
-        // Default theme palette (REM-36 b1): a `colorId` background-ref with no in-doc color op (e.g.
-        // c_modifier_background_id) resolves via getColor(colorId) → 0/transparent without a value.
-        // Seed a **visible** default for each known theme id **only if the host hasn't injected one**
-        // ([seedThemePalette]/[loadColor] win). The real per-doc theme palette is host-supplied.
-        for ((id, argb) in DEFAULT_THEME_PALETTE) if (id !in colorStore) loadColor(id, argb)
-    }
-
-    /**
-     * Inject the host theme palette (REM-36 b1) — `colorId → ARGB`. Conceptually host-theme, like the
-     * platform density ([DensityProvider]): the render vehicle seeds the real (light/dark) palette
-     * before a pass; these override the visible defaults in [DEFAULT_THEME_PALETTE].
-     */
-    fun seedThemePalette(palette: Map<Int, Int>) {
-        for ((id, argb) in palette) loadColor(id, argb)
     }
 
     fun getBitmap(id: Int): ImageBitmap? = idObjects[id] as? ImageBitmap
@@ -293,13 +279,5 @@ class RemoteContext {
         const val ID_DENSITY = 27
         /** Default font size (upstream `ID_FONT_SIZE`). */
         const val ID_FONT_SIZE = 33
-
-        /**
-         * Visible default theme palette (REM-36 b1) for theme `colorId` refs that have no in-doc color
-         * op and no host-injected palette. **Placeholder** — a conservative visible mid-grey for
-         * `colorId 1` so the fixture renders non-transparent (not white-on-white); the real per-doc
-         * light/dark palette is host-supplied via [seedThemePalette] and overrides this. Flagged to PO.
-         */
-        val DEFAULT_THEME_PALETTE: Map<Int, Int> = mapOf(1 to 0xFF888888.toInt())
     }
 }
