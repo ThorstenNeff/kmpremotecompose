@@ -17,6 +17,7 @@ package com.tneff.kmpremotecompose.remote.player.core
 
 import androidx.compose.ui.graphics.ImageBitmap
 import androidx.compose.ui.graphics.Path
+import kotlin.math.floor
 
 /**
  * Player-side runtime state for one document render pass (REM-30, L2-S1 foundation).
@@ -125,11 +126,32 @@ class RemoteContext {
      * blank shapes). Source-grounded against upstream `RemoteContext`/`RemoteComposeState`: window =
      * the render **viewport** box (header doc-dims when no explicit viewport), density = the player
      * density. ids are system-variable region (0): [ID_WINDOW_WIDTH]/[ID_WINDOW_HEIGHT]/[ID_DENSITY].
+     *
+     * **Static time-seed (REM-36 E-Seed):** the clock/time vars (upstream `TimeVariables`) are seeded
+     * from [timeSeconds] — the player's [frameTimeSeconds] seam. The MVP renders a single **static
+     * frame** (`t = 0` ⇒ a valid 12:00:00 clock); the continuous animation loop (advancing the time per
+     * frame) is **E-D1**. Components mirror upstream units (continuous seconds; wall-clock sec/min/hr);
+     * `OFFSET_TO_UTC = 0` for the static frame. This opens the ~70 clock docs at their static frame.
      */
-    fun seedSystemVariables(windowWidth: Float, windowHeight: Float) {
+    fun seedSystemVariables(windowWidth: Float, windowHeight: Float, timeSeconds: Float = 0f) {
         loadFloat(ID_WINDOW_WIDTH, windowWidth)
         loadFloat(ID_WINDOW_HEIGHT, windowHeight)
         loadFloat(ID_DENSITY, density)
+        // Time/clock vars from the frame-time seam (static MVP frame; E-D1 advances per frame).
+        // Derive h:m:s from [timeSeconds] (elapsed), then mirror upstream `RemoteClock` exactly:
+        // TIME_IN_SEC = sec-within-hour (min*60+sec), TIME_IN_MIN = min-within-day (hr*60+min),
+        // CONTINUOUS_SEC = sec-within-hour + millis. t=0 ⇒ all 0 (a valid 12:00:00 clock).
+        val t = if (timeSeconds.isFinite() && timeSeconds > 0f) timeSeconds else 0f
+        val whole = floor(t).toInt()
+        val secondOfMinute = whole % 60
+        val minuteOfHour = (whole / 60) % 60
+        val hourOfDay = (whole / 3600) % 24
+        val millisFraction = t - whole
+        loadFloat(ID_CONTINUOUS_SEC, minuteOfHour * 60f + secondOfMinute + millisFraction)
+        loadFloat(ID_TIME_IN_SEC, minuteOfHour * 60f + secondOfMinute)
+        loadFloat(ID_TIME_IN_MIN, hourOfDay * 60f + minuteOfHour)
+        loadFloat(ID_TIME_IN_HR, hourOfDay.toFloat())
+        loadFloat(ID_OFFSET_TO_UTC, 0f)
     }
 
     fun getBitmap(id: Int): ImageBitmap? = idObjects[id] as? ImageBitmap
@@ -229,10 +251,20 @@ class RemoteContext {
 
     companion object {
         // System-variable ids (region 0), source-grounded against upstream `RemoteContext`.
+        /** Continuous animation seconds (upstream `ID_CONTINUOUS_SEC`). */
+        const val ID_CONTINUOUS_SEC = 1
+        /** Wall-clock seconds within the minute (upstream `ID_TIME_IN_SEC`). */
+        const val ID_TIME_IN_SEC = 2
+        /** Wall-clock minutes within the hour (upstream `ID_TIME_IN_MIN`). */
+        const val ID_TIME_IN_MIN = 3
+        /** Wall-clock hour (upstream `ID_TIME_IN_HR`). */
+        const val ID_TIME_IN_HR = 4
         /** Render-viewport width (upstream `ID_WINDOW_WIDTH`). */
         const val ID_WINDOW_WIDTH = 5
         /** Render-viewport height (upstream `ID_WINDOW_HEIGHT`). */
         const val ID_WINDOW_HEIGHT = 6
+        /** Offset to UTC, in seconds (upstream `ID_OFFSET_TO_UTC`). */
+        const val ID_OFFSET_TO_UTC = 10
         /** Player density (upstream `ID_DENSITY`). */
         const val ID_DENSITY = 27
         /** Default font size (upstream `ID_FONT_SIZE`). */

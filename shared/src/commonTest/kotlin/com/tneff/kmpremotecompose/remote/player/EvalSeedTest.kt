@@ -56,6 +56,36 @@ class EvalSeedTest {
     }
 
     @Test
+    fun seedSystemVariables_seedsStaticTimeVars() {
+        val ctx = RemoteContext()
+        // Static MVP frame (t=0) ⇒ a valid 12:00:00 clock.
+        ctx.seedSystemVariables(600f, 400f, timeSeconds = 0f)
+        assertEquals(0f, ctx.getFloat(RemoteContext.ID_CONTINUOUS_SEC))
+        assertEquals(0f, ctx.getFloat(RemoteContext.ID_TIME_IN_SEC))
+        assertEquals(0f, ctx.getFloat(RemoteContext.ID_TIME_IN_MIN))
+        assertEquals(0f, ctx.getFloat(RemoteContext.ID_TIME_IN_HR))
+        assertEquals(0f, ctx.getFloat(RemoteContext.ID_OFFSET_TO_UTC))
+
+        // A later frame time (1h 2m 5s) → upstream RemoteClock components:
+        // sec-within-hour = 2*60+5 = 125; min-within-day = 1*60+2 = 62; hour = 1.
+        ctx.seedSystemVariables(600f, 400f, timeSeconds = 3725f)
+        assertEquals(125f, ctx.getFloat(RemoteContext.ID_CONTINUOUS_SEC))
+        assertEquals(125f, ctx.getFloat(RemoteContext.ID_TIME_IN_SEC))
+        assertEquals(62f, ctx.getFloat(RemoteContext.ID_TIME_IN_MIN))
+        assertEquals(1f, ctx.getFloat(RemoteContext.ID_TIME_IN_HR))
+    }
+
+    @Test
+    fun player_seedsContinuousSecFromFrameTime() {
+        val ctx = RemoteContext()
+        val doc = RemoteComposeDocument(listOf<Operation>(
+            FloatExpression(id = 60, value = floatArrayOf(WireTypes.asNan(RemoteContext.ID_CONTINUOUS_SEC))),
+        ))
+        RemoteComposePlayer(ctx).paint(doc, NoOpPaintContext(ctx), frameTimeSeconds = 12f, windowWidth = 100f, windowHeight = 100f)
+        assertEquals(12f, ctx.getFloat(60), "CONTINUOUS_SEC resolves to the injected frame time")
+    }
+
+    @Test
     fun player_defaultsWindowToDocumentDims_whenNoViewportGiven() {
         // No header ⇒ document dims are 0; seeding still runs (degenerate only without dims, as upstream).
         val ctx = RemoteContext()
