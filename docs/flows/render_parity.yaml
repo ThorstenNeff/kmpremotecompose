@@ -1,0 +1,65 @@
+# RC Conformance — Parity Render Flow  (Stufe 2: Pixel-Korrektheit)  — REM-8 / L2-S4
+# Owner: test-2 (Flow/Harness). Goldens: test-1. Player-Wiring: dev.
+#
+# Zweck: das gerenderte .rc ist nicht nur DA (das prüft render_smoke.yaml), sondern stimmt PIXEL-WEISE
+# mit der erwarteten Ausgabe überein — innerhalb eines definierten Toleranzbands (AA/Sub-Pixel erwartet,
+# da CMP-iOS=Skiko/Skia vs Android-Canvas/Skia leicht divergieren). Toleranz: ../render-parity-tolerance.md.
+#
+# WICHTIG — Maestro vergleicht in EINEM Lauf gegen EIN gespeichertes Golden, nicht zwei Live-Geräte.
+# Android<->iOS-Parität ist daher ZWEISTUFIG (s. tolerance-Doc §3):
+#   (A) PER-TARGET vs eigenes Golden  <- DIESER Flow (assertScreenshot, pro Plattform getrennt)
+#   (B) CROSS-PLATFORM Android<->iOS  <- externer Pixel-Diff-Harness (parity_compare.sh, kein Maestro)
+# Dieser Flow ist Teil (A). Teil (B) konsumiert die smoke_*-Captures beider Targets.
+#
+# Lauf:
+#   Android:  maestro test --env RC=procedure_simple1 --env PLATFORM=android render_parity.yaml
+#   iOS:      maestro test --env RC=procedure_simple1 --env PLATFORM=ios     render_parity.yaml
+#   Golden-Pfad: screenshots/reference/<PLATFORM>/<RC>.png  (test-1 friert die Goldens ein)
+#
+# SCHARF erst, wenn test-1 die Goldens je Plattform eingecheckt hat. Bis dahin: Flow existiert,
+# assertScreenshot ist aktiv aber rot mangels Golden -> das ist der erwartete Test-first-Rotzustand.
+
+appId: com.tneff.kmpremotecompose.android
+name: "RC Parity Render"
+tags:
+  - parity
+  - conformance
+env:
+  RC: "procedure_simple1"
+  PLATFORM: "android"        # "android" | "ios" — wählt das plattform-eigene Golden
+  USE_DEEPLINK: "false"
+---
+- launchApp:
+    clearState: true
+
+- runFlow:
+    when:
+      true: ${USE_DEEPLINK == "true"}
+    commands:
+      - openLink:
+          link: "kmprc://render?rc=${RC}"
+          autoVerify: true
+
+- assertVisible:
+    id: "rc-canvas"
+
+- extendedWaitUntil:
+    visible:
+      id: "rc-rendered"
+    timeout: 5000
+    label: "post-frame-commit (Ehrlichkeits-Anker) — erst dann screenshotten"
+
+- assertNotVisible:
+    id: "rc-error"
+
+# Stufe-2-Gate: gerendertes Doc gegen plattform-eigenes Golden, innerhalb Toleranzband.
+# thresholdPercentage = Mindestanteil übereinstimmender Pixel (Startwert, empirisch kalibrieren —
+# s. tolerance-Doc §2; NICHT als final-hartkodiert behandeln).
+# cropOn rc-canvas: identischer Crop wie beim Golden (test-1 friert Goldens mit GLEICHEM Crop ein) —
+# vergleicht nur die Render-Fläche, nicht App-Chrome/Statusbar/Notch.
+- assertScreenshot:
+    path: "screenshots/reference/${PLATFORM}/${RC}.png"
+    cropOn:
+      id: "rc-canvas"
+    thresholdPercentage: 99.5
+    label: "Render == plattform-Golden (${PLATFORM}/${RC}) innerhalb Toleranz"
