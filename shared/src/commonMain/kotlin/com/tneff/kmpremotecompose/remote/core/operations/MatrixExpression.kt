@@ -15,18 +15,47 @@
  */
 package com.tneff.kmpremotecompose.remote.core.operations
 
+import com.tneff.kmpremotecompose.remote.player.core.MatrixOperations
+import com.tneff.kmpremotecompose.remote.player.core.RemoteContext
+import com.tneff.kmpremotecompose.remote.player.core.VariableSupport
 import com.tneff.kmpremotecompose.remote.wire.WireBuffer
+import com.tneff.kmpremotecompose.remote.wire.WireTypes
 
 /**
  * A computed matrix (`MATRIX_EXPRESSION`): builds matrix [matrixId] of [type] from an RPN float
- * [expression].
+ * [expression] (REM-37 cube3d). Phase A resolves the expression's variable refs and evaluates it via
+ * [MatrixOperations] into a row-major `FloatArray(16)` stored under [matrixId]; `MATRIX_VECTOR_MATH`
+ * then transforms 3-vectors by it. Pure runtime — the wire `expression` is untouched (byte-safe).
  *
  * Wire layout: opcode, `int matrixId`, `int type`, `int count`, then `count` raw floats.
  * Layer: a V7 base always-on op (NOT in the API-6 set).
  */
-class MatrixExpression(val matrixId: Int, val type: Int, val expression: FloatArray) : Operation {
+class MatrixExpression(val matrixId: Int, val type: Int, val expression: FloatArray) :
+    Operation, VariableSupport {
 
     override val opcode: Int get() = Operations.MATRIX_EXPRESSION
+
+    // REM-37: render-only resolved copy of [expression] (variable NaNs → store values; operator NaNs kept).
+    private var resolved: FloatArray = expression
+
+    /** Resolve each non-operator variable NaN against the store (matrix operators pass through). */
+    override fun updateVariables(context: RemoteContext) {
+        var hasVar = false
+        for (v in expression) if (v.isNaN() && !MatrixOperations.isOperator(v)) { hasVar = true; break }
+        resolved = if (!hasVar) {
+            expression
+        } else {
+            FloatArray(expression.size) { i ->
+                val v = expression[i]
+                if (v.isNaN() && !MatrixOperations.isOperator(v)) context.getFloat(WireTypes.idFromNan(v)) else v
+            }
+        }
+    }
+
+    /** Evaluate the matrix expression and store the result under [matrixId]. */
+    override fun apply(context: RemoteContext) {
+        context.loadMatrix(matrixId, MatrixOperations.eval(resolved))
+    }
 
     override fun write(buffer: WireBuffer) {
         buffer.writeByte(opcode)

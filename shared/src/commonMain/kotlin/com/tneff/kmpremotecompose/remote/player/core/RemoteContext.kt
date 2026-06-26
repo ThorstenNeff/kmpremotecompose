@@ -97,6 +97,10 @@ class RemoteContext {
     private val floatStore: MutableMap<Int, Float> = mutableMapOf()
     private val intStore: MutableMap<Int, Int> = mutableMapOf()
     private val colorStore: MutableMap<Int, Int> = mutableMapOf()
+    // REM-37 cube3d: 4×4 matrices (row-major FloatArray(16)) keyed by matrixId — upstream stores these as
+    // objects (putObject/getObject); a dedicated store keeps the type explicit. Produced by MATRIX_EXPRESSION,
+    // consumed by MATRIX_VECTOR_MATH.
+    private val matrixStore: MutableMap<Int, FloatArray> = mutableMapOf()
 
     /**
      * The resolved float for variable [id], or **`0f`** when unresolved — source-grounded against
@@ -118,6 +122,12 @@ class RemoteContext {
     fun getColor(id: Int): Int = colorStore[id] ?: 0
 
     fun loadColor(id: Int, value: Int) { colorStore[id] = value }
+
+    /** The 4×4 row-major matrix (FloatArray(16)) for [id], or null if not yet produced (REM-37 cube3d). */
+    fun getMatrix(id: Int): FloatArray? = matrixStore[id]
+
+    /** Store a produced 4×4 matrix under [id] (MATRIX_EXPRESSION → MATRIX_VECTOR_MATH). */
+    fun loadMatrix(id: Int, value: FloatArray) { matrixStore[id] = value }
 
     /**
      * Seed the **system variables** into the float store (REM-36 E-Seed) — done **before** the player's
