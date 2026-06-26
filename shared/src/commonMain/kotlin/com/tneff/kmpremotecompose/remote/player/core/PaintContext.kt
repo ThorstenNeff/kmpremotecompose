@@ -216,6 +216,13 @@ abstract class PaintContext(context: RemoteContext) {
     /** Apply a bundle of paint mutations ([PaintData] = upstream `PaintBundle`). */
     abstract fun applyPaint(paint: PaintData)
 
+    /**
+     * Apply a component's text font style/weight to the shared paint state (REM-37 TextStyle) — read by
+     * the text renderer. `fontStyle`: 0 = normal, 1 = italic; `fontWeight`: CSS 100–900 (0 = default).
+     * Default no-op so non-text contexts (and the headless test fake) need no override.
+     */
+    open fun applyTextStyle(fontStyle: Int, fontWeight: Int) {}
+
     // --- graphics layer (abstract; GAP-4 — deferred L2-D2) --------------------------------------
 
     abstract fun startGraphicsLayer(w: Int, h: Int)

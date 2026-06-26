@@ -67,6 +67,7 @@ class PaintData(val values: IntArray) : PaintOperation {
         const val MAX_BUNDLE_INTS: Int = 1024
 
         // Attribute tags (subset, verified against upstream PaintBundle).
+        const val TEXT_SIZE: Int = 1
         const val COLOR: Int = 4
         const val STROKE_WIDTH: Int = 5
         const val STROKE_CAP: Int = 7
@@ -99,6 +100,9 @@ class PaintData(val values: IntArray) : PaintOperation {
 
         /** Stroke cap, packed: `[STROKE_CAP | (cap shl 16)]`. */
         fun strokeCap(cap: Int): Builder = apply { ints += STROKE_CAP or (cap shl 16) }
+
+        /** Text size in px (float as raw bits): `[TEXT_SIZE, bits]` → PlayerPaintState.textSizePx (REM-37). */
+        fun textSize(px: Float): Builder = apply { ints += TEXT_SIZE; ints += px.toRawBits() }
 
         fun build(): PaintData = PaintData(ints.toIntArray())
     }

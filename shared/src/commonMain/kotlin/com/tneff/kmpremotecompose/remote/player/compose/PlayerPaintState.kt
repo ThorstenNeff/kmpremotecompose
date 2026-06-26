@@ -40,19 +40,27 @@ class PlayerPaintState {
     /** Font id (`TYPEFACE` font-type / id); read by the text renderer (L2-S3). `0` = default. */
     var typefaceId: Int = DEFAULT_TYPEFACE_ID
 
+    /** Font style (REM-37: `0` = normal, `1` = italic); read by the text renderer (deriveTextStyle, dev-1). */
+    var fontStyle: Int = DEFAULT_FONT_STYLE
+
+    /** Font weight (REM-37: CSS 100–900; `0` = renderer default); read by the text renderer (dev-1). */
+    var fontWeight: Int = DEFAULT_FONT_WEIGHT
+
     private val stack = ArrayDeque<Snapshot>()
 
-    /** Push a snapshot of all three fields (upstream `savePaint`). */
+    /** Push a snapshot of all fields (upstream `savePaint`). */
     fun save() {
-        stack.addLast(Snapshot(paint.copyOf(), textSizePx, typefaceId))
+        stack.addLast(Snapshot(paint.copyOf(), textSizePx, typefaceId, fontStyle, fontWeight))
     }
 
-    /** Pop the last snapshot, restoring all three fields (upstream `restorePaint`); no-op if empty. */
+    /** Pop the last snapshot, restoring all fields (upstream `restorePaint`); no-op if empty. */
     fun restore() {
         val s = stack.removeLastOrNull() ?: return
         paint = s.paint
         textSizePx = s.textSizePx
         typefaceId = s.typefaceId
+        fontStyle = s.fontStyle
+        fontWeight = s.fontWeight
     }
 
     /** Reset to defaults (upstream `reset`). */
@@ -60,12 +68,18 @@ class PlayerPaintState {
         paint = Paint()
         textSizePx = DEFAULT_TEXT_SIZE_PX
         typefaceId = DEFAULT_TYPEFACE_ID
+        fontStyle = DEFAULT_FONT_STYLE
+        fontWeight = DEFAULT_FONT_WEIGHT
     }
 
-    private class Snapshot(val paint: Paint, val textSizePx: Float, val typefaceId: Int)
+    private class Snapshot(
+        val paint: Paint, val textSizePx: Float, val typefaceId: Int, val fontStyle: Int, val fontWeight: Int,
+    )
 
     companion object {
         const val DEFAULT_TEXT_SIZE_PX: Float = 16f
         const val DEFAULT_TYPEFACE_ID: Int = 0
+        const val DEFAULT_FONT_STYLE: Int = 0
+        const val DEFAULT_FONT_WEIGHT: Int = 0
     }
 }
