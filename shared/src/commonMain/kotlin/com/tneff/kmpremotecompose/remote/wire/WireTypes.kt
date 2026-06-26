@@ -96,4 +96,26 @@ object WireTypes {
      * @return the id payload
      */
     fun idFromNan(value: Float): Int = value.toRawBits() and ID_PAYLOAD_MASK
+
+    // ---------------------------------------------------------------------------------------------
+    // NaN id classification (REM-36, Eval-Engine E1). A NaN-encoded float is one of several classes
+    // distinguished by its 23-bit region payload `>> 20` (upstream `NanMap`): 0 = system variable,
+    // 1 = normal variable, 2 = **data** variable (resolves to a stored DATA_FLOAT/INT/COLOR value),
+    // 3 = operation (math/RPN operator). The eval engine resolves coords that are data variables.
+    // ---------------------------------------------------------------------------------------------
+
+    /** Mask isolating the 23-bit region+id payload from a NaN float's raw bits (upstream `fromNaN`). */
+    const val ID_REGION_PAYLOAD_MASK: Int = 0x7FFFFF
+
+    /** The 23-bit region+id payload of a NaN float (upstream `NanMap.fromNaN`). */
+    fun fromNaN(value: Float): Int = value.toRawBits() and ID_REGION_PAYLOAD_MASK
+
+    /** The class region of a NaN id (`fromNaN >> 20`): 0=system, 1=normal, 2=data, 3=operation. */
+    fun nanRegion(value: Float): Int = fromNaN(value) shr 20
+
+    /** True if [value] is a **data** variable NaN id (region 2) — resolves to a stored value. */
+    fun isDataVariable(value: Float): Boolean = value.isNaN() && nanRegion(value) == 2
+
+    /** True if [value] is a math/RPN **operation** NaN id (region 3) — evaluated by the RPN engine (E2). */
+    fun isOperationVariable(value: Float): Boolean = value.isNaN() && nanRegion(value) == 3
 }

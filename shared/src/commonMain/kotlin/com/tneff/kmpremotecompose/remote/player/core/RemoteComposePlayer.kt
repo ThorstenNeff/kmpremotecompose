@@ -50,6 +50,17 @@ class RemoteComposePlayer(val context: RemoteContext = RemoteContext()) {
         context.paintContext = paint
         context.resetPass(frameTimeSeconds)
         paint.reset()
+        // Phase A (REM-36 Eval-Engine E1): resolve + evaluate variables BEFORE painting, so draw ops
+        // read already-resolved values (the long-flagged "deferred apply-phase"). MVP evaluates every
+        // VariableSupport op each frame (no dirty tracking). updateVariables (resolve NaN refs) then
+        // apply (evaluate + load into the store).
+        for (op in document.operations) {
+            if (op is VariableSupport) {
+                op.updateVariables(context)
+                op.apply(context)
+            }
+        }
+        // Phase B: paint — draw ops now see resolved coords.
         for (op in document.operations) {
             if (op is PaintOperation) {
                 op.paint(context, paint)

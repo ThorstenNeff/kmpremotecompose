@@ -91,6 +91,33 @@ class RemoteContext {
     /** Set the winding for path [id] (upstream `mPathWinding.put`). */
     fun putPathWinding(id: Int, winding: Int) { pathWinding[id] = winding }
 
+    // --- variable / eval stores (REM-36 Eval-Engine E1; upstream mFloatMap/mIntegerMap/mColorMap) -
+
+    private val floatStore: MutableMap<Int, Float> = mutableMapOf()
+    private val intStore: MutableMap<Int, Int> = mutableMapOf()
+    private val colorStore: MutableMap<Int, Int> = mutableMapOf()
+
+    /**
+     * The resolved float for variable [id], or **`0f`** when unresolved — source-grounded against
+     * upstream `RemoteComposeState.getFloat` → `IntFloatMap.get`, which returns `0` for a missing key
+     * (the `Float.NaN` array-fill is defensive init, not the get default). E3 ops fall back to the raw
+     * value for non-variable inputs; an *unresolved* data variable degrades to `0f`, not NaN.
+     */
+    fun getFloat(id: Int): Float = floatStore[id] ?: 0f
+
+    /** Store the evaluated float for variable [id] (upstream `loadFloat`/`mFloatMap.put`). */
+    fun loadFloat(id: Int, value: Float) { floatStore[id] = value }
+
+    /** The resolved int for variable [id], or `0` when unresolved (upstream `IntMap.get` default). */
+    fun getInt(id: Int): Int = intStore[id] ?: 0
+
+    fun loadInt(id: Int, value: Int) { intStore[id] = value }
+
+    /** The resolved ARGB color for variable [id], or `0` when unresolved. */
+    fun getColor(id: Int): Int = colorStore[id] ?: 0
+
+    fun loadColor(id: Int, value: Int) { colorStore[id] = value }
+
     fun getBitmap(id: Int): ImageBitmap? = idObjects[id] as? ImageBitmap
 
     fun putBitmap(id: Int, bitmap: ImageBitmap) { idObjects[id] = bitmap }
