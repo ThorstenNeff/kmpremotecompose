@@ -15,6 +15,9 @@
  */
 package com.tneff.kmpremotecompose.remote.core.operations
 
+import com.tneff.kmpremotecompose.remote.player.core.RemoteContext
+import com.tneff.kmpremotecompose.remote.player.core.RpnFloatEvaluator
+import com.tneff.kmpremotecompose.remote.player.core.VariableSupport
 import com.tneff.kmpremotecompose.remote.wire.WireBuffer
 
 /**
@@ -24,12 +27,17 @@ import com.tneff.kmpremotecompose.remote.wire.WireBuffer
  * Wire layout: opcode, `int id`, `int len` packing `value.size` in the low 16 bits and
  * `animation.size` in the high 16 bits (0 ⇒ no animation), then the value floats and, if present,
  * the animation floats. All floats are raw bits (operators/operands may be NaN-encoded ids).
+ *
+ * Eval-Engine E2 (REM-37): a producer — [apply] evaluates the RPN [value] via [RpnFloatEvaluator] and
+ * loads the result under [id]. [animation] (FloatAnimation) is **deferred to E-D1**; the static MVP
+ * frame evaluates the expression at the current state. An expression using a non-MVP operator degrades
+ * to `0f` (flagged) rather than crashing the render.
  */
 class FloatExpression(
     val id: Int,
     val value: FloatArray,
     val animation: FloatArray? = null,
-) : Operation {
+) : Operation, VariableSupport {
 
     override val opcode: Int get() = Operations.ANIMATED_FLOAT
 
@@ -41,6 +49,16 @@ class FloatExpression(
         buffer.writeInt(len)
         for (v in value) buffer.writeFloat(v)
         animation?.forEach { buffer.writeFloat(it) }
+    }
+
+    /** Evaluate the RPN expression and load the result into the float store (upstream apply → loadFloat). */
+    override fun apply(context: RemoteContext) {
+        val result = try {
+            RpnFloatEvaluator.eval(value, value.size, context)
+        } catch (e: IllegalArgumentException) {
+            0f // non-MVP operator (E-D3) → documented fallback, no crash
+        }
+        context.loadFloat(id, result)
     }
 
     override fun dump(): String =
