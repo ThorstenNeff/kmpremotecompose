@@ -24,6 +24,7 @@ import com.tneff.kmpremotecompose.remote.player.compose.ComposePaintContext
 import com.tneff.kmpremotecompose.remote.player.compose.ComposeTextRenderer
 import com.tneff.kmpremotecompose.remote.player.compose.PlayerPaintState
 import com.tneff.kmpremotecompose.remote.player.core.RemoteContext
+import androidx.compose.ui.text.font.createFontFamilyResolver
 import kotlin.test.Test
 import kotlin.test.assertNotNull
 import kotlin.test.assertNull
@@ -41,7 +42,7 @@ class ComposeTextRendererIosTest {
 
     @Test
     fun getTextBounds_isBaselineRelative_andNonEmpty() {
-        val r = ComposeTextRenderer(density = 2f)
+        val r = ComposeTextRenderer(density = 2f, createFontFamilyResolver())
         val bounds = FloatArray(4)
         r.getTextBounds("Hello", 0, -1, 0, bounds)
         assertTrue(bounds[2] > 0f, "width must be positive")
@@ -51,7 +52,7 @@ class ComposeTextRendererIosTest {
 
     @Test
     fun drawTextRun_andSubstring_doNotThrow() {
-        val r = ComposeTextRenderer(density = 2f)
+        val r = ComposeTextRenderer(density = 2f, createFontFamilyResolver())
         val c = canvas()
         r.drawTextRun(c, "Hello world", 0, -1, 4f, 20f, rtl = false)
         r.drawTextRun(c, "Hello world", 0, 5, 4f, 40f, rtl = false) // substring "Hello"
@@ -60,7 +61,7 @@ class ComposeTextRendererIosTest {
 
     @Test
     fun layoutComplexText_honoursMaxWidthAndMaxLines() {
-        val r = ComposeTextRenderer(density = 2f)
+        val r = ComposeTextRenderer(density = 2f, createFontFamilyResolver())
         val layout = r.layoutComplexText(
             text = "the quick brown fox jumps over the lazy dog",
             start = 0, end = -1,
@@ -84,7 +85,7 @@ class ComposeTextRendererIosTest {
 
     @Test
     fun bitmapFontText_advancesAndBlitsWithoutThrow() {
-        val r = ComposeTextRenderer(density = 2f)
+        val r = ComposeTextRenderer(density = 2f, createFontFamilyResolver())
         val glyph = BitmapFontData.Glyph(
             chars = "A", bitmapId = 7,
             marginLeft = 1, marginTop = 0, marginRight = 1, marginBottom = 0,
@@ -101,7 +102,7 @@ class ComposeTextRendererIosTest {
     fun renderer_readsBoundPaintState_sizeAffectsMeasure() {
         // Read-side of the S2↔S3 seam (proposal A) on the real backend: the bound PlayerPaintState's
         // textSizePx drives the measured style. (Headless logic is in TextPaintStateReadSideTest.)
-        val r = ComposeTextRenderer(density = 2f)
+        val r = ComposeTextRenderer(density = 2f, createFontFamilyResolver())
         val small = FloatArray(4)
         r.getTextBounds("Hi", 0, -1, 0, small) // default 16sp
         // dev-2's real PlayerPaintState: no-arg ctor + var props.
@@ -115,7 +116,7 @@ class ComposeTextRendererIosTest {
     fun composePaintContext_textHalf_rendersThroughTheAdapter() {
         val context = RemoteContext()
         context.putText(3, "Hi")
-        val adapter = ComposePaintContext(context, canvas())
+        val adapter = ComposePaintContext(context, canvas(), fontFamilyResolver = createFontFamilyResolver())
         adapter.drawTextRun(3, 0, -1, 0, 0, 2f, 20f, rtl = false) // resolves text id 3, draws via renderer
         val bounds = FloatArray(4)
         adapter.getTextBounds(3, 0, -1, 0, bounds)
