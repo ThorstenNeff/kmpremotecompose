@@ -49,12 +49,12 @@ import kotlin.math.atan2
 internal class GeometryPaintDelegate(
     private val context: RemoteContext,
     var canvas: Canvas,
+    private val paintState: PlayerPaintState,
 ) : GeometryDelegate {
 
-    /** Current paint; `var` so [reset] can swap a fresh instance (upstream behavior). */
-    var paint: Paint = Paint()
+    /** The active paint — owned by the shared [PlayerPaintState] (REM-32); geometry draws with it. */
+    val paint: Paint get() = paintState.paint
 
-    private val paintStack = ArrayDeque<Paint>()
     private val matrixStack = ArrayDeque<Matrix>().apply { addLast(Matrix()) }
     private val currentMatrix: Matrix get() = matrixStack.last()
 
@@ -201,20 +201,20 @@ internal class GeometryPaintDelegate(
     // ---- paint ----
 
     override fun savePaint() {
-        paintStack.addLast(paint.copyOf())
+        paintState.save()
     }
 
     override fun restorePaint() {
-        if (paintStack.isNotEmpty()) paint = paintStack.removeLast()
+        paintState.restore()
     }
 
-    /** Apply a Layer-1 `PAINT_VALUES` bundle ([PaintData]) onto the current paint. */
+    /** Apply a Layer-1 `PAINT_VALUES` bundle ([PaintData]) onto the shared paint state. */
     override fun applyPaint(paint: PaintData) {
-        PaintBundleApplier.applyTo(this.paint, paint.values, deferred = deferredPaintTags)
+        PaintBundleApplier.applyTo(paintState, paint.values, deferred = deferredPaintTags)
     }
 
     override fun reset() {
-        paint = Paint()
+        paintState.reset()
     }
 
     // ---- matrix ----
