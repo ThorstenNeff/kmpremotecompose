@@ -18,6 +18,9 @@ package com.tneff.kmpremotecompose.remote.core.operations.draw
 import com.tneff.kmpremotecompose.remote.core.operations.Operation
 import com.tneff.kmpremotecompose.remote.core.operations.OperationReader
 import com.tneff.kmpremotecompose.remote.core.operations.Operations
+import com.tneff.kmpremotecompose.remote.player.core.PaintContext
+import com.tneff.kmpremotecompose.remote.player.core.PaintOperation
+import com.tneff.kmpremotecompose.remote.player.core.RemoteContext
 import com.tneff.kmpremotecompose.remote.wire.WireBuffer
 
 /**
@@ -25,13 +28,18 @@ import com.tneff.kmpremotecompose.remote.wire.WireBuffer
  *
  * Wire layout: opcode byte + int `id` (mirrors upstream `DrawPath`).
  */
-class DrawPath(val id: Int) : Operation {
+class DrawPath(val id: Int) : PaintOperation {
 
     override val opcode: Int get() = Operations.DRAW_PATH
 
     override fun write(buffer: WireBuffer) {
         buffer.writeByte(opcode)
         buffer.writeInt(id)
+    }
+
+    /** L2 render: dispatch to the geometry adapter via the paint context (REM-8). */
+    override fun paint(context: RemoteContext, paint: PaintContext) {
+        paint.drawPath(id, 0f, 1f)
     }
 
     override fun dump(): String = "DRAW_PATH id=$id"

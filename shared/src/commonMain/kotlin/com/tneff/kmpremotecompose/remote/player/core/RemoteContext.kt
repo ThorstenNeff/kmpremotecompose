@@ -165,9 +165,24 @@ class RemoteContext {
     var frameTimeSeconds: Float = 0f
         private set
 
+    /**
+     * Number of paint primitives drawn this pass — the **honest-render gate** (REM-8, test-2 contract):
+     * each `paint.*` draw primitive calls [incrementDrawCount]; the host's `rc-rendered` hook fires only
+     * when this is ≥ 1 after a pass, and a decode-ok pass that draws nothing (`drawCount == 0`) surfaces
+     * `rc-error "rendered empty"` instead of false-greening on a blank canvas. Reset to 0 per pass in
+     * [resetPass]. (Added by REM-8 — additive; touches no `write()`/`read()`. dev-1's S3 text primitives
+     * increment it too once wired.)
+     */
+    var drawCount: Int = 0
+        private set
+
+    /** Record that one paint primitive drew this pass (called by the draw adapters). */
+    fun incrementDrawCount() { drawCount++ }
+
     /** Reset per-pass transient state and bind this pass's [frameTimeSeconds] (player calls it). */
     fun resetPass(frameTimeSeconds: Float = 0f) {
         wakeInSeconds = -1f
+        drawCount = 0
         this.frameTimeSeconds = frameTimeSeconds
     }
 }

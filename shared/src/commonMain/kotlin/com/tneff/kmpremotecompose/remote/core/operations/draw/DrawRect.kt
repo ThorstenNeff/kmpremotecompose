@@ -18,6 +18,9 @@ package com.tneff.kmpremotecompose.remote.core.operations.draw
 import com.tneff.kmpremotecompose.remote.core.operations.Operation
 import com.tneff.kmpremotecompose.remote.core.operations.OperationReader
 import com.tneff.kmpremotecompose.remote.core.operations.Operations
+import com.tneff.kmpremotecompose.remote.player.core.PaintContext
+import com.tneff.kmpremotecompose.remote.player.core.PaintOperation
+import com.tneff.kmpremotecompose.remote.player.core.RemoteContext
 import com.tneff.kmpremotecompose.remote.wire.WireBuffer
 
 /**
@@ -31,7 +34,7 @@ class DrawRect(
     val top: Float,
     val right: Float,
     val bottom: Float,
-) : Operation {
+) : PaintOperation {
 
     override val opcode: Int get() = Operations.DRAW_RECT
 
@@ -41,6 +44,11 @@ class DrawRect(
         buffer.writeFloat(top)
         buffer.writeFloat(right)
         buffer.writeFloat(bottom)
+    }
+
+    /** L2 render: dispatch to the geometry adapter via the paint context (REM-8). */
+    override fun paint(context: RemoteContext, paint: PaintContext) {
+        paint.drawRect(left, top, right, bottom)
     }
 
     override fun dump(): String = "DRAW_RECT l=$left t=$top r=$right b=$bottom"
