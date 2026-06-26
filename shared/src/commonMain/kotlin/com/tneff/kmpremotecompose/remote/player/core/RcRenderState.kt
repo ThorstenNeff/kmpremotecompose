@@ -15,40 +15,36 @@
  */
 package com.tneff.kmpremotecompose.remote.player.core
 
+import androidx.compose.ui.graphics.ImageBitmap
 import androidx.compose.ui.graphics.Path
 
 /**
- * **PROVISIONAL STUB — contract owned by dev-1's L2-S1 (Foundation).**
+ * **PROVISIONAL STUB — replaced at S1 integration by dev-1's concrete `RemoteContext` (REM-30,
+ * `b3e6261`).** Build-against-stubs seam for REM-31 (L2-S2). The method names below are the **exact
+ * subset of `RemoteContext`** the geometry delegate consumes (verified against dev-1's final contract),
+ * so the post-merge reconcile is a type-name swap (`RcRenderState` → `RemoteContext`) + import only —
+ * the delegate's call sites and method bodies are unchanged.
  *
- * REM-31 (L2-S2 Geometrie-Adapter) builds against this seam (build-against-stubs, like L1). It is the
- * raw document state-store surface the geometry delegate consumes — id → cached Path / Path-data /
- * bitmap / text, mirroring upstream `RemoteComposeState`'s raw accessors (NOT the player-side
- * `getPath(id,start,end)` build/cache helper, which is S2 — see [com.tneff.kmpremotecompose.remote.player.compose]).
+ * Raw storage only: the player-side `getPath(id, start, end)` construction + `start`/`end` trim
+ * (`FloatsToPath`/`PathMeasure`) is the **delegate's** job (S2), not the context's
+ * (see [com.tneff.kmpremotecompose.remote.player.compose.PathGeometry]).
  *
- * On S1 integration this interface is replaced by dev-1's real `RemoteContext`/state surface; the
- * accessor names below were proposed to and relayed by the PO (2026-06-26). If dev-1 finalizes
- * different names/signatures, only the integration seam adapts — the delegate's geometry logic is
- * unchanged.
+ * 🚩 Note: dev-1's `RemoteContext` exposes no `getPathWinding` — even-odd fill handling has no home in
+ * the contract yet (flagged to PO 2026-06-26). Until resolved the delegate defaults to non-zero winding.
  */
 interface RcRenderState {
-    /** True if [id] is bound to any cached object (bitmap / text / path). */
-    fun containsId(id: Int): Boolean
+    /** Cached, already-built [Path] for [id], or null if only raw path-data is present. */
+    fun getPath(id: Int): Path?
 
-    /** Returns the object cached under [id] (bitmap as `ImageBitmap`, text as `String`, …) or null. */
-    fun getFromId(id: Int): Any?
-
-    /** Returns the cached, already-built [Path] for [id], or null if only path-data is present. */
-    fun getCachedPath(id: Int): Path?
-
-    /** Winding rule for path [id]: `1` = even-odd, else non-zero (mirrors upstream `getPathWinding`). */
-    fun getPathWinding(id: Int): Int
-
-    /** Returns the raw float-array path-data for [id] (NaN-encoded command stream), or null. */
-    fun getPathData(id: Int): FloatArray?
-
-    /** Caches a built [Path] under [id]. */
+    /** Cache a built [Path] under [id]. */
     fun putPath(id: Int, path: Path)
 
-    /** Stores raw float-array path-data under [id]. */
+    /** Raw float-array path-data for [id] (NaN-encoded command stream), or null. */
+    fun getPathData(id: Int): FloatArray?
+
+    /** Store raw float-array path-data under [id]. */
     fun putPathData(id: Int, data: FloatArray)
+
+    /** The decoded [ImageBitmap] for [id], or null. */
+    fun getBitmap(id: Int): ImageBitmap?
 }

@@ -20,36 +20,41 @@ import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.geometry.RoundRect
 import androidx.compose.ui.graphics.Canvas
 import androidx.compose.ui.graphics.ClipOp
-import androidx.compose.ui.graphics.ImageBitmap
 import androidx.compose.ui.graphics.Matrix
 import androidx.compose.ui.graphics.Paint
 import androidx.compose.ui.graphics.Path
 import androidx.compose.ui.graphics.PathMeasure
 import androidx.compose.ui.unit.IntOffset
 import androidx.compose.ui.unit.IntSize
+import com.tneff.kmpremotecompose.remote.core.operations.draw.PaintData
 import com.tneff.kmpremotecompose.remote.player.core.RcRenderState
 import kotlin.math.PI
 import kotlin.math.atan2
 
 /**
- * REM-31 (L2-S2 Geometrie-Adapter) — the geometry/paint half of the CMP `PaintContext` adapter, as an
- * independent **delegate** (PO-confirmed seam, 2026-06-26): dev-1's L2-S1 adapter holds the
- * `PaintContext` surface + text (S3) and forwards the geometry primitives here. Zero file overlap with
- * S1/S3; the public methods mirror upstream `PaintContext`'s geometry signatures so wiring is 1:1.
+ * REM-31 (L2-S2 Geometrie-Adapter) — the geometry/paint half of the CMP paint adapter, as an
+ * independent **delegate** (PO-confirmed seam, 2026-06-26). dev-1's L2-S1 `ComposePaintContext` holds
+ * the `PaintContext` surface + text (S3) and forwards the non-text primitives here; the public methods
+ * mirror dev-1's `GeometryDelegate` interface (which itself mirrors `PaintContext`) 1:1, so the adapter
+ * forwards trivially. Zero file overlap with S1/S3.
  *
  * Re-implemented from upstream `ComposePaintContext` against `androidx.compose.ui.graphics` — one impl
  * for Android **and** iOS (CMP-iOS = Skiko). No `java.*`; PROJECT_CONTEXT §5 honored.
  *
- * @param state the raw document state store (L2-S1 contract; [RcRenderState] is a build-against-stubs
- *   placeholder for dev-1's `RemoteContext` — accessor names relayed via PO).
+ * **Post-merge reconcile (on the PO's "S1 gemergt" ping):** declare `: GeometryDelegate`, swap the
+ * [RcRenderState] stub for dev-1's concrete `RemoteContext` (same accessor names → call sites
+ * unchanged). The bodies here are final.
+ *
+ * @param context the document state store (L2-S1 contract; [RcRenderState] is a build-against-stubs
+ *   placeholder for dev-1's `RemoteContext`).
  * @param canvas the target canvas; `var` because the adapter may redirect it (drawToBitmap / graphics
- *   layer — out of S2 scope, owned by S1/D2).
+ *   layer — deferred, see below).
  */
 internal class GeometryPaintDelegate(
-    private val state: RcRenderState,
+    private val context: RcRenderState,
     var canvas: Canvas,
 ) {
-    /** Current paint; `var` so [reset]/[replacePaint] can swap a fresh instance (upstream behavior). */
+    /** Current paint; `var` so [reset] can swap a fresh instance (upstream behavior). */
     var paint: Paint = Paint()
 
     private val paintStack = ArrayDeque<Paint>()
@@ -115,7 +120,7 @@ internal class GeometryPaintDelegate(
 
     /** Draw the whole bitmap [id] into the destination rect. */
     fun drawBitmap(id: Int, left: Float, top: Float, right: Float, bottom: Float) {
-        val image = state.getFromId(id) as? ImageBitmap ?: return
+        val image = context.getBitmap(id) ?: return
         canvas.drawImageRect(
             image = image,
             srcOffset = IntOffset.Zero,
@@ -140,7 +145,7 @@ internal class GeometryPaintDelegate(
         dstBottom: Int,
         cdId: Int,
     ) {
-        val image = state.getFromId(imageId) as? ImageBitmap ?: return
+        val image = context.getBitmap(imageId) ?: return
         canvas.drawImageRect(
             image = image,
             srcOffset = IntOffset(srcLeft, srcTop),
@@ -154,23 +159,23 @@ internal class GeometryPaintDelegate(
     // ---- path geometry ----
 
     fun drawPath(id: Int, start: Float, end: Float) =
-        canvas.drawPath(PathGeometry.buildPath(state, id, start, end), paint)
+        canvas.drawPath(PathGeometry.buildPath(context, id, start, end), paint)
 
     fun drawTweenPath(path1Id: Int, path2Id: Int, tween: Float, start: Float, end: Float) =
-        canvas.drawPath(PathGeometry.buildTweenPath(state, path1Id, path2Id, tween, start, end), paint)
+        canvas.drawPath(PathGeometry.buildTweenPath(context, path1Id, path2Id, tween, start, end), paint)
 
     /** Interpolate two paths' data and store the result under [out] (no draw). */
     fun tweenPath(out: Int, path1: Int, path2: Int, tween: Float) {
-        val d1 = state.getPathData(path1) ?: return
-        val d2 = state.getPathData(path2) ?: return
-        state.putPathData(out, PathGeometry.tweenPathData(d1, d2, tween))
+        val d1 = context.getPathData(path1) ?: return
+        val d2 = context.getPathData(path2) ?: return
+        context.putPathData(out, PathGeometry.tweenPathData(d1, d2, tween))
     }
 
     /** Boolean-combine two cached paths and store the result under [out] (no draw). */
     fun combinePath(out: Int, path1: Int, path2: Int, operation: Byte) {
-        val p1 = PathGeometry.buildPath(state, path1, 0f, 1f)
-        val p2 = PathGeometry.buildPath(state, path2, 0f, 1f)
-        state.putPath(out, PathGeometry.combinePaths(p1, p2, operation))
+        val p1 = PathGeometry.buildPath(context, path1, 0f, 1f)
+        val p2 = PathGeometry.buildPath(context, path2, 0f, 1f)
+        context.putPath(out, PathGeometry.combinePaths(p1, p2, operation))
     }
 
     // ---- paint ----
@@ -183,13 +188,9 @@ internal class GeometryPaintDelegate(
         if (paintStack.isNotEmpty()) paint = paintStack.removeLast()
     }
 
-    fun replacePaint(bundle: IntArray) {
-        paint = Paint()
-        applyPaint(bundle)
-    }
-
-    fun applyPaint(bundle: IntArray) {
-        PaintBundleApplier.applyTo(paint, bundle, deferred = deferredPaintTags)
+    /** Apply a Layer-1 `PAINT_VALUES` bundle ([PaintData]) onto the current paint. */
+    fun applyPaint(paint: PaintData) {
+        PaintBundleApplier.applyTo(this.paint, paint.values, deferred = deferredPaintTags)
     }
 
     fun reset() {
@@ -240,7 +241,7 @@ internal class GeometryPaintDelegate(
 
     /** Concat a matrix derived from a position (and optional tangent rotation) along path [pathId]. */
     fun matrixFromPath(pathId: Int, fraction: Float, vOffset: Float, flags: Int) {
-        val path = PathGeometry.buildPath(state, pathId, 0f, 1f)
+        val path = PathGeometry.buildPath(context, pathId, 0f, 1f)
         if (path.isEmpty) return
         val measure = PathMeasure().apply { setPath(path, false) }
         val len = measure.length
@@ -265,7 +266,7 @@ internal class GeometryPaintDelegate(
 
     /** Clip to a cached path; [regionOp] `1` (upstream `ClipPath.DIFFERENCE`) → difference, else intersect. */
     fun clipPath(pathId: Int, regionOp: Int) {
-        val path = PathGeometry.buildPath(state, pathId, 0f, 1f)
+        val path = PathGeometry.buildPath(context, pathId, 0f, 1f)
         canvas.clipPath(path, if (regionOp == CLIP_DIFFERENCE) ClipOp.Difference else ClipOp.Intersect)
     }
 
@@ -290,6 +291,21 @@ internal class GeometryPaintDelegate(
         val path = Path().apply { addRoundRect(roundRect) }
         canvas.clipPath(path, ClipOp.Intersect)
     }
+
+    // ---- graphics layer / drawToBitmap: GAP-4, deferred to L2-D2 (dev-2) ----
+    // 🚩 No-op stubs so the class satisfies dev-1's GeometryDelegate interface (post-merge
+    // `: GeometryDelegate`). Docs using these render without the layer/bitmap-redirect until D2.
+
+    @Suppress("UNUSED_PARAMETER")
+    fun startGraphicsLayer(w: Int, h: Int) { deferredPaintTags.add("GRAPHICS_LAYER") }
+
+    @Suppress("UNUSED_PARAMETER")
+    fun setGraphicsLayer(attributes: Map<Int, Any?>) { deferredPaintTags.add("GRAPHICS_LAYER") }
+
+    fun endGraphicsLayer() { /* deferred (L2-D2) */ }
+
+    @Suppress("UNUSED_PARAMETER")
+    fun drawToBitmap(bitmapId: Int, mode: Int, color: Int) { deferredPaintTags.add("DRAW_TO_BITMAP") }
 
     private companion object {
         const val CLIP_DIFFERENCE = 1

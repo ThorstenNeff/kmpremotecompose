@@ -38,19 +38,20 @@ import kotlin.test.assertTrue
  */
 class GeometryAdapterIosTest {
 
-    /** Build-against-stubs fake of dev-1's L2-S1 state store. */
+    /**
+     * Build-against-stubs fake of dev-1's L2-S1 state store. **Two separate maps** for built paths
+     * vs raw path-data — mirrors dev-1's `pathCache` + `idObjects` split (assist reconcile note), so
+     * `buildPath`'s getPathData→build→putPath does not overwrite the float[].
+     */
     private class FakeState : RcRenderState {
         val paths = mutableMapOf<Int, Path>()
         val pathData = mutableMapOf<Int, FloatArray>()
-        val objects = mutableMapOf<Int, Any>()
-        val winding = mutableMapOf<Int, Int>()
-        override fun containsId(id: Int) = objects.containsKey(id)
-        override fun getFromId(id: Int) = objects[id]
-        override fun getCachedPath(id: Int) = paths[id]
-        override fun getPathWinding(id: Int) = winding[id] ?: 0
-        override fun getPathData(id: Int) = pathData[id]
+        val bitmaps = mutableMapOf<Int, ImageBitmap>()
+        override fun getPath(id: Int) = paths[id]
         override fun putPath(id: Int, path: Path) { paths[id] = path }
+        override fun getPathData(id: Int) = pathData[id]
         override fun putPathData(id: Int, data: FloatArray) { pathData[id] = data }
+        override fun getBitmap(id: Int) = bitmaps[id]
     }
 
     private fun marker(cmd: Int) = WireTypes.asNan(cmd)
@@ -117,6 +118,17 @@ class GeometryAdapterIosTest {
     }
 
     @Test
+    fun paintBundle_fillAndStrokeIsApproximatedAsFillAndLoggedVisibly() {
+        // style=2 (FILL_AND_STROKE) has no CMP equivalent → Fill + visible in `deferred` (PO decision).
+        val bundle = PaintData.Builder().style(2).build().values
+        val deferred = mutableSetOf<String>()
+        val paint = Paint()
+        PaintBundleApplier.applyTo(paint, bundle, deferred = deferred)
+        assertEquals(PaintingStyle.Fill, paint.style)
+        assertTrue("STYLE_FILL_AND_STROKE" in deferred, "lossy fill+stroke must be logged, not silent")
+    }
+
+    @Test
     fun paintBundle_linearGradientSetsShader() {
         val arr = intArrayOf(
             11, // GRADIENT | (LINEAR << 16)
@@ -166,7 +178,7 @@ class GeometryAdapterIosTest {
         // Paint save/restore round-trips the paint state.
         val before = delegate.paint.color
         delegate.savePaint()
-        delegate.applyPaint(PaintData.Builder().color(0xFFFF0000.toInt()).build().values)
+        delegate.applyPaint(PaintData.Builder().color(0xFFFF0000.toInt()).build())
         assertEquals(Color(0xFFFF0000.toInt()), delegate.paint.color)
         delegate.restorePaint()
         assertEquals(before, delegate.paint.color, "paint restored after pop")

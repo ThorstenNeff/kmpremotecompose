@@ -16,7 +16,6 @@
 package com.tneff.kmpremotecompose.remote.player.compose
 
 import androidx.compose.ui.graphics.Path
-import androidx.compose.ui.graphics.PathFillType
 import androidx.compose.ui.graphics.PathOperation
 import com.tneff.kmpremotecompose.remote.player.core.RcRenderState
 
@@ -26,22 +25,20 @@ import com.tneff.kmpremotecompose.remote.player.core.RcRenderState
  */
 internal object PathGeometry {
 
-    /** Even-odd winding marker stored alongside path-data (mirrors upstream `getPathWinding == 1`). */
-    private const val WINDING_EVEN_ODD: Int = 1
-
     /**
      * Build (or fetch the cached) Compose [Path] for [id] over the fractional segment [[start], [end]].
      * Mirrors `RemoteComposeState.getPath(id, start, end)`: cache hit → return; else build the path
-     * from path-data via [FloatsToPath], apply the even-odd fill type if flagged, and cache it.
+     * from path-data via [FloatsToPath] and cache it.
+     *
+     * 🚩 Even-odd fill type is NOT applied: dev-1's `RemoteContext` exposes no `getPathWinding`
+     * (flagged to PO 2026-06-26). Defaults to non-zero winding until winding gets a home in the
+     * contract or the op-walk.
      */
     fun buildPath(state: RcRenderState, id: Int, start: Float, end: Float): Path {
-        state.getCachedPath(id)?.let { return it }
+        state.getPath(id)?.let { return it }
         val path = Path()
         val pathData = state.getPathData(id) ?: return path
         FloatsToPath.genPath(path, pathData, start, end)
-        if (state.getPathWinding(id) == WINDING_EVEN_ODD) {
-            path.fillType = PathFillType.EvenOdd
-        }
         state.putPath(id, path)
         return path
     }

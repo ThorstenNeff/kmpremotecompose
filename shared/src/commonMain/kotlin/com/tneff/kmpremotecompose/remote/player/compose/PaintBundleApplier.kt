@@ -78,6 +78,8 @@ internal object PaintBundleApplier {
     private const val PATH_EFFECT = 25
     private const val FALLBACK_TYPEFACE = 26
 
+    private const val STYLE_FILL_AND_STROKE = 2
+
     private const val LINEAR_GRADIENT = 0
     private const val RADIAL_GRADIENT = 1
     private const val SWEEP_GRADIENT = 2
@@ -101,7 +103,14 @@ internal object PaintBundleApplier {
                 STROKE_MITER -> paint.strokeMiterLimit = Float.fromBits(values[i++])
                 STROKE_CAP -> paint.strokeCap = strokeCap(cmd shr 16)
                 STROKE_JOIN -> paint.strokeJoin = strokeJoin(cmd shr 16)
-                STYLE -> paint.style = paintingStyle(cmd shr 16)
+                STYLE -> {
+                    val s = cmd shr 16
+                    // (b) MVP: FILL_AND_STROKE has no CMP equivalent → approximated as Fill (lossy:
+                    // outline dropped). Logged visibly (PO 2026-06-26) so test-2's render sweep can
+                    // trigger the (a) two-pass retrofit if any doc uses style=2 with a visible stroke.
+                    if (s == STYLE_FILL_AND_STROKE) deferred?.add("STYLE_FILL_AND_STROKE")
+                    paint.style = paintingStyle(s)
+                }
                 ALPHA -> paint.alpha = Float.fromBits(values[i++])
                 ANTI_ALIAS -> paint.isAntiAlias = (cmd shr 16) != 0
                 BLEND_MODE -> paint.blendMode = blendMode(cmd shr 16)
