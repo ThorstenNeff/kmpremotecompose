@@ -125,18 +125,24 @@ class PlayerFoundationTest {
     }
 
     @Test
-    fun remoteContext_singleIdSpace_typedViewsAndGenericAccessors() {
+    fun remoteContext_stores_dataWindingAndTypedViews() {
         val context = RemoteContext()
         context.putText(10, "hello")
         context.putPathData(11, floatArrayOf(1f, 2f))
+        context.putPathWinding(12, 1)
 
         assertEquals("hello", context.getText(10))
         assertTrue(context.containsId(10))
         assertEquals("hello", context.getFromId(10))
-        assertContentTrue(floatArrayOf(1f, 2f), context.getPathData(11))
 
-        // typed view returns null when the id holds a different type — no leak across the one space.
-        assertNull(context.getPath(10), "id 10 holds a String, not a Path")
+        // path raw data lives in the general registry (getFromId sees it); the path *cache* is separate.
+        assertContentTrue(floatArrayOf(1f, 2f), context.getPathData(11))
+        assertNull(context.getPath(11), "no built Path cached yet — separate store from the float[] data")
+
+        // winding has its own store; absent ⇒ 0 (upstream IntIntMap default).
+        assertEquals(1, context.getPathWinding(12))
+        assertEquals(0, context.getPathWinding(99), "unset winding defaults to 0")
+
         assertFalse(context.containsId(99))
         assertNull(context.getFromId(99))
     }

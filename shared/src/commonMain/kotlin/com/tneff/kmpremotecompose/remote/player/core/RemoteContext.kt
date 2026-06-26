@@ -31,41 +31,65 @@ import androidx.compose.ui.graphics.Path
  * convenience methods delegate to. Variable evaluation, animation clocking and `declareId` runtime
  * semantics are deliberately out of scope for S1 and land with the geometry/text slices.
  *
- * **Single id space (faithful to upstream).** All decoded objects — paths, bitmaps, text and raw
- * path-command data — share one `id → object` registry. The typed accessors below are views over it,
- * so [getFromId]/[containsId] see everything the typed `put*` calls stored. The CMP graphics types
- * ([Path], [ImageBitmap]) are kept as values per TECHSPEC §1.1 (path caching = id→`Path` in commonMain).
+ * **Id stores (faithful to upstream `RemoteComposeState`).** Most decoded objects — bitmaps, text,
+ * raw path-command data and generic data items — share one `id → object` registry ([idObjects],
+ * mirroring `mIntDataMap`/`mObjectMap`); their ids are type-unique, so a single map is safe and the
+ * typed accessors are views over it. **Path is the exception:** upstream keeps `mPathMap` (the cached
+ * [Path] object) and `mPathData` (the raw `float[]`) as **separate** maps because one path id carries
+ * **both at once** — so [pathCache] is its own map here. Collapsing them would let [putPath] clobber
+ * the `float[]` under the same id and corrupt path reuse / `combinePath` / trim. Mirroring upstream,
+ * [putPathData] also **invalidates** any stale cached [Path] for that id.
  */
 class RemoteContext {
 
     /** The paint sink for the current pass. Set by [RemoteComposePlayer] before the op walk. */
     var paintContext: PaintContext? = null
 
-    /** The one id → decoded-object registry. Typed accessors are views over this map. */
+    /** General id → decoded-object registry (upstream `mIntDataMap`/`mObjectMap`). */
     private val idObjects: MutableMap<Int, Any> = mutableMapOf()
+
+    /** Cached built [Path] per id (upstream `mPathMap`), kept separate from the raw path `float[]`. */
+    private val pathCache: MutableMap<Int, Path> = mutableMapOf()
+
+    /** Per-path winding (upstream `mPathWinding`, an `IntIntMap`); absent ⇒ 0. */
+    private val pathWinding: MutableMap<Int, Int> = mutableMapOf()
 
     // --- generic id accessors (S2 geometry adapter resolves draw ops against these) -------------
 
     /** The decoded object registered under [id], or null. Upstream `getFromId`. */
     fun getFromId(id: Int): Any? = idObjects[id]
 
-    /** True if any object is registered under [id]. Upstream `containsId`. */
+    /** True if a decoded object is registered under [id]. Upstream `containsId`. */
     fun containsId(id: Int): Boolean = idObjects.containsKey(id)
 
     /** Register an arbitrary decoded object under [id]. */
     fun putObject(id: Int, value: Any) { idObjects[id] = value }
 
-    // --- typed views over the id registry -------------------------------------------------------
+    // --- path: cache (mPathMap) vs raw data (mPathData) — two stores, one id --------------------
 
-    /** A cached built [Path] for [id] (from `DATA_PATH`/`PATH_CREATE`), or null. */
-    fun getPath(id: Int): Path? = idObjects[id] as? Path
+    /** A cached built [Path] for [id] (upstream `mPathMap.get`), or null. */
+    fun getPath(id: Int): Path? = pathCache[id]
 
-    fun putPath(id: Int, path: Path) { idObjects[id] = path }
+    /** Cache the built [Path] for [id] (upstream `mPathMap.put`). Does **not** touch the raw data. */
+    fun putPath(id: Int, path: Path) { pathCache[id] = path }
 
-    /** Raw path-command floats for [id], before they are turned into a [Path] (dev-2's `FloatsToPath`). */
+    /** Raw path-command floats for [id] (upstream `mPathData.get`), turned into a [Path] by dev-2's `FloatsToPath`. */
     fun getPathData(id: Int): FloatArray? = idObjects[id] as? FloatArray
 
-    fun putPathData(id: Int, data: FloatArray) { idObjects[id] = data }
+    /** Store raw path floats for [id] and **invalidate** any stale cached [Path] (upstream `mPathData.put` + `mPathMap.remove`). */
+    fun putPathData(id: Int, data: FloatArray) {
+        idObjects[id] = data
+        pathCache.remove(id)
+    }
+
+    /**
+     * The winding for path [id] (upstream `mPathWinding.get`); **0** if unset. dev-2 maps winding==1
+     * to `PathFillType.EvenOdd` when building the [Path].
+     */
+    fun getPathWinding(id: Int): Int = pathWinding[id] ?: 0
+
+    /** Set the winding for path [id] (upstream `mPathWinding.put`). */
+    fun putPathWinding(id: Int, winding: Int) { pathWinding[id] = winding }
 
     fun getBitmap(id: Int): ImageBitmap? = idObjects[id] as? ImageBitmap
 
