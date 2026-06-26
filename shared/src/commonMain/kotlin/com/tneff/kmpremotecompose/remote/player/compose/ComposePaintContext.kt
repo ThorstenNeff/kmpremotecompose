@@ -186,7 +186,17 @@ class ComposePaintContext(
         geometry?.drawToBitmap(bitmapId, mode, color)
     }
 
-    // --- text: dev-1 L2-S3 (scaffold no-ops; rendered against [canvas]) -------------------------
+    // --- text: dev-1 L2-S3 basis (CMP TextMeasurer/Paragraph via [textRenderer], → [canvas]) -----
+
+    /**
+     * The CMP text engine, built lazily from the pass density and bound to the shared [paintState]
+     * (dev-2's single instance above) — so a `PAINT_VALUES` bundle that sets `TEXT_SIZE` and the
+     * geometry color reach the text renderer. The text half needs the [canvas]; if none was bound (S1
+     * scaffold usage), text draws are skipped.
+     */
+    val textRenderer: ComposeTextRenderer by lazy {
+        ComposeTextRenderer(context.density).also { it.paintState = paintState }
+    }
 
     override fun drawTextRun(
         textId: Int,
@@ -195,15 +205,18 @@ class ComposePaintContext(
         x: Float, y: Float,
         rtl: Boolean,
     ) {
-        // L2-S3 (dev-1): CMP TextMeasurer/Paragraph → canvas.
+        val c = canvas ?: return
+        val text = context.getText(textId) ?: return
+        textRenderer.drawTextRun(c, text, start, end, x, y, rtl)
     }
 
     override fun drawTextOnPath(textId: Int, pathId: Int, hOffset: Float, vOffset: Float) {
-        // L2-S3 (dev-1): text-on-path via PathMeasure.
+        // Approximated/deferred (flagged): needs a built Path (dev-2) + PathMeasure — L2-D1 follow-on.
     }
 
     override fun getTextBounds(textId: Int, start: Int, end: Int, flags: Int, bounds: FloatArray) {
-        // L2-S3 (dev-1): measure via CMP TextMeasurer; leaves [bounds] untouched in the scaffold.
+        val text = context.getText(textId) ?: return
+        textRenderer.getTextBounds(text, start, end, flags, bounds)
     }
 
     override fun layoutComplexText(
@@ -215,16 +228,20 @@ class ComposePaintContext(
         maxWidth: Float, maxHeight: Float,
         letterSpacing: Float,
         lineHeightAdd: Float, lineHeightMultiplier: Float,
-        lineBreakStrategy: Int,
-        hyphenationFrequency: Int,
-        justificationMode: Int,
+        lineBreakStrategy: Int, // approximated → LineBreak preset (D1); see TEXT_PARAMETER_PARITY
+        hyphenationFrequency: Int, // unsupported → D1
+        justificationMode: Int, // unsupported → D1
         useUnderline: Boolean,
         strikethrough: Boolean,
         flags: Int,
-    ): ComputedTextLayout? = null // L2-S3 (dev-1)
+    ): ComputedTextLayout? = textRenderer.layoutComplexText(
+        context.getText(textId), start, end, alignment, overflow, maxLines, maxWidth, maxHeight,
+        letterSpacing, lineHeightAdd, lineHeightMultiplier, useUnderline, strikethrough,
+    )
 
     override fun drawComplexText(computedTextLayout: ComputedTextLayout?) {
-        // L2-S3 (dev-1): draw a pre-computed paragraph.
+        val c = canvas ?: return
+        textRenderer.drawComplexText(c, computedTextLayout)
     }
 
     override fun getText(id: Int): String? = context.getText(id)

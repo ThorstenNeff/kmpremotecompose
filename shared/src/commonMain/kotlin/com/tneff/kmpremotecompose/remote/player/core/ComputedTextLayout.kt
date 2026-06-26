@@ -15,12 +15,24 @@
  */
 package com.tneff.kmpremotecompose.remote.player.core
 
+import androidx.compose.ui.text.TextLayoutResult
+
 /**
- * An opaque, pre-computed multi-line text layout handle (upstream `RcPlatformServices.ComputedTextLayout`).
+ * A pre-computed multi-line text layout (upstream `RcPlatformServices.ComputedTextLayout`):
+ * `PaintContext.layoutComplexText` produces one, `drawComplexText` renders it.
  *
- * `PaintContext.layoutComplexText` produces one and `drawComplexText` renders it. The concrete layout
- * type is platform-specific (Android `StaticLayout`-like, iOS Skia `Paragraph`), so it is `expect`
- * here per TECHSPEC GAP-3. S1 declares the contract type only; the L2-S3 text slice fills the actual
- * layout payload and the measure/draw bridge.
+ * **Design note (REM-32, flagged to PO):** the L1 spec called for this to be `expect`/`actual`
+ * (Android `StaticLayout` vs iOS Skia `Paragraph`). That split is unnecessary under the CMP-adapter
+ * thesis: Compose Multiplatform's [TextLayoutResult] is already multiplatform — iOS is Skia
+ * (`Paragraph`)-backed via Skiko, exactly the spec's own Skiko correction. So this is one **common**
+ * class wrapping [TextLayoutResult]; no per-platform layout type is needed. (Reversible if the PO
+ * wants the `expect`/`actual` form for another reason.)
  */
-expect class ComputedTextLayout
+class ComputedTextLayout(
+    /** The CMP layout result (Skia-backed on iOS). */
+    val layout: TextLayoutResult,
+) {
+    val width: Float get() = layout.size.width.toFloat()
+    val height: Float get() = layout.size.height.toFloat()
+    val lineCount: Int get() = layout.lineCount
+}
