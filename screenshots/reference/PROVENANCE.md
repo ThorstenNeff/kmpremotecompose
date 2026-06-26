@@ -72,3 +72,17 @@ operators merged) via verified-173-APK + rc-doc==RC stale-guarded capture (color
 - STATIC (t=0): the spin (rotation over time) needs dev-1's E-D1 time-advance. This golden is the
   static front-on projection; an animated/spin golden follows E-D1 with the fixed golden-time (t=0) convention.
 - Completes the 138-doc visual baseline (137 round-3 + cube3d).
+
+## Golden round 4 (2026-06-26) — text-complete CORRECTNESS goldens (develop 167de86, TextStyle merged)
+Captured on develop 167de86 (text-complete: c_text + ColorExpression + TextStyle-Read) via clean-uninstall+install
+(hardening #4) on a rebooted device (#5), verified-173-APK, race-free rc-doc==RC sweep. Full sweep = 140/173 CONFIRMED
+(0 regression vs the 138+c_text+dynamic_border expectation).
+- 6 goldens (re)frozen as CORRECTNESS goldens (styling now correct — color/size/italic/weight, pixel-verified on c_text:
+  Basic Text black/bold/40, Italic Blue blue(0,0,255)/italic/30):
+    text_baseline, color_theme, pressure_gauge, shader_calendar (text-styled), c_text (NEW), c_modifier_dynamic_border (NEW,
+    computed black border — color source-grounded via ColorExpressionTest; pixel-PARITY pending Maestro-iOS-restart).
+  → golden total now 140 (138 baseline + c_text + dynamic_border; 4 text docs updated with correct styling).
+- THROW-LOGGING finding (not 0 throws): 31 docs log NON-FATAL render-throws (count still 140; cube3d/pie_chart/stock verified
+  MATCH their goldens → render completes despite the caught throw). ~14 gradient/color (procedure_gradient1-4, demo_graphs1,
+  graph_graph2, stock, pie_chart, hydration_wave, thumb_wheel1/2, texture_basic, stock_sparkline, use_of_global) → 6b8a119
+  (Color-Consumer fail-soft) target. ~11 clock/matrix/other (clocks, cube3d, winding, gmt, haptic, touch, impulse) = separate latent.
