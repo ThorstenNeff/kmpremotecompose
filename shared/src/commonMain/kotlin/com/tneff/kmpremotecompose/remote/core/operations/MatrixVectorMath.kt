@@ -15,11 +15,18 @@
  */
 package com.tneff.kmpremotecompose.remote.core.operations
 
+import com.tneff.kmpremotecompose.remote.player.core.MatrixOperations
+import com.tneff.kmpremotecompose.remote.player.core.RemoteContext
+import com.tneff.kmpremotecompose.remote.player.core.VariableSupport
 import com.tneff.kmpremotecompose.remote.wire.WireBuffer
+import com.tneff.kmpremotecompose.remote.wire.WireTypes
 
 /**
  * Matrix/vector math (`MATRIX_VECTOR_MATH`): applies operation [type] using matrix [matrixId] to map
- * the [inputs] vector into the [outputs] id slots.
+ * the [inputs] vector into the [outputs] id slots (REM-37 cube3d). Phase A resolves the input vector's
+ * variable refs (e.g. a prior transform's outputs), fetches matrix [matrixId], transforms — **type 0**
+ * affine, **type 1** perspective (4×4 multiply + w-divide) — and loads each result into its output id.
+ * Pure runtime — the wire `inputs`/`outputs` are untouched (byte-safe).
  *
  * Wire layout: opcode, `short type`, `int matrixId`, `int outCount`, `int[] outputs`,
  * `int inCount`, `float[] inputs`. Layer: a V7 base always-on op (NOT in the API-6 set).
@@ -29,9 +36,33 @@ class MatrixVectorMath(
     val matrixId: Int,
     val outputs: IntArray,
     val inputs: FloatArray,
-) : Operation {
+) : Operation, VariableSupport {
 
     override val opcode: Int get() = Operations.MATRIX_VECTOR_MATH
+
+    // REM-37: render-only resolved input vector (variable NaNs → store values).
+    private var resolvedInputs: FloatArray = inputs
+
+    override fun updateVariables(context: RemoteContext) {
+        var hasVar = false
+        for (v in inputs) if (v.isNaN()) { hasVar = true; break }
+        resolvedInputs = if (!hasVar) {
+            inputs
+        } else {
+            FloatArray(inputs.size) { i ->
+                val v = inputs[i]
+                if (v.isNaN()) context.getFloat(WireTypes.idFromNan(v)) else v
+            }
+        }
+    }
+
+    override fun apply(context: RemoteContext) {
+        val m = context.getMatrix(matrixId) ?: return
+        val out = FloatArray(outputs.size)
+        if (type == 0) MatrixOperations.multiplyVec(m, resolvedInputs, out)
+        else MatrixOperations.evalPerspective(m, resolvedInputs, out)
+        for (i in outputs.indices) context.loadFloat(outputs[i], out[i])
+    }
 
     override fun write(buffer: WireBuffer) {
         buffer.writeByte(opcode)
