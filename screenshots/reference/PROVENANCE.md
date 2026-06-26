@@ -61,3 +61,14 @@ sweep (rsweep_b0-3.yaml, settle + stale-frame guard).
   (currently 67-68 committed: 19 showcase + 48 c_* + cube3d-branch). Bundling the full rendering set is
   the follow-up that makes all 137 CI-reproducible; the captures themselves are of byte-identical corpus docs.
 - iOS goldens for this set: pending the Maestro iOS driver restart (test-2 lane).
+
+## Golden round 3b (2026-06-26) — cube3d (the deferred 138th), NOW the real 3D cube
+ANDROID golden for cube3d, captured on develop `e0b1b04` (cube3d-3D Matrix-Expression-Engine + E-D3a-1
+operators merged) via verified-173-APK + rc-doc==RC stale-guarded capture (color_theme-first).
+- Render: **genuine 3D cube, front-on at t=0** — blue front face + 4 perspective-foreshortened side faces
+  (cyan top / magenta bottom / green left / yellow right) with black wireframe edges, on the dark bg circle.
+  This is the "3D-wow" that was missing; the earlier flat disc was only the background circle (cube now
+  projects on top). VISUALLY VERIFIED CORRECT (eye-check) — not a draws-pixels-but-wrong case.
+- STATIC (t=0): the spin (rotation over time) needs dev-1's E-D1 time-advance. This golden is the
+  static front-on projection; an animated/spin golden follows E-D1 with the fixed golden-time (t=0) convention.
+- Completes the 138-doc visual baseline (137 round-3 + cube3d).
