@@ -18,6 +18,9 @@ package com.tneff.kmpremotecompose.remote.core.operations.draw
 import com.tneff.kmpremotecompose.remote.core.operations.Operation
 import com.tneff.kmpremotecompose.remote.core.operations.OperationReader
 import com.tneff.kmpremotecompose.remote.core.operations.Operations
+import com.tneff.kmpremotecompose.remote.player.core.PaintContext
+import com.tneff.kmpremotecompose.remote.player.core.PaintOperation
+import com.tneff.kmpremotecompose.remote.player.core.RemoteContext
 import com.tneff.kmpremotecompose.remote.wire.WireBuffer
 
 /**
@@ -36,7 +39,7 @@ class DrawText(
     val x: Float,
     val y: Float,
     val rtl: Boolean,
-) : Operation {
+) : PaintOperation {
 
     override val opcode: Int get() = Operations.DRAW_TEXT_RUN
 
@@ -50,6 +53,11 @@ class DrawText(
         buffer.writeFloat(x)
         buffer.writeFloat(y)
         buffer.writeBoolean(rtl)
+    }
+
+    /** Render the run: fields map 1:1 onto the text primitive (color/size from the shared paint state). */
+    override fun paint(context: RemoteContext, paint: PaintContext) {
+        paint.drawTextRun(textId, start, end, contextStart, contextEnd, x, y, rtl)
     }
 
     override fun dump(): String =

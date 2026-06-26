@@ -15,6 +15,9 @@
  */
 package com.tneff.kmpremotecompose.remote.core.operations
 
+import com.tneff.kmpremotecompose.remote.player.core.PaintContext
+import com.tneff.kmpremotecompose.remote.player.core.PaintOperation
+import com.tneff.kmpremotecompose.remote.player.core.RemoteContext
 import com.tneff.kmpremotecompose.remote.wire.WireBuffer
 import com.tneff.kmpremotecompose.remote.wire.WireTypes
 
@@ -23,7 +26,7 @@ import com.tneff.kmpremotecompose.remote.wire.WireTypes
  *
  * Wire layout: opcode, `int id`, then a length-prefixed UTF-8 string.
  */
-class TextData(val id: Int, val text: String) : Operation {
+class TextData(val id: Int, val text: String) : PaintOperation {
 
     override val opcode: Int get() = Operations.DATA_TEXT
 
@@ -31,6 +34,11 @@ class TextData(val id: Int, val text: String) : Operation {
         buffer.writeByte(opcode)
         buffer.writeInt(id)
         buffer.writeUTF8(text)
+    }
+
+    /** Register the string into the player context so text-draw ops can resolve it by [id]. */
+    override fun paint(context: RemoteContext, paint: PaintContext) {
+        context.putText(id, text)
     }
 
     override fun dump(): String = "DATA_TEXT id=$id text=\"$text\""

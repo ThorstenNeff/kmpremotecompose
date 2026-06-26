@@ -18,6 +18,9 @@ package com.tneff.kmpremotecompose.remote.core.operations.draw
 import com.tneff.kmpremotecompose.remote.core.operations.Operation
 import com.tneff.kmpremotecompose.remote.core.operations.OperationReader
 import com.tneff.kmpremotecompose.remote.core.operations.Operations
+import com.tneff.kmpremotecompose.remote.player.core.PaintContext
+import com.tneff.kmpremotecompose.remote.player.core.PaintOperation
+import com.tneff.kmpremotecompose.remote.player.core.RemoteContext
 import com.tneff.kmpremotecompose.remote.wire.WireBuffer
 
 /**
@@ -32,7 +35,7 @@ class DrawTextOnPath(
     val pathId: Int,
     val vOffset: Float,
     val hOffset: Float,
-) : Operation {
+) : PaintOperation {
 
     override val opcode: Int get() = Operations.DRAW_TEXT_ON_PATH
 
@@ -42,6 +45,15 @@ class DrawTextOnPath(
         buffer.writeInt(pathId)
         buffer.writeFloat(vOffset)
         buffer.writeFloat(hOffset)
+    }
+
+    /**
+     * Bind to the text-on-path primitive (primitive arg order is `hOffset, vOffset`). The CMP
+     * implementation is **deferred to L2-D1** (needs a built Path + PathMeasure) and is a documented
+     * no-op today; the dispatch seam is in place so it lights up when D1 lands.
+     */
+    override fun paint(context: RemoteContext, paint: PaintContext) {
+        paint.drawTextOnPath(textId, pathId, hOffset, vOffset)
     }
 
     override fun dump(): String = "DRAW_TEXT_ON_PATH textId=$textId pathId=$pathId vOffset=$vOffset hOffset=$hOffset"
