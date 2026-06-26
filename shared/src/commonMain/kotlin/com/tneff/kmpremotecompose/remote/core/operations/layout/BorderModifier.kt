@@ -18,7 +18,12 @@ package com.tneff.kmpremotecompose.remote.core.operations.layout
 import com.tneff.kmpremotecompose.remote.core.operations.Operation
 import com.tneff.kmpremotecompose.remote.core.operations.OperationReader
 import com.tneff.kmpremotecompose.remote.core.operations.Operations
+import com.tneff.kmpremotecompose.remote.core.operations.draw.PaintData
+import com.tneff.kmpremotecompose.remote.player.core.PaintContext
+import com.tneff.kmpremotecompose.remote.player.core.PaintOperation
+import com.tneff.kmpremotecompose.remote.player.core.RemoteContext
 import com.tneff.kmpremotecompose.remote.wire.WireBuffer
+import com.tneff.kmpremotecompose.remote.wire.WireTypes
 
 /**
  * `MODIFIER_BORDER` (opcode [Operations.MODIFIER_BORDER]) — draws a border around a component.
@@ -39,9 +44,55 @@ class BorderModifier(
     val b: Float,
     val a: Float,
     val shapeType: Int,
-) : Operation {
+) : Operation, PaintOperation {
 
     override val opcode: Int get() = Operations.MODIFIER_BORDER
+
+    // REM-37 E-Layout-2: render-only absolute draw bounds, set by the measure pass; not serialized.
+    private var boundsX = 0f
+    private var boundsY = 0f
+    private var boundsW = 0f
+    private var boundsH = 0f
+
+    /** Called by [com.tneff.kmpremotecompose.remote.player.core.LayoutMeasure] with the measured bounds. */
+    fun setBounds(x: Float, y: Float, w: Float, h: Float) {
+        boundsX = x; boundsY = y; boundsW = w; boundsH = h
+    }
+
+    /**
+     * Emit the component border (REM-37 E-Layout-2): a stroked rect/round-rect inset by half the stroke
+     * width (upstream default mode — keeps the stroke inside the bounds), in its own paint scope. Skipped
+     * when unmeasured. roundedCorner > 0 → round-rect.
+     */
+    override fun paint(context: RemoteContext, paint: PaintContext) {
+        if (boundsW <= 0f || boundsH <= 0f) return
+        val width = resolveValue(borderWidth, context)
+        if (width <= 0f) return
+        val argb = resolveArgb(context)
+        val hs = width / 2f
+        val left = boundsX + hs
+        val top = boundsY + hs
+        val right = boundsX + boundsW - hs
+        val bottom = boundsY + boundsH - hs
+        val radius = resolveValue(roundedCorner, context)
+        paint.savePaint()
+        paint.applyPaint(PaintData.Builder().color(argb).style(STYLE_STROKE).strokeWidth(width).build())
+        if (radius > 0f) {
+            paint.drawRoundRect(left, top, right, bottom, (radius - hs).coerceAtLeast(0f), (radius - hs).coerceAtLeast(0f))
+        } else {
+            paint.drawRect(left, top, right, bottom)
+        }
+        paint.restorePaint()
+    }
+
+    private fun resolveValue(v: Float, context: RemoteContext): Float =
+        if (v.isNaN() && !WireTypes.isOperationVariable(v)) context.getFloat(WireTypes.idFromNan(v)) else v
+
+    private fun resolveArgb(context: RemoteContext): Int {
+        if (colorId != 0) return context.getColor(colorId)
+        fun ch(v: Float): Int = (resolveValue(v, context).coerceIn(0f, 1f) * 255f + 0.5f).toInt()
+        return (ch(a) shl 24) or (ch(r) shl 16) or (ch(g) shl 8) or ch(b)
+    }
 
     override fun write(buffer: WireBuffer) {
         buffer.writeByte(opcode)
@@ -91,6 +142,9 @@ class BorderModifier(
     }
 
     companion object : OperationReader {
+        /** PaintData style value (FILL=0, STROKE=1, FILL_AND_STROKE=2). */
+        const val STYLE_STROKE = 1
+
         override fun read(buffer: WireBuffer, operations: MutableList<Operation>) {
             operations += BorderModifier(
                 buffer.readInt(), buffer.readInt(), buffer.readInt(), buffer.readInt(),
