@@ -118,10 +118,27 @@ class RemoteContext {
 
     fun loadInt(id: Int, value: Int) { intStore[id] = value }
 
-    /** The resolved ARGB color for variable [id], or `0` when unresolved. */
+    /**
+     * The resolved ARGB color for variable [id], or **`0`** (transparent) when unresolved — **fail-soft,
+     * never throws** (mirrors the `getFloat` default-0 semantics). A `colorId` background-ref with no
+     * value stays transparent rather than degenerating the render.
+     */
     fun getColor(id: Int): Int = colorStore[id] ?: 0
 
     fun loadColor(id: Int, value: Int) { colorStore[id] = value }
+
+    /**
+     * Inject a host theme palette (REM-36 b1) — `colorId → ARGB`. Conceptually host-theme, like the
+     * platform density ([DensityProvider]): the render vehicle / test seeds the real (light/dark)
+     * palette before a pass for theme `colorId` refs that have no in-doc color op.
+     *
+     * **NOT auto-applied** by the player. The earlier auto-seed regressed ~69 color/plot/sensor docs
+     * (a non-zero default for an unset `colorId` changed their color resolution); this seam is
+     * opt-in only, so the default render of those docs is unchanged (`getColor` stays `0`).
+     */
+    fun seedThemePalette(palette: Map<Int, Int>) {
+        for ((id, argb) in palette) loadColor(id, argb)
+    }
 
     /** The 4×4 row-major matrix (FloatArray(16)) for [id], or null if not yet produced (REM-37 cube3d). */
     fun getMatrix(id: Int): FloatArray? = matrixStore[id]
@@ -279,5 +296,13 @@ class RemoteContext {
         const val ID_DENSITY = 27
         /** Default font size (upstream `ID_FONT_SIZE`). */
         const val ID_FONT_SIZE = 33
+
+        /**
+         * An **opt-in** visible default theme palette (REM-36 b1) — a conservative mid-grey for
+         * `colorId 1` so a theme `colorId` fixture (c_modifier_background_id) renders non-transparent.
+         * **Placeholder** (not a source-grounded theme value); the host/test passes the real palette to
+         * [seedThemePalette]. Not auto-applied (the prior auto-seed regressed ~69 docs).
+         */
+        val DEFAULT_THEME_PALETTE: Map<Int, Int> = mapOf(1 to 0xFF888888.toInt())
     }
 }
