@@ -18,6 +18,9 @@ package com.tneff.kmpremotecompose.remote.core.operations.draw
 import com.tneff.kmpremotecompose.remote.core.operations.Operation
 import com.tneff.kmpremotecompose.remote.core.operations.OperationReader
 import com.tneff.kmpremotecompose.remote.core.operations.Operations
+import com.tneff.kmpremotecompose.remote.player.core.PaintContext
+import com.tneff.kmpremotecompose.remote.player.core.PaintOperation
+import com.tneff.kmpremotecompose.remote.player.core.RemoteContext
 import com.tneff.kmpremotecompose.remote.wire.WireBuffer
 
 /**
@@ -35,7 +38,7 @@ class DrawTextAnchored(
     val panX: Float,
     val panY: Float,
     val flags: Int,
-) : Operation {
+) : PaintOperation {
 
     override val opcode: Int get() = Operations.DRAW_TEXT_ANCHOR
 
@@ -47,6 +50,35 @@ class DrawTextAnchored(
         buffer.writeFloat(panX)
         buffer.writeFloat(panY)
         buffer.writeInt(flags)
+    }
+
+    /**
+     * Render anchored at `(x, y)` by pan factors (upstream `DrawTextAnchored.paint`): measure the run,
+     * offset by `panX` (-1=left … 1=right) / `panY` (-1=top … 1=bottom; NaN ⇒ keep `y`), then
+     * [PaintContext.drawTextRun]. Offsets mirror upstream `getHorizontalOffset`/`getVerticalOffset`
+     * (box size 0 → text-relative). `BASELINE_RELATIVE` centres on the baseline.
+     */
+    override fun paint(context: RemoteContext, paint: PaintContext) {
+        val measureFlags = if (flags and ANCHOR_MONOSPACE_MEASURE != 0) {
+            PaintContext.TEXT_MEASURE_MONOSPACE_WIDTH
+        } else {
+            0
+        }
+        val bounds = FloatArray(4)
+        paint.getTextBounds(textId, 0, -1, measureFlags, bounds)
+        val textWidth = bounds[2] - bounds[0]
+        val textHeight = bounds[3] - bounds[1]
+        val hOffset = -textWidth * (1f + panX) / 2f - bounds[0]
+        val px = x + hOffset
+        val py = if (panY.isNaN()) {
+            y
+        } else {
+            val baselineRelative = flags and BASELINE_RELATIVE != 0
+            val vOffset = -textHeight * (1f - panY) / 2f +
+                if (baselineRelative) textHeight / 2f else -bounds[1]
+            y + vOffset
+        }
+        paint.drawTextRun(textId, 0, -1, 0, 1, px, py, flags and ANCHOR_TEXT_RTL == 1)
     }
 
     override fun dump(): String = "DRAW_TEXT_ANCHOR textId=$textId x=$x y=$y panX=$panX panY=$panY flags=$flags"
@@ -71,6 +103,11 @@ class DrawTextAnchored(
     }
 
     companion object : OperationReader {
+        /** Upstream anchor flag bits. */
+        const val ANCHOR_TEXT_RTL = 1
+        const val ANCHOR_MONOSPACE_MEASURE = 2
+        const val BASELINE_RELATIVE = 8
+
         override fun read(buffer: WireBuffer, operations: MutableList<Operation>) {
             operations += DrawTextAnchored(
                 textId = buffer.readInt(),
