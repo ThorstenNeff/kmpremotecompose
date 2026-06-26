@@ -156,7 +156,7 @@ internal class GeometryPaintDelegate(
     // ---- path geometry ----
 
     override fun drawPath(id: Int, start: Float, end: Float) =
-        canvas.drawPath(PathGeometry.buildPath(context, id, start, end), paint)
+        canvas.drawPath(PathGeometry.buildPath(context, id, start, end, deferredPaintTags), paint)
 
     override fun drawTweenPath(path1Id: Int, path2Id: Int, tween: Float, start: Float, end: Float) =
         canvas.drawPath(PathGeometry.buildTweenPath(context, path1Id, path2Id, tween, start, end), paint)
@@ -170,8 +170,8 @@ internal class GeometryPaintDelegate(
 
     /** Boolean-combine two cached paths and store the result under [out] (no draw). */
     override fun combinePath(out: Int, path1: Int, path2: Int, operation: Byte) {
-        val p1 = PathGeometry.buildPath(context, path1, 0f, 1f)
-        val p2 = PathGeometry.buildPath(context, path2, 0f, 1f)
+        val p1 = PathGeometry.buildPath(context, path1, 0f, 1f, deferredPaintTags)
+        val p2 = PathGeometry.buildPath(context, path2, 0f, 1f, deferredPaintTags)
         context.putPath(out, PathGeometry.combinePaths(p1, p2, operation))
     }
 
@@ -238,7 +238,7 @@ internal class GeometryPaintDelegate(
 
     /** Concat a matrix derived from a position (and optional tangent rotation) along path [pathId]. */
     override fun matrixFromPath(pathId: Int, fraction: Float, vOffset: Float, flags: Int) {
-        val path = PathGeometry.buildPath(context, pathId, 0f, 1f)
+        val path = PathGeometry.buildPath(context, pathId, 0f, 1f, deferredPaintTags)
         if (path.isEmpty) return
         val measure = PathMeasure().apply { setPath(path, false) }
         val len = measure.length
@@ -263,7 +263,7 @@ internal class GeometryPaintDelegate(
 
     /** Clip to a cached path; [regionOp] `1` (upstream `ClipPath.DIFFERENCE`) → difference, else intersect. */
     override fun clipPath(pathId: Int, regionOp: Int) {
-        val path = PathGeometry.buildPath(context, pathId, 0f, 1f)
+        val path = PathGeometry.buildPath(context, pathId, 0f, 1f, deferredPaintTags)
         canvas.clipPath(path, if (regionOp == CLIP_DIFFERENCE) ClipOp.Difference else ClipOp.Intersect)
     }
 

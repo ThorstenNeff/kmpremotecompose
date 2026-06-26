@@ -26,22 +26,44 @@ import com.tneff.kmpremotecompose.remote.player.core.RemoteContext
  */
 internal object PathGeometry {
 
-    /** Even-odd winding marker (mirrors upstream `RemoteComposeState.getPathWinding == 1`). */
+    // Winding rules (Android `Path.FillType` order; upstream `getPathWinding`).
     private const val WINDING_EVEN_ODD: Int = 1
+    private const val WINDING_INVERSE_EVEN_ODD: Int = 2
+    private const val WINDING_INVERSE_WINDING: Int = 3
 
     /**
      * Build (or fetch the cached) Compose [Path] for [id] over the fractional segment [[start], [end]].
-     * Mirrors `RemoteComposeState.getPath(id, start, end)`: cache hit → return; else build the path
-     * from path-data via [FloatsToPath], apply even-odd fill type when [RemoteContext.getPathWinding]
-     * is `1`, and cache it.
+     * Mirrors `RemoteComposeState.getPath(id, start, end)`: cache hit → return; else build from
+     * path-data via [FloatsToPath], apply the winding fill type, and cache.
+     *
+     * Winding: `1` → even-odd, `2` → inverse-even-odd, `3` → inverse-winding. The inverse modes have no
+     * Compose [PathFillType] equivalent (a CMP-common gap; solvable later via Skiko `PathFillMode.INVERSE_*`
+     * as a small interop D-slice if a doc needs it) → for now they fall back to non-zero and are logged
+     * in [deferred] (P1: the log IS the data-driven detection, no silent cap — like FILL_AND_STROKE).
+     *
+     * TODO(P2, deferred per PO 2026-06-26): this cache ignores [start]/[end] — `getPath(id)` returns
+     * the path built on the FIRST call (with that call's trim), so a later draw of the same id at a
+     * different start/end gets the stale path. **Faithful to upstream `PathUtils.getPath`** (identical
+     * quirk) and safe for the static MVP (start/end = 0/1); since goldens are upstream-rendered the
+     * quirk matches → no Maestro parity fail. Fix when **animated path-trimming** enters scope: cache
+     * the FULL path (0,1) and trim per draw via `PathMeasure.getSegment(start*len, end*len)` instead of
+     * baking the trim into the cached path.
      */
-    fun buildPath(state: RemoteContext, id: Int, start: Float, end: Float): Path {
+    fun buildPath(
+        state: RemoteContext,
+        id: Int,
+        start: Float,
+        end: Float,
+        deferred: MutableSet<String>? = null,
+    ): Path {
         state.getPath(id)?.let { return it }
         val path = Path()
         val pathData = state.getPathData(id) ?: return path
         FloatsToPath.genPath(path, pathData, start, end)
-        if (state.getPathWinding(id) == WINDING_EVEN_ODD) {
-            path.fillType = PathFillType.EvenOdd
+        when (state.getPathWinding(id)) {
+            WINDING_EVEN_ODD -> path.fillType = PathFillType.EvenOdd
+            WINDING_INVERSE_WINDING, WINDING_INVERSE_EVEN_ODD ->
+                deferred?.add("INVERSE_WINDING") // CMP PathFillType has no Inverse → non-zero
         }
         state.putPath(id, path)
         return path

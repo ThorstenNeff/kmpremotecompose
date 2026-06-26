@@ -138,6 +138,58 @@ class GeometryAdapterIosTest {
     }
 
     @Test
+    fun paintBundle_cursorStaysInSyncAcrossEveryTagType() {
+        // P3 (critical): each tag's advance must match upstream PaintBundle slot counts exactly — a
+        // wrong advance desyncs the delta stream and corrupts every later op. We chain one of every
+        // tag (1-slot, 0-slot packed, and the variadic FONT_AXIS/TEXTURE/PATH_EFFECT/GRADIENT) followed
+        // by a sentinel COLOR; if any advance is off, the sentinel is not read as a COLOR cmd at the
+        // right offset → the color won't land. Slot counts cross-checked against ./androidx PaintBundle.
+        val sentinel = 0xFF123456.toInt()
+        val arr = intArrayOf(
+            1, 12f.toRawBits(),                                  // TEXT_SIZE (1)
+            16 or (0 shl 16), 0,                                 // TYPEFACE  (1: fontType)
+            5, 3f.toRawBits(),                                   // STROKE_WIDTH (1)
+            6, 4f.toRawBits(),                                   // STROKE_MITER (1)
+            7 or (2 shl 16),                                     // STROKE_CAP (0, packed)
+            8 or (1 shl 16),                                     // STYLE (0, packed)
+            9, 99,                                               // SHADER (1)
+            15 or (2 shl 16),                                    // STROKE_JOIN (0, packed)
+            10 or (1 shl 16),                                    // IMAGE_FILTER_QUALITY (0, packed)
+            18 or (3 shl 16),                                    // BLEND_MODE (0, packed)
+            17 or (1 shl 16),                                    // FILTER_BITMAP (0, packed)
+            12, 0.5f.toRawBits(),                                // ALPHA (1)
+            13 or (3 shl 16), 0xFF010203.toInt(),               // COLOR_FILTER (1: color)
+            21,                                                  // CLEAR_COLOR_FILTER (0)
+            22, 0f.toRawBits(),                                  // SHADER_MATRIX (1)
+            23 or (1 shl 16), 7, 1f.toRawBits(),                 // FONT_AXIS count=1 (2: tag,val)
+            24, 0, 0, 0,                                         // TEXTURE (3)
+            25 or (2 shl 16), 0f.toRawBits(), 0f.toRawBits(),    // PATH_EFFECT count=2 (2)
+            11 or (0 shl 16), 2, 0xFFFF0000.toInt(), 0xFF00FF00.toInt(), 0,
+            0f.toRawBits(), 0f.toRawBits(), 10f.toRawBits(), 0f.toRawBits(), 0, // GRADIENT linear (9)
+            4, sentinel,                                         // COLOR sentinel (1)
+        )
+        val deferred = mutableSetOf<String>()
+        val paint = Paint()
+        PaintBundleApplier.applyTo(paint, arr, deferred = deferred)
+        assertEquals(Color(sentinel), paint.color, "sentinel COLOR after every tag → cursor stayed in sync")
+        for (tag in listOf("TEXT_SIZE", "TYPEFACE", "SHADER", "SHADER_MATRIX", "FONT_AXIS", "TEXTURE", "PATH_EFFECT")) {
+            assertTrue(tag in deferred, "deferred should record $tag")
+        }
+    }
+
+    @Test
+    fun buildPath_inverseWindingFallsBackToNonZeroAndIsLogged() {
+        // P1: CMP PathFillType has no Inverse → winding 2/3 → non-zero + logged (no silent cap).
+        val context = RemoteContext()
+        context.putPathData(1, triangle())
+        context.putPathWinding(1, 2) // inverse
+        val deferred = mutableSetOf<String>()
+        val path = PathGeometry.buildPath(context, 1, 0f, 1f, deferred)
+        assertEquals(PathFillType.NonZero, path.fillType, "inverse winding falls back to non-zero")
+        assertTrue("INVERSE_WINDING" in deferred, "inverse winding must be logged")
+    }
+
+    @Test
     fun delegate_geometrySmokeAndPaintStack() {
         val context = RemoteContext()
         context.putPathData(1, triangle())

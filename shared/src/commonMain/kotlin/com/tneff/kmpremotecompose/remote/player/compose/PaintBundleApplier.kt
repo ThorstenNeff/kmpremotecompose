@@ -142,28 +142,34 @@ internal object PaintBundleApplier {
         }
     }
 
-    /** Decode a GRADIENT command, set the corresponding shader on [paint]; returns the new index. */
+    /**
+     * Decode a GRADIENT command, set the corresponding shader on [paint]; returns the new cursor.
+     *
+     * **Cursor matches upstream `PaintBundle.callSetGradient` EXACTLY** (slot-count fidelity is the
+     * paint analogue of L1 byte-sync — a wrong advance desyncs every paint op after): read the control
+     * int (color count in its low byte), the colors, the stops-length int, the stops (only when colors
+     * are present), then — only if colors are present — the per-type geometry. When `colorLen == 0`
+     * upstream returns right after the stops-length int **without** consuming geometry; mirrored here.
+     */
     private fun applyGradient(paint: Paint, cmd: Int, a: IntArray, start: Int): Int {
         var ret = start
         val type = cmd shr 16
         val colorLen = 0xFF and a[ret++]
-        if (colorLen == 0) {
-            // No colors → upstream returns without setting a shader (but still consumes stops len).
-            val stopsLen = a[ret++]
-            ret += stopsLen
-            return consumeGradientGeometry(type, a, ret)
-        }
-        val colors = ArrayList<Color>(colorLen)
-        for (j in 0 until colorLen) colors.add(Color(a[ret++]))
+        val colors: ArrayList<Color>? =
+            if (colorLen > 0) ArrayList<Color>(colorLen).apply { for (j in 0 until colorLen) add(Color(a[ret++])) }
+            else null
 
         val stopsLen = a[ret++]
         var stops: List<Float>? = null
-        if (stopsLen > 0) {
+        if (stopsLen > 0 && colors != null) {
             // upstream: stops length must equal colors length (else it throws); read colorLen stops.
             val s = ArrayList<Float>(colorLen)
             for (j in 0 until colorLen) s.add(Float.fromBits(a[ret++]))
             stops = s
         }
+
+        // upstream `if (colors == null) return ret;` — geometry is NOT consumed for a 0-color gradient.
+        if (colors == null) return ret
 
         when (type) {
             LINEAR_GRADIENT -> {
@@ -190,17 +196,6 @@ internal object PaintBundleApplier {
                 val centerY = Float.fromBits(a[ret++])
                 paint.shader = SweepGradientShader(Offset(centerX, centerY), colors, stops)
             }
-        }
-        return ret
-    }
-
-    /** Advance past a gradient's geometry ints when colors were absent (keeps the walk in sync). */
-    private fun consumeGradientGeometry(type: Int, a: IntArray, start: Int): Int {
-        var ret = start
-        when (type) {
-            LINEAR_GRADIENT -> ret += 5 // startX, startY, endX, endY, tileMode
-            RADIAL_GRADIENT -> ret += 4 // centerX, centerY, radius, tileMode
-            SWEEP_GRADIENT -> ret += 2 // centerX, centerY
         }
         return ret
     }
