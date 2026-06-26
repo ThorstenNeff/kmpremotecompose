@@ -16,6 +16,7 @@
 package com.tneff.kmpremotecompose.remote.player.core
 
 import com.tneff.kmpremotecompose.remote.core.document.RemoteComposeDocument
+import com.tneff.kmpremotecompose.remote.core.operations.layout.RootContentBehavior
 
 /**
  * The Layer 2 player op-walk skeleton (REM-30, L2-S1): renders a decoded [RemoteComposeDocument] by
@@ -46,19 +47,36 @@ class RemoteComposePlayer(val context: RemoteContext = RemoteContext()) {
         document: RemoteComposeDocument,
         paint: PaintContext,
         frameTimeSeconds: Float = 0f,
-        windowWidth: Float = -1f,
-        windowHeight: Float = -1f,
+        surfaceWidth: Float = -1f,
+        surfaceHeight: Float = -1f,
     ): Float {
         context.paintContext = paint
         context.resetPass(frameTimeSeconds)
         paint.reset()
-        // Seed system variables (REM-36 E-Seed) BEFORE Phase A, so ops referencing window/density
-        // (e.g. drawOval(0,0,FLOAT_WINDOW_WIDTH,FLOAT_WINDOW_HEIGHT)) resolve to real sizes instead of
-        // the 0f store default (degenerate → blank). Window = the render viewport box; when the host
-        // gives none (<= 0) fall back to the document's header dims (upstream `RemoteContext.header`).
-        val w = if (windowWidth > 0f) windowWidth else document.width.toFloat()
-        val h = if (windowHeight > 0f) windowHeight else document.height.toFloat()
-        context.seedSystemVariables(w, h, frameTimeSeconds)
+        // The document authors its content in DOC-space (header dims). For SIZING_SCALE the player
+        // scales doc→surface; window vars therefore reference the DOC box (so drawOval(0,0,
+        // FLOAT_WINDOW_WIDTH,…) fills doc-space, then the canvas is scaled to the surface). REM-36.
+        val docW = document.width.toFloat()
+        val docH = document.height.toFloat()
+        // Seed system variables (REM-36 E-Seed) BEFORE Phase A — window = DOC dims (revised for the
+        // doc→surface scale below), density, and the static time/clock vars.
+        context.seedSystemVariables(docW, docH, frameTimeSeconds)
+        // RootContentBehavior doc→surface scaling (REM-36): when a surface box is given, apply
+        // translate(align) then scale(doc→surface) — upstream `CoreDocument` order — so doc-space
+        // renders with correct proportions instead of 1:1 (a 600-doc stretched into a 924-surface).
+        if (surfaceWidth > 0f && surfaceHeight > 0f) {
+            val behavior = document.operations.firstNotNullOfOrNull { it as? RootContentBehavior }
+            if (behavior != null && behavior.sizing == ContentScaling.SIZING_SCALE) {
+                val (sx, sy) = ContentScaling.computeScale(
+                    surfaceWidth, surfaceHeight, docW, docH, behavior.sizing, behavior.mode,
+                )
+                val (tx, ty) = ContentScaling.computeTranslate(
+                    surfaceWidth, surfaceHeight, sx, sy, docW, docH, behavior.alignment,
+                )
+                paint.translate(tx, ty)
+                paint.scale(sx, sy)
+            }
+        }
         // Phase A (REM-36 Eval-Engine E1): resolve + evaluate variables BEFORE painting, so draw ops
         // read already-resolved values (the long-flagged "deferred apply-phase"). MVP evaluates every
         // VariableSupport op each frame (no dirty tracking). updateVariables (resolve NaN refs) then

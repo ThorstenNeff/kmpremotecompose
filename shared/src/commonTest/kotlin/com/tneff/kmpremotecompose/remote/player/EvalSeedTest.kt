@@ -17,7 +17,10 @@ package com.tneff.kmpremotecompose.remote.player
 
 import com.tneff.kmpremotecompose.remote.core.document.RemoteComposeDocument
 import com.tneff.kmpremotecompose.remote.core.operations.FloatExpression
+import com.tneff.kmpremotecompose.remote.core.operations.Header
 import com.tneff.kmpremotecompose.remote.core.operations.Operation
+import com.tneff.kmpremotecompose.remote.core.operations.layout.RootContentBehavior
+import com.tneff.kmpremotecompose.remote.player.core.ContentScaling
 import com.tneff.kmpremotecompose.remote.player.core.RemoteComposePlayer
 import com.tneff.kmpremotecompose.remote.player.core.RemoteContext
 import com.tneff.kmpremotecompose.remote.wire.WireTypes
@@ -42,17 +45,45 @@ class EvalSeedTest {
     }
 
     @Test
-    fun player_seedsBeforePhaseA_soWindowVarResolves() {
+    fun player_seedsWindowFromDocDims_soWindowVarResolves() {
         val ctx = RemoteContext()
-        // FLOAT_WINDOW_WIDTH = asNan(ID_WINDOW_WIDTH); an expression that just references it.
+        // Window vars are seeded from DOC dims (header), not the surface (REM-36 RootContentBehavior).
         val doc = RemoteComposeDocument(listOf<Operation>(
+            Header.fromProperties(mapOf(Header.DOC_WIDTH to 600, Header.DOC_HEIGHT to 400)),
             FloatExpression(id = 50, value = floatArrayOf(WireTypes.asNan(RemoteContext.ID_WINDOW_WIDTH))),
         ))
 
-        RemoteComposePlayer(ctx).paint(doc, NoOpPaintContext(ctx), windowWidth = 600f, windowHeight = 400f)
+        RemoteComposePlayer(ctx).paint(doc, NoOpPaintContext(ctx), surfaceWidth = 1200f, surfaceHeight = 800f)
 
-        // The window var was seeded before Phase A, so the expression resolved to the real width.
-        assertEquals(600f, ctx.getFloat(50), "FLOAT_WINDOW_WIDTH must resolve to the seeded viewport width")
+        // Window var resolved to the DOC width (600), not the surface (1200) — doc-space authoring.
+        assertEquals(600f, ctx.getFloat(50), "FLOAT_WINDOW_WIDTH resolves to the doc dim, not the surface")
+    }
+
+    /** A [NoOpPaintContext] that records the doc→surface transform the player applies. */
+    private class RecordingTransformContext(context: RemoteContext) : NoOpPaintContext(context) {
+        val log = mutableListOf<String>()
+        override fun scale(scaleX: Float, scaleY: Float) { log += "scale($scaleX,$scaleY)" }
+        override fun translate(translateX: Float, translateY: Float) { log += "translate($translateX,$translateY)" }
+    }
+
+    @Test
+    fun player_appliesRootContentBehaviorScale_docToSurface() {
+        val ctx = RemoteContext()
+        val doc = RemoteComposeDocument(listOf<Operation>(
+            Header.fromProperties(mapOf(Header.DOC_WIDTH to 600, Header.DOC_HEIGHT to 400)),
+            RootContentBehavior(
+                scroll = 0,
+                alignment = ContentScaling.ALIGNMENT_HORIZONTAL_CENTER or ContentScaling.ALIGNMENT_VERTICAL_CENTER,
+                sizing = ContentScaling.SIZING_SCALE,
+                mode = ContentScaling.SCALE_FIT,
+            ),
+        ))
+        val rec = RecordingTransformContext(ctx)
+
+        // 600x400 doc into a 1200x800 surface, SCALE_FIT → uniform 2x, centered (content fills → t=0).
+        RemoteComposePlayer(ctx).paint(doc, rec, surfaceWidth = 1200f, surfaceHeight = 800f)
+
+        assertEquals(listOf("translate(0.0,0.0)", "scale(2.0,2.0)"), rec.log)
     }
 
     @Test
@@ -81,8 +112,28 @@ class EvalSeedTest {
         val doc = RemoteComposeDocument(listOf<Operation>(
             FloatExpression(id = 60, value = floatArrayOf(WireTypes.asNan(RemoteContext.ID_CONTINUOUS_SEC))),
         ))
-        RemoteComposePlayer(ctx).paint(doc, NoOpPaintContext(ctx), frameTimeSeconds = 12f, windowWidth = 100f, windowHeight = 100f)
+        RemoteComposePlayer(ctx).paint(doc, NoOpPaintContext(ctx), frameTimeSeconds = 12f)
         assertEquals(12f, ctx.getFloat(60), "CONTINUOUS_SEC resolves to the injected frame time")
+    }
+
+    @Test
+    fun contentScaling_modesAndAlignment_matchUpstream() {
+        // 600x400 doc into 1200x600 surface. sx=2, sy=1.5.
+        fun scale(mode: Int) = ContentScaling.computeScale(1200f, 600f, 600f, 400f, ContentScaling.SIZING_SCALE, mode)
+        assertEquals(1.5f to 1.5f, scale(ContentScaling.SCALE_FIT), "FIT = min(sx,sy)")
+        assertEquals(2f to 2f, scale(ContentScaling.SCALE_CROP), "CROP = max(sx,sy)")
+        assertEquals(2f to 2f, scale(ContentScaling.SCALE_FILL_WIDTH), "FILL_WIDTH = sx")
+        assertEquals(1.5f to 1.5f, scale(ContentScaling.SCALE_FILL_HEIGHT), "FILL_HEIGHT = sy")
+        assertEquals(2f to 1.5f, scale(ContentScaling.SCALE_FILL_BOUNDS), "FILL_BOUNDS = (sx,sy) non-uniform")
+        assertEquals(1f to 1f, scale(ContentScaling.SCALE_INSIDE), "INSIDE clamps to <=1")
+        // not SIZING_SCALE ⇒ identity.
+        assertEquals(1f to 1f, ContentScaling.computeScale(1200f, 600f, 600f, 400f, ContentScaling.SIZING_LAYOUT, 4))
+
+        // FIT scale 1.5 → content 900x600; END/BOTTOM aligns to the far edge.
+        assertEquals(
+            300f to 0f, // tx = 1200-900 = 300; ty = 600-600 = 0
+            ContentScaling.computeTranslate(1200f, 600f, 1.5f, 1.5f, 600f, 400f, ContentScaling.ALIGNMENT_END or ContentScaling.ALIGNMENT_TOP),
+        )
     }
 
     @Test
