@@ -1,0 +1,80 @@
+# RC Conformance — Smoke Render Flow  (drop-in für REM-8)
+# Owner: test-2 (QA). Form eingefroren; Hooks/Deep-Link sind der REM-8-Vertrag mit dev
+# (s. ../rem8-app-shell-requirement.md §1).
+#
+# Zweck (Stufe 1 = Liveness): beweist End-to-End, dass ein echtes .rc geladen, durch den L2-Player
+# gerendert und Erfolg gemeldet wird — auf >=1 Target. KEINE Pixel-Korrektheit (das ist render_parity.yaml).
+#
+# EHRLICHKEITS-ANKER (assist/PO 2026-06-26): rc-rendered feuert ERST NACH dem ersten Frame-Commit,
+# nicht nach Composition-Aufbau. extendedWaitUntil unten verlässt sich darauf — sonst grünt der Flow,
+# BEVOR Pixel da sind (false green). Der Hook-Contract (§1) bindet das verbindlich an den ersten Draw-Pass.
+#
+# Vertrag mit dev (REM-8):
+#   - Default-Launch rendert OHNE Parameter das gebündelte Default-.rc (procedure_simple1) — (A) Pflicht.
+#   - Deep-Link kmprc://render?rc=<name> wählt ein anderes gebündeltes Fixture — (B) optional, Korpus-Matrix.
+#   - testTag "rc-canvas"   : Render-Container, sobald Route komponiert.
+#   - testTag "rc-rendered" : ERST nach erstem erfolgreichem Frame-Commit (NICHT bei Composition-Start).
+#   - testTag "rc-error"    : Decode-/Render-Fehler, exklusiv zu rc-rendered.
+#
+# Lauf:
+#   Android (lokal):  maestro test render_smoke.yaml                       # Default-Doc via Launch
+#   Android (Matrix): maestro test --env RC=c_box render_smoke.yaml        # anderes Fixture via Deep-Link
+#   iOS (Cloud):      gleicher Flow; appId/bundleId-Override unten (USE_DEEPLINK steuert den Pfad).
+#   Korpus:           je Fixture ein Lauf via --env RC=<name> (Matrix aus test-1s Manifest).
+
+appId: com.tneff.kmpremotecompose.android   # REM-8 bestätigt finalen appId; iOS-Twin/Override dort
+name: "RC Smoke Render"
+tags:
+  - smoke
+  - conformance
+env:
+  RC: "procedure_simple1"     # Default = kleinstes Gate-Fixture (61 B, F1, reine Geometrie → braucht kein S3-Text)
+  USE_DEEPLINK: "false"       # "false" = Default-Launch (MVP-Pfad A); "true" = Deep-Link-Auswahl (Pfad B)
+---
+- launchApp:
+    clearState: true
+    label: "App frisch starten (Default-Doc lädt beim Start, wenn USE_DEEPLINK=false)"
+
+# Pfad B (optional): Fixture per Deep-Link wählen. Bei USE_DEEPLINK=false übersprungen.
+- runFlow:
+    when:
+      true: ${USE_DEEPLINK == "true"}
+    commands:
+      - openLink:
+          link: "kmprc://render?rc=${RC}"
+          autoVerify: true
+          label: "Deep-Link auf Debug-Render-Route mit Fixture ${RC}"
+
+- assertVisible:
+    id: "rc-canvas"
+    label: "Render-Container sichtbar (App auf richtigem Screen)"
+
+# Erster Frame ist asynchron UND rc-rendered ist post-frame-commit-gebunden -> extendedWaitUntil
+# statt nacktem assertVisible (sonst flaky / false-green). Das ist der Ehrlichkeits-Anker des Gates.
+- extendedWaitUntil:
+    visible:
+      id: "rc-rendered"
+    timeout: 5000
+    label: "Dokument dekodiert UND nach erstem Frame-Commit gezeichnet"
+
+- assertNotVisible:
+    id: "rc-error"
+    label: "Kein Decode-/Render-Fehler (inkl. 'rendered empty')"
+
+# Defense-in-depth gg. false-green: der App-Hook setzt rc-rendered NUR bei Draw-Count>0 (Amendment,
+# PO-genehmigt 2026-06-26). Dieser Schritt prüft den Count zusätzlich AUF MAESTRO-EBENE — verlässt sich
+# nicht allein darauf, dass die App rc-rendered korrekt gatet. rc-draw-count = Debug-Node mit der Zahl
+# der im Frame ausgeführten paint.*-Primitive (aus RemoteContext-Frame-Draw-Counter). >=1 = wirklich gezeichnet.
+- assertVisible:
+    id: "rc-draw-count"
+    text: "^[1-9][0-9]*$"
+    label: "Player hat >=1 Draw-Primitiv ausgeführt (kein Blank-Frame / rendered-empty)"
+
+# Screenshot für Stufe-2-Parität (render_parity.yaml vergleicht diesen gg. Golden / Cross-Platform).
+# cropOn rc-canvas: schneidet App-Chrome/Statusbar/Notch/Safe-Area weg — die divergieren Android<->iOS
+# stark und würden sonst das Toleranzband sprengen. Vergleich nur über die Render-Fläche selbst.
+# Dateiname trägt das Fixture → ein Bild pro Doc, pro Target von Maestro getrennt abgelegt.
+- takeScreenshot:
+    path: "smoke_${RC}"
+    cropOn:
+      id: "rc-canvas"
