@@ -1,0 +1,63 @@
+# RC Doc-Selection Gate (REM-34) — robust "chosen doc, not default" assertion.
+# Author: dev-2 (delivered for test-2 to adopt/relocate; flows are test-2's lane).
+#
+# WHY: render_smoke's `draw-count >= 1` is satisfied by the DEFAULT doc too, so a deep-link that
+# silently fails to switch would FALSE-GREEN. This flow proves the *selected* non-default doc actually
+# loaded by asserting the draw-count is DISTINCT from the default's (procedure_simple1 = exactly 1).
+#
+# CUSTOM-SCHEME NOTE: `openLink` here has NO `autoVerify` — `autoVerify: true` is for https App Links
+# and does NOT deliver a custom scheme (kmprc://) to the app (verified: stays on default). render_smoke
+# must drop autoVerify for the kmprc deep-link too, else its deep-link path false-greens.
+#
+#   maestro test render_doc_select.yaml                    # default RC=winding
+#   maestro test --env RC=path_procedural_checks_all_path render_doc_select.yaml
+
+appId: com.tneff.kmpremotecompose.android
+name: "RC Doc Selection"
+tags:
+  - smoke
+  - conformance
+env:
+  RC: "demo_winding_rule_path_winding"   # any bundled non-default doc whose draw-count != 1
+---
+- launchApp:
+    clearState: true
+    label: "Fresh launch → renders the DEFAULT doc (procedure_simple1)"
+
+- assertVisible:
+    id: "rc-canvas"
+    label: "Render container present"
+
+- extendedWaitUntil:
+    visible:
+      id: "rc-rendered"
+    timeout: 5000
+    label: "Default doc decoded AND drawn (post first frame-commit)"
+
+# Baseline: the default fixture is procedure_simple1 (no deep-link yet).
+- assertVisible:
+    id: "rc-doc"
+    text: "procedure_simple1"
+    label: "Default fixture == procedure_simple1 (baseline before selection)"
+
+# Select a non-default doc BY NAME via the deep-link (custom scheme → NO autoVerify).
+- openLink:
+    link: "kmprc://render?rc=${RC}"
+    label: "Deep-link selects bundled doc ${RC}"
+
+- extendedWaitUntil:
+    visible:
+      id: "rc-rendered"
+    timeout: 5000
+    label: "Selected doc decoded AND drawn"
+
+- assertNotVisible:
+    id: "rc-error"
+    label: "No decode/render error for the selected doc"
+
+# CORE ACCEPTANCE: rc-doc names the actually-rendered fixture → directly proves the CHOSEN doc loaded
+# (robust identity check; not the count≠1 proxy). PO-preferred assertion.
+- assertVisible:
+    id: "rc-doc"
+    text: "${RC}"
+    label: "Rendered fixture == the selected name → the CHOSEN doc loaded (no false-green)"

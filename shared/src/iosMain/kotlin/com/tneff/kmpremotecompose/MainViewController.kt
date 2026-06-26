@@ -9,9 +9,9 @@ import platform.Foundation.NSData
 import platform.Foundation.dataWithContentsOfFile
 import platform.posix.memcpy
 
-// REM-8: render the bundled default fixture from the iOS app bundle (path A, no params).
+// REM-8/REM-34: render the bundled fixture selected by RcRouter (default or deep-link) from the bundle.
 fun MainViewController() = ComposeUIViewController {
-    RemoteComposeApp(loadRc = { loadBundledRc("procedure_simple1") })
+    RemoteComposeApp(loadRc = { name -> loadBundledRc(name) })
 }
 
 @OptIn(ExperimentalForeignApi::class)
