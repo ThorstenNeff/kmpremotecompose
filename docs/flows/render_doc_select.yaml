@@ -34,11 +34,11 @@ env:
     timeout: 5000
     label: "Default doc decoded AND drawn (post first frame-commit)"
 
-# Baseline: the default doc draws EXACTLY 1 primitive (procedure_simple1 = one DrawCircle).
+# Baseline: the default fixture is procedure_simple1 (no deep-link yet).
 - assertVisible:
-    id: "rc-draw-count"
-    text: "1"
-    label: "Default draw-count == 1 (baseline before selection)"
+    id: "rc-doc"
+    text: "procedure_simple1"
+    label: "Default fixture == procedure_simple1 (baseline before selection)"
 
 # Select a non-default doc BY NAME via the deep-link (custom scheme → NO autoVerify).
 - openLink:
@@ -55,9 +55,9 @@ env:
     id: "rc-error"
     label: "No decode/render error for the selected doc"
 
-# CORE ACCEPTANCE: the SELECTED doc rendered, not the default → draw-count is NOT the default's 1.
-# (regex: a positive integer that is not exactly "1" — proves a distinct, real render.)
+# CORE ACCEPTANCE: rc-doc names the actually-rendered fixture → directly proves the CHOSEN doc loaded
+# (robust identity check; not the count≠1 proxy). PO-preferred assertion.
 - assertVisible:
-    id: "rc-draw-count"
-    text: "^(?!1$)[1-9][0-9]*$"
-    label: "Selected doc draw-count != default(1) → the CHOSEN doc actually loaded (no false-green)"
+    id: "rc-doc"
+    text: "${RC}"
+    label: "Rendered fixture == the selected name → the CHOSEN doc loaded (no false-green)"

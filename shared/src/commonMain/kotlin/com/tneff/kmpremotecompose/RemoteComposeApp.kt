@@ -123,6 +123,9 @@ fun RemoteComposeApp(loadRc: (String) -> ByteArray, modifier: Modifier = Modifie
             committed && drawCount > 0 -> {
                 BasicText("rendered", Modifier.testTag("rc-rendered"))
                 BasicText(drawCount.toString(), Modifier.testTag("rc-draw-count"))
+                // rc-doc = the actually-rendered fixture name (REM-34): the robust "chosen doc" gate —
+                // test-2 asserts rc-doc == ${RC}, directly proving identity (not the count≠1 proxy).
+                BasicText(docName, Modifier.testTag("rc-doc"))
             }
         }
     }
