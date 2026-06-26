@@ -16,6 +16,7 @@
 package com.tneff.kmpremotecompose.remote.player.compose
 
 import androidx.compose.ui.graphics.Canvas
+import androidx.compose.ui.text.font.FontFamily
 import com.tneff.kmpremotecompose.remote.core.operations.draw.PaintData
 import com.tneff.kmpremotecompose.remote.player.core.ComputedTextLayout
 import com.tneff.kmpremotecompose.remote.player.core.PaintContext
@@ -46,6 +47,12 @@ class ComposePaintContext(
     val canvas: Canvas? = null,
     /** dev-2's geometry implementation (L2-S2). When null, geometry primitives are no-ops. */
     var geometry: GeometryDelegate? = null,
+    /**
+     * The CMP font resolver for the **text** half — supply `LocalFontFamilyResolver.current` from the
+     * composition. Injected (not constructed) because Android's `createFontFamilyResolver()` needs a
+     * resource loader / `Context`. Null ⇒ text draws are no-ops (geometry-only / scaffold usage).
+     */
+    val fontFamilyResolver: FontFamily.Resolver? = null,
 ) : PaintContext(context) {
 
     /**
@@ -189,13 +196,14 @@ class ComposePaintContext(
     // --- text: dev-1 L2-S3 basis (CMP TextMeasurer/Paragraph via [textRenderer], → [canvas]) -----
 
     /**
-     * The CMP text engine, built lazily from the pass density and bound to the shared [paintState]
-     * (dev-2's single instance above) — so a `PAINT_VALUES` bundle that sets `TEXT_SIZE` and the
-     * geometry color reach the text renderer. The text half needs the [canvas]; if none was bound (S1
-     * scaffold usage), text draws are skipped.
+     * The CMP text engine, built lazily from the pass density + injected [fontFamilyResolver], bound to
+     * the shared [paintState] (dev-2's single instance above) — so a `PAINT_VALUES` bundle that sets
+     * `TEXT_SIZE` and the geometry color reach the text renderer. **Null when no [fontFamilyResolver]
+     * was supplied** (geometry-only / scaffold usage) ⇒ text draws are no-ops. The text half also needs
+     * the [canvas].
      */
-    val textRenderer: ComposeTextRenderer by lazy {
-        ComposeTextRenderer(context.density).also { it.paintState = paintState }
+    val textRenderer: ComposeTextRenderer? by lazy {
+        fontFamilyResolver?.let { ComposeTextRenderer(context.density, it).also { r -> r.paintState = paintState } }
     }
 
     override fun drawTextRun(
@@ -206,8 +214,9 @@ class ComposePaintContext(
         rtl: Boolean,
     ) {
         val c = canvas ?: return
+        val r = textRenderer ?: return
         val text = context.getText(textId) ?: return
-        textRenderer.drawTextRun(c, text, start, end, x, y, rtl)
+        r.drawTextRun(c, text, start, end, x, y, rtl)
     }
 
     override fun drawTextOnPath(textId: Int, pathId: Int, hOffset: Float, vOffset: Float) {
@@ -215,8 +224,9 @@ class ComposePaintContext(
     }
 
     override fun getTextBounds(textId: Int, start: Int, end: Int, flags: Int, bounds: FloatArray) {
+        val r = textRenderer ?: return
         val text = context.getText(textId) ?: return
-        textRenderer.getTextBounds(text, start, end, flags, bounds)
+        r.getTextBounds(text, start, end, flags, bounds)
     }
 
     override fun layoutComplexText(
@@ -234,14 +244,14 @@ class ComposePaintContext(
         useUnderline: Boolean,
         strikethrough: Boolean,
         flags: Int,
-    ): ComputedTextLayout? = textRenderer.layoutComplexText(
+    ): ComputedTextLayout? = textRenderer?.layoutComplexText(
         context.getText(textId), start, end, alignment, overflow, maxLines, maxWidth, maxHeight,
         letterSpacing, lineHeightAdd, lineHeightMultiplier, useUnderline, strikethrough,
     )
 
     override fun drawComplexText(computedTextLayout: ComputedTextLayout?) {
         val c = canvas ?: return
-        textRenderer.drawComplexText(c, computedTextLayout)
+        textRenderer?.drawComplexText(c, computedTextLayout)
     }
 
     override fun getText(id: Int): String? = context.getText(id)

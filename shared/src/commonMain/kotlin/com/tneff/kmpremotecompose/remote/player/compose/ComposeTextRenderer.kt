@@ -24,7 +24,7 @@ import androidx.compose.ui.text.TextLayoutResult
 import androidx.compose.ui.text.TextMeasurer
 import androidx.compose.ui.text.TextPainter
 import androidx.compose.ui.text.TextStyle
-import androidx.compose.ui.text.font.createFontFamilyResolver
+import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextDecoration
 import androidx.compose.ui.text.style.TextOverflow
@@ -46,15 +46,21 @@ import kotlin.math.roundToInt
  * Coordinate convention (faithful to upstream): `drawTextRun` positions text at the **baseline** at
  * `(x, y)`; CMP paints from the layout top-left, so we offset by [TextLayoutResult.firstBaseline].
  *
- * **Paint-state seam (flagged to PO, S2↔S3):** the run's color/size/letterSpacing come from the
- * shared paint bundle, whose decode is dev-2's (S2). Until a shared text-paint state is wired,
- * [textStyle] is settable and defaults to black/16sp; basis renders with it. Parameter parity is
- * classified in [TEXT_PARAMETER_PARITY] — complex parity (GAP-1) is deferred to L2-D1.
+ * **Paint-state seam (S2↔S3):** the run's color/size/letterSpacing come from the shared
+ * [PlayerPaintState] (dev-2's S2 decode), read via [currentStyle]; [textStyle] is the fallback default.
+ * Parameter parity is classified in [TEXT_PARAMETER_PARITY] — complex parity (GAP-1) is deferred to L2-D1.
+ *
+ * The [fontFamilyResolver] is **injected**, never constructed here: on Android `createFontFamilyResolver()`
+ * needs a resource loader / `Context`, so the composition supplies `LocalFontFamilyResolver.current`. This
+ * keeps `commonMain` platform-clean and `:shared:compileAndroidMain` green (the inverse of the iOS lesson).
  */
-class ComposeTextRenderer(private val density: Float) {
+class ComposeTextRenderer(
+    private val density: Float,
+    fontFamilyResolver: FontFamily.Resolver,
+) {
 
     private val measurer: TextMeasurer = TextMeasurer(
-        defaultFontFamilyResolver = createFontFamilyResolver(),
+        defaultFontFamilyResolver = fontFamilyResolver,
         defaultDensity = Density(density),
         defaultLayoutDirection = LayoutDirection.Ltr,
     )
@@ -64,8 +70,7 @@ class ComposeTextRenderer(private val density: Float) {
 
     /**
      * The shared paint-state (S2↔S3 seam, proposal A). When bound, each run's color + size come from
-     * it ([deriveTextStyle]); until dev-2's real [PlayerPaintState] lands this reads the stub. Null ⇒
-     * fall back to [textStyle].
+     * it ([deriveTextStyle]); null ⇒ fall back to [textStyle].
      */
     var paintState: PlayerPaintState? = null
 
