@@ -21,6 +21,7 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.ColorFilter
 import androidx.compose.ui.graphics.FilterQuality
 import androidx.compose.ui.graphics.LinearGradientShader
+import androidx.compose.ui.graphics.Shader
 import androidx.compose.ui.graphics.Paint
 import androidx.compose.ui.graphics.PaintingStyle
 import androidx.compose.ui.graphics.RadialGradientShader
@@ -124,7 +125,7 @@ internal object PaintBundleApplier {
                 COLOR_FILTER, COLOR_FILTER_ID ->
                     paint.colorFilter = ColorFilter.tint(Color(values[i++]), blendMode(cmd shr 16))
                 CLEAR_COLOR_FILTER -> paint.colorFilter = null
-                GRADIENT -> i = applyGradient(paint, cmd, values, i)
+                GRADIENT -> i = applyGradient(paint, cmd, values, i, deferred)
 
                 // ---- text attributes → shared state (read by the L2-S3 text renderer) ----
                 TEXT_SIZE -> state.textSizePx = Float.fromBits(values[i++])
@@ -157,53 +158,88 @@ internal object PaintBundleApplier {
      * are present), then — only if colors are present — the per-type geometry. When `colorLen == 0`
      * upstream returns right after the stops-length int **without** consuming geometry; mirrored here.
      */
-    private fun applyGradient(paint: Paint, cmd: Int, a: IntArray, start: Int): Int {
+    private fun applyGradient(paint: Paint, cmd: Int, a: IntArray, start: Int, deferred: MutableSet<String>?): Int {
         var ret = start
+        // Bounds-safe read: a truncated/corrupt bundle must never throw the render path (REM-37 fail-soft,
+        // belt-and-suspenders). An over-read yields 0 but still advances the cursor so slot-count stays in
+        // sync with upstream (the paint analogue of L1 byte-sync).
+        fun rd(): Int = if (ret < a.size) a[ret++] else { ret++; 0 }
+
         val type = cmd shr 16
-        val colorLen = 0xFF and a[ret++]
+        val colorLen = 0xFF and rd()
         val colors: ArrayList<Color>? =
-            if (colorLen > 0) ArrayList<Color>(colorLen).apply { for (j in 0 until colorLen) add(Color(a[ret++])) }
+            if (colorLen > 0) ArrayList<Color>(colorLen).apply { for (j in 0 until colorLen) add(Color(rd())) }
             else null
 
-        val stopsLen = a[ret++]
+        val stopsLen = rd()
         var stops: List<Float>? = null
         if (stopsLen > 0 && colors != null) {
-            // upstream: stops length must equal colors length (else it throws); read colorLen stops.
+            // upstream: stops length must equal colors length; read colorLen stops.
             val s = ArrayList<Float>(colorLen)
-            for (j in 0 until colorLen) s.add(Float.fromBits(a[ret++]))
+            for (j in 0 until colorLen) s.add(Float.fromBits(rd()))
             stops = s
         }
 
         // upstream `if (colors == null) return ret;` — geometry is NOT consumed for a 0-color gradient.
         if (colors == null) return ret
 
+        // Read the per-type geometry (always advancing the cursor for slot fidelity) into locals, then
+        // build the shader fail-soft: CMP's gradient shaders throw on <2 colors / mismatched stops /
+        // non-positive radius. A bad color/gradient value must degrade to a sensible default (the first
+        // color as a solid fill), never throw — same contract as getColor (unset→0, never throws).
         when (type) {
             LINEAR_GRADIENT -> {
-                val startX = Float.fromBits(a[ret++])
-                val startY = Float.fromBits(a[ret++])
-                val endX = Float.fromBits(a[ret++])
-                val endY = Float.fromBits(a[ret++])
-                val tile = tileMode(a[ret++])
-                paint.shader = LinearGradientShader(
-                    Offset(startX, startY), Offset(endX, endY), colors, stops, tile,
-                )
+                val sx = Float.fromBits(rd()); val sy = Float.fromBits(rd())
+                val ex = Float.fromBits(rd()); val ey = Float.fromBits(rd())
+                val tile = tileMode(rd())
+                setGradientOrSolid(paint, colors, stops, deferred) {
+                    LinearGradientShader(Offset(sx, sy), Offset(ex, ey), colors, stops, tile)
+                }
             }
             RADIAL_GRADIENT -> {
-                val centerX = Float.fromBits(a[ret++])
-                val centerY = Float.fromBits(a[ret++])
-                val radius = Float.fromBits(a[ret++])
-                val tile = tileMode(a[ret++])
-                paint.shader = RadialGradientShader(
-                    Offset(centerX, centerY), radius, colors, stops, tile,
-                )
+                val cx = Float.fromBits(rd()); val cy = Float.fromBits(rd())
+                val radius = Float.fromBits(rd())
+                val tile = tileMode(rd())
+                setGradientOrSolid(paint, colors, stops, deferred, radius) {
+                    RadialGradientShader(Offset(cx, cy), radius, colors, stops, tile)
+                }
             }
             SWEEP_GRADIENT -> {
-                val centerX = Float.fromBits(a[ret++])
-                val centerY = Float.fromBits(a[ret++])
-                paint.shader = SweepGradientShader(Offset(centerX, centerY), colors, stops)
+                val cx = Float.fromBits(rd()); val cy = Float.fromBits(rd())
+                setGradientOrSolid(paint, colors, stops, deferred) {
+                    SweepGradientShader(Offset(cx, cy), colors, stops)
+                }
             }
         }
         return ret
+    }
+
+    /**
+     * Set [make]'s gradient shader on [paint] only when it is well-formed (≥2 colors, stops match colors,
+     * radius > 0); otherwise degrade to a solid fill with the first color — never throw (REM-37 fail-soft).
+     * The shader construction is additionally guarded so any CMP-side validation throw also degrades.
+     */
+    private inline fun setGradientOrSolid(
+        paint: Paint,
+        colors: List<Color>,
+        stops: List<Float>?,
+        deferred: MutableSet<String>?,
+        radius: Float = 1f,
+        make: () -> Shader,
+    ) {
+        val wellFormed = colors.size >= 2 && (stops == null || stops.size == colors.size) && radius > 0f
+        if (wellFormed) {
+            try {
+                paint.shader = make()
+                return
+            } catch (t: Throwable) {
+                deferred?.add("GRADIENT_INVALID")
+            }
+        } else {
+            deferred?.add("GRADIENT_DEGENERATE")
+        }
+        // Fail-soft default: solid fill with the first color (a single-color "gradient" is just that color).
+        colors.firstOrNull()?.let { paint.shader = null; paint.color = it }
     }
 
     /** Upstream `Paint.Style` order: 0=FILL, 1=STROKE, 2=FILL_AND_STROKE (no exact CMP equivalent). */
