@@ -24,3 +24,18 @@ parity_compare.py Part B).
 These goldens make render_parity.yaml live (was test-first-red without goldens). Re-freeze only
 on an intentional render change; a drift is a render regression to investigate (NOT a byte issue —
 the .rc bytes are proven equal).
+
+## Golden round 2 (2026-06-26, REM-34 render-by-name) — 3 pixel-confirmed FULL docs
+ANDROID goldens (real Maestro cropOn rc-canvas, doc-sized), via deep-link kmprc://render?rc=<name>
+with rc-doc identity assertion:
+- procedure_simple1.png  600x600  (re-frozen detection->cropOn = batched re-freeze, Android side)
+- path_procedural_checks_basic_path.png  300x300  (new)
+- path_procedural_checks_all_path.png    300x300  (new)
+All three render PRISTINE byte-identical bundled docs (provenance clean).
+
+iOS goldens for basic_path/all_path: BLOCKED on the Maestro iOS driver (port 22087 down since REM-8 —
+launchApp/inspect/cropOn all fail to connect). simctl-openurl fallback can't render-by-name on iOS:
+it triggers the system "Open in app?" dialog which needs the Maestro driver (openLink autoVerify) to
+dismiss; without it the app stays on the default doc. Needs the Maestro iOS driver restarted, then
+re-run the iOS cropOn captures. procedure_simple1's iOS golden + 100% A<->iOS parity already exist
+(merged REM-8). Only the 2 new path docs' iOS goldens + their parity are pending the driver fix.
