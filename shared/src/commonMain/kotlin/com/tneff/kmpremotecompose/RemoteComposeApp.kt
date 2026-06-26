@@ -66,6 +66,11 @@ fun RemoteComposeApp(loadRc: (String) -> ByteArray, modifier: Modifier = Modifie
     var committed by remember { mutableStateOf(false) }
     var drawCount by remember { mutableStateOf(0) }
     var renderError by remember { mutableStateOf<String?>(null) }
+    // The name of the doc that ACTUALLY produced the committed frame — set at the commit point (below),
+    // not read from the live RcRouter. Decouples rc-doc from the router so rc-rendered + rc-doc always
+    // describe the same frame (test-2 rc-doc race fix): the live docName can change a composition before
+    // the new doc loads/commits, which would briefly show rc-rendered (old) alongside rc-doc (new).
+    var renderedDocName by remember { mutableStateOf("") }
 
     // Re-runs when the selected doc changes (deep-link) — reset per-doc render state, then load by name.
     LaunchedEffect(docName) {
@@ -104,6 +109,9 @@ fun RemoteComposeApp(loadRc: (String) -> ByteArray, modifier: Modifier = Modifie
                         RemoteComposePlayer(ctx).paint(d, paintContext)
                         // Draw-phase writes: read only outside this lambda → one settling recompose.
                         if (drawCount != ctx.drawCount) drawCount = ctx.drawCount
+                        // rc-doc binds to the name captured WITH this committed frame (`docName` here
+                        // matches `d`, since the Canvas only composes after the load for this name).
+                        if (renderedDocName != docName) renderedDocName = docName
                         if (!committed) committed = true
                     } catch (t: Throwable) {
                         if (renderError == null) renderError = t.message ?: "render failed"
@@ -125,7 +133,8 @@ fun RemoteComposeApp(loadRc: (String) -> ByteArray, modifier: Modifier = Modifie
                 BasicText(drawCount.toString(), Modifier.testTag("rc-draw-count"))
                 // rc-doc = the actually-rendered fixture name (REM-34): the robust "chosen doc" gate —
                 // test-2 asserts rc-doc == ${RC}, directly proving identity (not the count≠1 proxy).
-                BasicText(docName, Modifier.testTag("rc-doc"))
+                // Bound to renderedDocName (the committed frame's name) so it never drifts from rc-rendered.
+                BasicText(renderedDocName, Modifier.testTag("rc-doc"))
             }
         }
     }
