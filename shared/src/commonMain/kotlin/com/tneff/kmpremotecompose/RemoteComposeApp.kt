@@ -89,8 +89,10 @@ fun RemoteComposeApp(loadRc: () -> ByteArray, modifier: Modifier = Modifier) {
                     val canvas = drawContext.canvas
                     try {
                         val ctx = RemoteContext().also { it.setDensity(density) }
-                        val paintContext =
-                            ComposePaintContext(ctx, canvas, GeometryPaintDelegate(ctx, canvas))
+                        val paintContext = ComposePaintContext(ctx, canvas)
+                        // Geometry shares the context's one PlayerPaintState (REM-32) with the text half.
+                        paintContext.geometry =
+                            GeometryPaintDelegate(ctx, canvas, paintContext.paintState)
                         RemoteComposePlayer(ctx).paint(d, paintContext)
                         // Draw-phase writes: read only outside this lambda → one settling recompose.
                         if (drawCount != ctx.drawCount) drawCount = ctx.drawCount

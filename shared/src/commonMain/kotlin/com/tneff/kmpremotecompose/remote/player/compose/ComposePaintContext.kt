@@ -48,6 +48,18 @@ class ComposePaintContext(
     var geometry: GeometryDelegate? = null,
 ) : PaintContext(context) {
 
+    /**
+     * The single shared paint state (REM-32, Flag-2): construct the [geometry] delegate with this same
+     * instance (`GeometryPaintDelegate(context, canvas, paintState)`) so that `PAINT_VALUES` and
+     * `savePaint`/`restorePaint` (forwarded to geometry) and the text renderer below all see one state.
+     * The text half (L2-S3, dev-1) reads [PlayerPaintState.textSizePx] / [PlayerPaintState.typefaceId]
+     * / [PlayerPaintState.paint] from here.
+     *
+     * Lazy: a `Paint` needs the graphics backend (Skiko), absent in plain jvm unit tests — deferring
+     * creation until first render keeps the canvas-free seam tests (e.g. PlayerFoundationTest) working.
+     */
+    val paintState: PlayerPaintState by lazy { PlayerPaintState() }
+
     // --- geometry: forwarded to dev-2's delegate (L2-S2) ----------------------------------------
 
     override fun drawRect(left: Float, top: Float, right: Float, bottom: Float) {

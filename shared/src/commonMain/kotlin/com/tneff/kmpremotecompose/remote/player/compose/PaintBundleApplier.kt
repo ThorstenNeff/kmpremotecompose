@@ -85,15 +85,18 @@ internal object PaintBundleApplier {
     private const val SWEEP_GRADIENT = 2
 
     /**
-     * Apply the bundle [values] (first [count] ints) onto [paint]. Tags outside the S2 MVP scope are
-     * skipped (kept in sync) and their names added to [deferred] when provided.
+     * Apply the bundle [values] (first [count] ints) onto [state]: paint attributes mutate
+     * `state.paint`, `TEXT_SIZE`/`TYPEFACE` land in `state.textSizePx`/`state.typefaceId` (read by the
+     * text renderer, L2-S3). Remaining out-of-scope tags are skipped (kept in sync) and recorded in
+     * [deferred] when provided.
      */
     fun applyTo(
-        paint: Paint,
+        state: PlayerPaintState,
         values: IntArray,
         count: Int = values.size,
         deferred: MutableSet<String>? = null,
     ) {
+        val paint = state.paint
         var i = 0
         while (i < count) {
             val cmd = values[i++]
@@ -123,9 +126,12 @@ internal object PaintBundleApplier {
                 CLEAR_COLOR_FILTER -> paint.colorFilter = null
                 GRADIENT -> i = applyGradient(paint, cmd, values, i)
 
-                // ---- out of S2 scope: advance correctly, record, do not apply ----
-                TEXT_SIZE -> { i++; deferred?.add("TEXT_SIZE") }
-                TYPEFACE -> { i++; deferred?.add("TYPEFACE") }
+                // ---- text attributes → shared state (read by the L2-S3 text renderer) ----
+                TEXT_SIZE -> state.textSizePx = Float.fromBits(values[i++])
+                // typefaceId = the font id; weight/italic bits in (cmd shr 16) are not captured (🚩 flagged).
+                TYPEFACE -> state.typefaceId = values[i++]
+
+                // ---- out of S2/text scope: advance correctly, record, do not apply ----
                 FALLBACK_TYPEFACE -> { i++; deferred?.add("FALLBACK_TYPEFACE") }
                 SHADER -> { i++; deferred?.add("SHADER") }
                 SHADER_MATRIX -> { i++; deferred?.add("SHADER_MATRIX") }

@@ -18,7 +18,6 @@ package com.tneff.kmpremotecompose.remote.player.compose
 import androidx.compose.ui.graphics.Canvas
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.ImageBitmap
-import androidx.compose.ui.graphics.Paint
 import androidx.compose.ui.graphics.PaintingStyle
 import androidx.compose.ui.graphics.Path
 import androidx.compose.ui.graphics.PathFillType
@@ -92,12 +91,41 @@ class GeometryAdapterIosTest {
             .strokeCap(2) // SQUARE
             .build()
             .values
-        val paint = Paint()
-        PaintBundleApplier.applyTo(paint, bundle)
-        assertEquals(Color(0xFF112233.toInt()), paint.color)
-        assertEquals(4f, paint.strokeWidth)
-        assertEquals(PaintingStyle.Stroke, paint.style)
-        assertEquals(StrokeCap.Square, paint.strokeCap)
+        val state = PlayerPaintState()
+        PaintBundleApplier.applyTo(state, bundle)
+        assertEquals(Color(0xFF112233.toInt()), state.paint.color)
+        assertEquals(4f, state.paint.strokeWidth)
+        assertEquals(PaintingStyle.Stroke, state.paint.style)
+        assertEquals(StrokeCap.Square, state.paint.strokeCap)
+    }
+
+    @Test
+    fun paintBundle_textSizeAndTypefaceLandInSharedState() {
+        // REM-32: TEXT_SIZE/TYPEFACE now populate the shared state (read by L2-S3 text), not deferred.
+        // [TEXT_SIZE=1, 24f][TYPEFACE=16|(style<<16), fontId=7]
+        val arr = intArrayOf(1, 24f.toRawBits(), 16 or (0 shl 16), 7)
+        val deferred = mutableSetOf<String>()
+        val state = PlayerPaintState()
+        PaintBundleApplier.applyTo(state, arr, deferred = deferred)
+        assertEquals(24f, state.textSizePx)
+        assertEquals(7, state.typefaceId)
+        assertTrue("TEXT_SIZE" !in deferred && "TYPEFACE" !in deferred, "text attrs applied, not deferred")
+    }
+
+    @Test
+    fun playerPaintState_saveRestoreStacksAllThreeFields() {
+        val state = PlayerPaintState()
+        state.paint.color = Color(0xFF112233.toInt())
+        state.textSizePx = 10f
+        state.typefaceId = 3
+        state.save()
+        state.paint.color = Color(0xFFAABBCC.toInt())
+        state.textSizePx = 99f
+        state.typefaceId = 9
+        state.restore()
+        assertEquals(Color(0xFF112233.toInt()), state.paint.color)
+        assertEquals(10f, state.textSizePx)
+        assertEquals(3, state.typefaceId)
     }
 
     @Test
@@ -105,10 +133,10 @@ class GeometryAdapterIosTest {
         // TEXTURE(24) + 3 args, then COLOR(4) + color. The COLOR must still land → walk stayed in sync.
         val arr = intArrayOf(24, 7, 0, 0, 4, 0xFF00FF00.toInt())
         val deferred = mutableSetOf<String>()
-        val paint = Paint()
-        PaintBundleApplier.applyTo(paint, arr, deferred = deferred)
+        val state = PlayerPaintState()
+        PaintBundleApplier.applyTo(state, arr, deferred = deferred)
         assertTrue("TEXTURE" in deferred, "deferred tag recorded")
-        assertEquals(Color(0xFF00FF00.toInt()), paint.color, "color after deferred tag applied")
+        assertEquals(Color(0xFF00FF00.toInt()), state.paint.color, "color after deferred tag applied")
     }
 
     @Test
@@ -116,9 +144,9 @@ class GeometryAdapterIosTest {
         // style=2 (FILL_AND_STROKE) has no CMP equivalent → Fill + visible in `deferred` (PO decision).
         val bundle = PaintData.Builder().style(2).build().values
         val deferred = mutableSetOf<String>()
-        val paint = Paint()
-        PaintBundleApplier.applyTo(paint, bundle, deferred = deferred)
-        assertEquals(PaintingStyle.Fill, paint.style)
+        val state = PlayerPaintState()
+        PaintBundleApplier.applyTo(state, bundle, deferred = deferred)
+        assertEquals(PaintingStyle.Fill, state.paint.style)
         assertTrue("STYLE_FILL_AND_STROKE" in deferred, "lossy fill+stroke must be logged, not silent")
     }
 
@@ -132,9 +160,9 @@ class GeometryAdapterIosTest {
             0f.toRawBits(), 0f.toRawBits(), 100f.toRawBits(), 0f.toRawBits(), // start/end
             0, // tileMode CLAMP
         )
-        val paint = Paint()
-        PaintBundleApplier.applyTo(paint, arr)
-        assertNotNull(paint.shader, "linear gradient should set a shader")
+        val state = PlayerPaintState()
+        PaintBundleApplier.applyTo(state, arr)
+        assertNotNull(state.paint.shader, "linear gradient should set a shader")
     }
 
     @Test
@@ -169,12 +197,14 @@ class GeometryAdapterIosTest {
             4, sentinel,                                         // COLOR sentinel (1)
         )
         val deferred = mutableSetOf<String>()
-        val paint = Paint()
-        PaintBundleApplier.applyTo(paint, arr, deferred = deferred)
-        assertEquals(Color(sentinel), paint.color, "sentinel COLOR after every tag → cursor stayed in sync")
-        for (tag in listOf("TEXT_SIZE", "TYPEFACE", "SHADER", "SHADER_MATRIX", "FONT_AXIS", "TEXTURE", "PATH_EFFECT")) {
+        val state = PlayerPaintState()
+        PaintBundleApplier.applyTo(state, arr, deferred = deferred)
+        assertEquals(Color(sentinel), state.paint.color, "sentinel COLOR after every tag → cursor stayed in sync")
+        // TEXT_SIZE/TYPEFACE now land in the shared state (REM-32); the rest stay deferred.
+        for (tag in listOf("SHADER", "SHADER_MATRIX", "FONT_AXIS", "TEXTURE", "PATH_EFFECT")) {
             assertTrue(tag in deferred, "deferred should record $tag")
         }
+        assertEquals(12f, state.textSizePx, "TEXT_SIZE applied to state")
     }
 
     @Test
@@ -202,7 +232,7 @@ class GeometryAdapterIosTest {
                 marker(FloatsToPath.CLOSE),
             ),
         )
-        val delegate = GeometryPaintDelegate(context, Canvas(ImageBitmap(32, 32)))
+        val delegate = GeometryPaintDelegate(context, Canvas(ImageBitmap(32, 32)), PlayerPaintState())
 
         // Shapes / clip / matrix — smoke (no throw).
         delegate.drawRect(0f, 0f, 10f, 10f)
