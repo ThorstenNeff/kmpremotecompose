@@ -118,6 +118,20 @@ class RemoteContext {
 
     fun loadColor(id: Int, value: Int) { colorStore[id] = value }
 
+    /**
+     * Seed the **system variables** into the float store (REM-36 E-Seed) — done **before** the player's
+     * variable phase so ops that reference window/density (e.g. `drawOval(0,0,FLOAT_WINDOW_WIDTH,…)`)
+     * resolve to real sizes instead of the `0f` store default (which collapses them to degenerate,
+     * blank shapes). Source-grounded against upstream `RemoteContext`/`RemoteComposeState`: window =
+     * the render **viewport** box (header doc-dims when no explicit viewport), density = the player
+     * density. ids are system-variable region (0): [ID_WINDOW_WIDTH]/[ID_WINDOW_HEIGHT]/[ID_DENSITY].
+     */
+    fun seedSystemVariables(windowWidth: Float, windowHeight: Float) {
+        loadFloat(ID_WINDOW_WIDTH, windowWidth)
+        loadFloat(ID_WINDOW_HEIGHT, windowHeight)
+        loadFloat(ID_DENSITY, density)
+    }
+
     fun getBitmap(id: Int): ImageBitmap? = idObjects[id] as? ImageBitmap
 
     fun putBitmap(id: Int, bitmap: ImageBitmap) { idObjects[id] = bitmap }
@@ -211,5 +225,17 @@ class RemoteContext {
         wakeInSeconds = -1f
         drawCount = 0
         this.frameTimeSeconds = frameTimeSeconds
+    }
+
+    companion object {
+        // System-variable ids (region 0), source-grounded against upstream `RemoteContext`.
+        /** Render-viewport width (upstream `ID_WINDOW_WIDTH`). */
+        const val ID_WINDOW_WIDTH = 5
+        /** Render-viewport height (upstream `ID_WINDOW_HEIGHT`). */
+        const val ID_WINDOW_HEIGHT = 6
+        /** Player density (upstream `ID_DENSITY`). */
+        const val ID_DENSITY = 27
+        /** Default font size (upstream `ID_FONT_SIZE`). */
+        const val ID_FONT_SIZE = 33
     }
 }
