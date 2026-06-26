@@ -44,6 +44,14 @@ object RcRouter {
         private set
 
     /**
+     * Live-animation flag (REM-37 E-D1): set from a deep-link `&live=1` to opt the render loop into
+     * advancing `frameTimeSeconds` per frame (clocks tick, cube3d spins). **Default `false` = static
+     * `t=0`** so the golden sweep stays deterministic — the flag controls only the time-advance, never
+     * the render path. Set directly by each platform's deep-link parser.
+     */
+    var live: Boolean by mutableStateOf(false)
+
+    /**
      * Select a bundled doc by name from a deep-link. **Deterministic** unknown-handling (test-2 fix):
      * - `null` (no `rc` query param — a normal launch, or a param-less deep-link) → keep the current
      *   selection, so the default-launch render (contract §2A) is preserved.

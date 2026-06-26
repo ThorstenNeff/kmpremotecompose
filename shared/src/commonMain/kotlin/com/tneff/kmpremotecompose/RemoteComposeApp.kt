@@ -27,6 +27,7 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
+import androidx.compose.runtime.withFrameNanos
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.platform.testTag
@@ -61,6 +62,9 @@ import com.tneff.kmpremotecompose.remote.player.core.RemoteContext
 fun RemoteComposeApp(loadRc: (String) -> ByteArray, modifier: Modifier = Modifier) {
     // The selected bundled doc (REM-34): default, or a deep-link `kmprc://render?rc=<name>` via RcRouter.
     val docName = RcRouter.docName
+    // REM-37 E-D1: live-animation flag (deep-link `&live=1`). Default false ⇒ static t=0 (deterministic golden).
+    val live = RcRouter.live
+    var frameTime by remember { mutableStateOf(0f) }
     var doc by remember { mutableStateOf<RemoteComposeDocument?>(null) }
     var decodeError by remember { mutableStateOf<String?>(null) }
     var committed by remember { mutableStateOf(false) }
@@ -87,6 +91,24 @@ fun RemoteComposeApp(loadRc: (String) -> ByteArray, modifier: Modifier = Modifie
         }
     }
 
+    // REM-37 E-D1 render loop: in live mode advance frameTime every frame so time-driven docs (clocks,
+    // cube3d spin) animate; static/golden mode pins t=0 (deterministic). The flag gates ONLY the
+    // time-advance — the render path is identical. MVP advances continuously; the player's wakeInSeconds
+    // return (-1 static / 0 continuous) is the seam for a future wake-precise loop.
+    LaunchedEffect(docName, live) {
+        if (!live) {
+            frameTime = 0f
+            return@LaunchedEffect
+        }
+        val startNanos = withFrameNanos { it }
+        while (true) {
+            val nowNanos = withFrameNanos { it }
+            frameTime = (nowNanos - startNanos) / 1_000_000_000f
+        }
+    }
+
+    // Read frameTime at COMPOSITION level (live only) so each advance recomposes → the Canvas redraws.
+    val renderTime = if (live) frameTime else 0f
     val density = LocalDensity.current.density
     val d = doc
     // Fixed dp box on the doc dimension (density-normalized) so Android/iOS screenshots are coincident
@@ -101,12 +123,12 @@ fun RemoteComposeApp(loadRc: (String) -> ByteArray, modifier: Modifier = Modifie
                 Canvas(Modifier.size(widthDp, heightDp)) {
                     val canvas = drawContext.canvas
                     try {
-                        val ctx = RemoteContext().also { it.setDensity(density) }
+                        val ctx = RemoteContext().also { it.setDensity(density); it.animationEnabled = live }
                         val paintContext = ComposePaintContext(ctx, canvas)
                         // Geometry shares the context's one PlayerPaintState (REM-32) with the text half.
                         paintContext.geometry =
                             GeometryPaintDelegate(ctx, canvas, paintContext.paintState)
-                        RemoteComposePlayer(ctx).paint(d, paintContext)
+                        RemoteComposePlayer(ctx).paint(d, paintContext, frameTimeSeconds = renderTime)
                         // Draw-phase writes: read only outside this lambda → one settling recompose.
                         if (drawCount != ctx.drawCount) drawCount = ctx.drawCount
                         // rc-doc binds to the name captured WITH this committed frame (`docName` here

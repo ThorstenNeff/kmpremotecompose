@@ -37,8 +37,9 @@ class MainActivity : ComponentActivity() {
         selectFromIntent(intent)
     }
 
-    /** Apply the `rc` query param of a `kmprc://render?rc=<name>` URI; null/blank keeps the default. */
+    /** Apply the `rc` (doc) and `live` (REM-37 E-D1 animation) query params of a `kmprc://render` URI. */
     private fun selectFromIntent(intent: Intent?) {
         RcRouter.select(intent?.data?.getQueryParameter("rc"))
+        RcRouter.live = intent?.data?.getQueryParameter("live") == "1"
     }
 }
