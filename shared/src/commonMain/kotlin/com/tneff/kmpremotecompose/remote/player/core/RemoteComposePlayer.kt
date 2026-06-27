@@ -175,11 +175,13 @@ class RemoteComposePlayer(val context: RemoteContext = RemoteContext()) {
          * Container class's `OP_CODE`). A missed type would desync the depth counter → skip the wrong
          * span → break layout docs (the 173-render-sweep is the second safety net).
          *
-         * NOTE (drift): kept in sync **manually** with upstream — the drift-proof fix is a `Container`
-         * marker interface on the op classes (cross-lane, touches dev-2's layout ops), deferred/flagged.
-         * `ListActionsOperation` has no distinct KMP opcode (not ported) → N/A.
+         * NOTE (drift): the Container set includes **inheritance subclasses** (e.g. `StateLayout extends
+         * LayoutManager` → Component → Container — a container without an explicit `implements Container`),
+         * not only the explicitly-declaring classes. Guarded by `ConditionalGateTest`'s completeness test
+         * against the authoritative list; the fully drift-proof fix is a `Container` marker interface on
+         * the op classes (cross-lane, deferred). `ListActionsOperation` has no distinct KMP opcode → N/A.
          */
-        private val CONTAINER_OPENING_OPCODES: Set<Int> = setOf(
+        internal val CONTAINER_OPENING_OPCODES: Set<Int> = setOf(
             // Flow / structural containers
             Operations.COMPONENT_START,
             Operations.CANVAS_OPERATIONS,
@@ -217,6 +219,7 @@ class RemoteComposePlayer(val context: RemoteContext = RemoteContext()) {
             Operations.LAYOUT_COMPUTE,
             Operations.LAYOUT_COLLAPSIBLE_ROW,
             Operations.LAYOUT_COLLAPSIBLE_COLUMN,
+            Operations.LAYOUT_STATE, // StateLayout extends LayoutManager → Container via inheritance (c_state_layout)
         )
 
         /** True if [op] opens a CONTAINER_END-terminated block (REM-41 depth counting). */

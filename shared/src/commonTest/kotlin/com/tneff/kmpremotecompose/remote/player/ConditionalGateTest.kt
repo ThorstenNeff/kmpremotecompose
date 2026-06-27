@@ -22,6 +22,7 @@ import com.tneff.kmpremotecompose.remote.core.operations.Builtins
 import com.tneff.kmpremotecompose.remote.core.operations.ConditionalOperations
 import com.tneff.kmpremotecompose.remote.core.operations.FloatExpression
 import com.tneff.kmpremotecompose.remote.core.operations.Operation
+import com.tneff.kmpremotecompose.remote.core.operations.Operations
 import com.tneff.kmpremotecompose.remote.core.operations.layout.ContainerEnd
 import com.tneff.kmpremotecompose.remote.player.core.RemoteComposePlayer
 import com.tneff.kmpremotecompose.remote.player.core.RemoteContext
@@ -92,6 +93,30 @@ class ConditionalGateTest {
         }
         RemoteComposePlayer(ctx).paint(doc, recorder, surfaceWidth = 500f, surfaceHeight = 500f)
         assertTrue(circles <= 1, "the gate selects at most one branch (was 2 when ungated); drew=$circles")
+    }
+
+    @Test
+    fun containerOpcodeSet_isComplete_driftGuard() {
+        // Drift-guard (REM-41): upstream `CoreDocument` pushes on EVERY `instanceof Container` + pops on
+        // ContainerEnd, so the gate's depth set must equal ALL Container opcodes — explicit
+        // `implements Container` AND inheritance subclasses (LayoutManager/Component, incl. StateLayout).
+        // This locks the set: a removed/added container opcode fails here instead of breaking a render.
+        val authoritative = setOf(
+            Operations.COMPONENT_START, Operations.CANVAS_OPERATIONS, Operations.CONDITIONAL_OPERATIONS,
+            Operations.LOOP_START, Operations.IMPULSE_START, Operations.IMPULSE_PROCESS, Operations.PARTICLE_LOOP,
+            Operations.PARTICLE_COMPARE, Operations.RUN_ACTION, Operations.CORE_TEXT, Operations.MODIFIER_CLICK,
+            Operations.MODIFIER_MULTI_CLICK, Operations.FUNCTION_DEFINE, Operations.REFERENCED_OPERATIONS,
+            Operations.MACRO_BLOCK, Operations.MACRO_DEFINE, Operations.MACRO_FOR_EACH, Operations.MACRO_CALL,
+            Operations.LAYOUT_ROOT, Operations.LAYOUT_CONTENT, Operations.LAYOUT_BOX, Operations.LAYOUT_ROW,
+            Operations.LAYOUT_COLUMN, Operations.LAYOUT_CANVAS, Operations.LAYOUT_CANVAS_CONTENT,
+            Operations.LAYOUT_TEXT, Operations.LAYOUT_IMAGE, Operations.LAYOUT_FIT_BOX, Operations.LAYOUT_FLOW,
+            Operations.LAYOUT_CUSTOM, Operations.LAYOUT_COMPUTE, Operations.LAYOUT_COLLAPSIBLE_ROW,
+            Operations.LAYOUT_COLLAPSIBLE_COLUMN, Operations.LAYOUT_STATE,
+        )
+        assertEquals(
+            authoritative, RemoteComposePlayer.CONTAINER_OPENING_OPCODES,
+            "opensContainer set drifted from the authoritative Container opcode list — a miss desyncs the gate depth",
+        )
     }
 
     @Test
