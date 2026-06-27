@@ -96,12 +96,21 @@ class RemoteComposePlayer(val context: RemoteContext = RemoteContext()) {
         // read already-resolved values (the long-flagged "deferred apply-phase"). MVP evaluates every
         // VariableSupport op each frame (no dirty tracking). updateVariables (resolve NaN refs) then
         // apply (evaluate + load into the store).
-        // Both phases walk through [walkRange]: CONDITIONAL_OPERATIONS skips its block when false (REM-41);
-        // LOOP_START re-walks its body per iteration (REM-58). Phase A first so a conditional's a/b are
-        // resolved before Phase B re-checks the same (store-persisted) condition consistently.
+        // Both phases walk through [walkGated]: the conditional/non-loop path is the original verbatim walk
+        // (CONDITIONAL_OPERATIONS skips its block when false — REM-41); LOOP_START is intercepted by an
+        // isolated branch (REM-58) that triggers ONLY on a loop, so non-loop docs walk byte-identically.
         val ops = document.operations
-        walkRange(ops, 0, ops.size, paint, paintPhase = false) // Phase A: eval (VariableSupport)
-        walkRange(ops, 0, ops.size, paint, paintPhase = true) //  Phase B: paint (PaintOperation)
+        walkGated(ops, 0, ops.size, paintPhase = false, paint) { op ->
+            if (op is VariableSupport) {
+                op.updateVariables(context)
+                op.apply(context)
+            }
+        }
+        walkGated(ops, 0, ops.size, paintPhase = true, paint) { op ->
+            if (op is PaintOperation) {
+                op.paint(context, paint)
+            }
+        }
         // Animation (REM-36 E-D1): a time-driven doc (references CONTINUOUS_SEC/TIME_* — clocks, the
         // cube3d spin) requests a continuous repaint so the host loop advances [frameTimeSeconds] and
         // re-renders. Gated by [RemoteContext.animationEnabled] (off ⇒ a single static frame, e.g. the
@@ -111,28 +120,34 @@ class RemoteComposePlayer(val context: RemoteContext = RemoteContext()) {
     }
 
     /**
-     * Walk ops `[start, end)` for one phase. `paintPhase=false` evaluates [VariableSupport]; `true` paints
-     * [PaintOperation]. Container-aware:
-     *  - **CONDITIONAL_OPERATIONS** (REM-41): when [ConditionalOperations.conditionHolds] is false, skip its
-     *    block (to past the matching `CONTAINER_END`); else walk into it.
-     *  - **LOOP_START** (REM-58): re-walk its body per iteration. The loop is run **only in the paint phase**
-     *    (combined eval+paint per iteration, mirroring upstream `LoopOperation.paint`); the eval phase skips
-     *    the body (the loop self-evaluates each iteration so index-dependent coords are fresh per pass).
+     * Walk ops `[start, end)` applying [action] for one phase. The **non-loop path is the original verbatim
+     * walk** (REM-41): a `CONDITIONAL_OPERATIONS` whose [ConditionalOperations.conditionHolds] is false skips
+     * its block (to past the matching `CONTAINER_END`); everything else is handed to [action] linearly.
+     *
+     * **`LOOP_START` is intercepted by an isolated branch (REM-58)** that triggers ONLY on a loop — so docs
+     * without loops walk byte-identically to before. The loop runs its body per iteration **only in the
+     * paint phase** ([runLoop], combined eval+paint, mirroring upstream `LoopOperation.paint`); the eval
+     * phase skips the loop body (the loop self-evaluates each iteration so index-dependent coords are fresh).
      */
-    private fun walkRange(ops: List<Operation>, start: Int, end: Int, paint: PaintContext, paintPhase: Boolean) {
+    private fun walkGated(
+        ops: List<Operation>,
+        start: Int,
+        end: Int,
+        paintPhase: Boolean,
+        paint: PaintContext,
+        action: (Operation) -> Unit,
+    ) {
         var i = start
         while (i < end) {
             val op = ops[i]
             when {
-                op is ConditionalOperations ->
-                    if (op.conditionHolds(context)) i++ else i = matchingContainerEnd(ops, i) + 1
-                op is LoopStart -> {
-                    val endIdx = matchingContainerEnd(ops, i)
-                    if (paintPhase) runLoop(op, ops, i + 1, endIdx, paint)
-                    i = endIdx + 1
+                op is LoopStart -> { // isolated loop interception — non-loop path below is untouched
+                    val afterEnd = skipConditionalBlock(ops, i) // index past the matching CONTAINER_END
+                    if (paintPhase) runLoop(op, ops, i + 1, afterEnd - 1, paint) // body = [i+1, END)
+                    i = afterEnd
                 }
-                paintPhase -> { if (op is PaintOperation) op.paint(context, paint); i++ }
-                else -> { if (op is VariableSupport) { op.updateVariables(context); op.apply(context) }; i++ }
+                op is ConditionalOperations && !op.conditionHolds(context) -> i = skipConditionalBlock(ops, i)
+                else -> { action(op); i++ }
             }
         }
     }
@@ -140,8 +155,8 @@ class RemoteComposePlayer(val context: RemoteContext = RemoteContext()) {
     /**
      * Run a [LoopStart]'s body `[bodyStart, bodyEnd)` for `i = from; i < until; i += step` (upstream
      * `LoopOperation.paint`). Each iteration loads the index var (id 0 ⇒ none) then re-walks the body
-     * **eval-then-paint** so index-dependent coords resolve fresh per iteration. from/step/until resolve
-     * NaN var-refs. Guarded by [MAX_LOOP_ITERATIONS] (step ≤ 0 / runaway safety).
+     * **eval-then-paint** (via [walkGated], nesting-aware) so index-dependent coords resolve fresh per
+     * iteration. from/step/until resolve NaN var-refs. Guarded by [MAX_LOOP_ITERATIONS] (step ≤ 0 / runaway).
      */
     private fun runLoop(loop: LoopStart, ops: List<Operation>, bodyStart: Int, bodyEnd: Int, paint: PaintContext) {
         val from = resolveFloat(loop.from)
@@ -151,8 +166,12 @@ class RemoteComposePlayer(val context: RemoteContext = RemoteContext()) {
         var count = 0
         while (v < until && count < MAX_LOOP_ITERATIONS) {
             if (loop.indexId != 0) context.loadFloat(loop.indexId, v)
-            walkRange(ops, bodyStart, bodyEnd, paint, paintPhase = false)
-            walkRange(ops, bodyStart, bodyEnd, paint, paintPhase = true)
+            walkGated(ops, bodyStart, bodyEnd, paintPhase = false, paint) { op ->
+                if (op is VariableSupport) { op.updateVariables(context); op.apply(context) }
+            }
+            walkGated(ops, bodyStart, bodyEnd, paintPhase = true, paint) { op ->
+                if (op is PaintOperation) op.paint(context, paint)
+            }
             v += step
             count++
         }
@@ -161,24 +180,24 @@ class RemoteComposePlayer(val context: RemoteContext = RemoteContext()) {
     private fun resolveFloat(f: Float): Float = if (f.isNaN()) context.getFloat(WireTypes.idFromNan(f)) else f
 
     /**
-     * The index **of** a container-opener's matching `CONTAINER_END`. Nesting-aware: every container-opening
-     * op ([opensContainer], incl. nested conditionals/loops) increments depth, every `CONTAINER_END`
-     * decrements; the match returns depth to 0. `ops.size` if malformed (no matching END).
+     * The index **just past** a container-opener's matching `CONTAINER_END` (original REM-41 verbatim).
+     * Nesting-aware: every container-opening op ([opensContainer], incl. nested conditionals/loops)
+     * increments depth, every `CONTAINER_END` decrements; the match returns depth to 0.
      */
-    private fun matchingContainerEnd(ops: List<Operation>, openIndex: Int): Int {
+    private fun skipConditionalBlock(ops: List<Operation>, openIndex: Int): Int {
         var depth = 0
         var j = openIndex + 1
         while (j < ops.size) {
             val o = ops[j]
             if (o.opcode == Operations.CONTAINER_END) {
-                if (depth == 0) return j
+                if (depth == 0) return j + 1
                 depth--
             } else if (opensContainer(o)) {
                 depth++
             }
             j++
         }
-        return ops.size
+        return j // malformed (no matching END) → consume the rest
     }
 
     companion object {
