@@ -16,7 +16,10 @@
 package com.tneff.kmpremotecompose.remote.player.core
 
 import com.tneff.kmpremotecompose.remote.core.document.RemoteComposeDocument
+import com.tneff.kmpremotecompose.remote.core.operations.ConditionalOperations
 import com.tneff.kmpremotecompose.remote.core.operations.FloatExpression
+import com.tneff.kmpremotecompose.remote.core.operations.Operation
+import com.tneff.kmpremotecompose.remote.core.operations.Operations
 import com.tneff.kmpremotecompose.remote.core.operations.layout.RootContentBehavior
 import com.tneff.kmpremotecompose.remote.wire.WireTypes
 
@@ -87,14 +90,17 @@ class RemoteComposePlayer(val context: RemoteContext = RemoteContext()) {
         // read already-resolved values (the long-flagged "deferred apply-phase"). MVP evaluates every
         // VariableSupport op each frame (no dirty tracking). updateVariables (resolve NaN refs) then
         // apply (evaluate + load into the store).
-        for (op in document.operations) {
+        // Both phases walk through [walkGated], which skips a CONDITIONAL_OPERATIONS' block (up to its
+        // matching CONTAINER_END) when the condition is false (REM-41). Phase A first so the conditional's
+        // a/b are resolved before Phase B re-checks the same (store-persisted) condition consistently.
+        walkGated(document) { op ->
             if (op is VariableSupport) {
                 op.updateVariables(context)
                 op.apply(context)
             }
         }
         // Phase B: paint — draw ops now see resolved coords.
-        for (op in document.operations) {
+        walkGated(document) { op ->
             if (op is PaintOperation) {
                 op.paint(context, paint)
             }
@@ -105,6 +111,47 @@ class RemoteComposePlayer(val context: RemoteContext = RemoteContext()) {
         // t=0 golden). The walk/eval re-run unchanged each pass (the S1 frame-time seam).
         if (context.isAnimationEnabled() && isTimeDriven(document)) context.wakeIn(CONTINUOUS)
         return context.wakeInSeconds
+    }
+
+    /**
+     * Walk the flat op list applying [action], **skipping a `CONDITIONAL_OPERATIONS`' gated block**
+     * (the ops up to its matching `CONTAINER_END`) when [ConditionalOperations.conditionHolds] is false
+     * (REM-41). When the condition holds, the conditional and its block are walked normally (its
+     * `CONTAINER_END` is a harmless no-op under [action]).
+     */
+    private inline fun walkGated(document: RemoteComposeDocument, action: (Operation) -> Unit) {
+        val ops = document.operations
+        var i = 0
+        while (i < ops.size) {
+            val op = ops[i]
+            if (op is ConditionalOperations && !op.conditionHolds(context)) {
+                i = skipConditionalBlock(ops, i)
+            } else {
+                action(op)
+                i++
+            }
+        }
+    }
+
+    /**
+     * The index just past a conditional's matching `CONTAINER_END`. Nesting-aware: every container-
+     * opening op ([opensContainer], incl. nested conditionals) increments depth, every `CONTAINER_END`
+     * decrements; the match is the `CONTAINER_END` that returns depth to 0.
+     */
+    private fun skipConditionalBlock(ops: List<Operation>, condIndex: Int): Int {
+        var depth = 0
+        var j = condIndex + 1
+        while (j < ops.size) {
+            val o = ops[j]
+            if (o.opcode == Operations.CONTAINER_END) {
+                if (depth == 0) return j + 1
+                depth--
+            } else if (opensContainer(o)) {
+                depth++
+            }
+            j++
+        }
+        return j // malformed (no matching END) → consume the rest
     }
 
     companion object {
@@ -119,5 +166,63 @@ class RemoteComposePlayer(val context: RemoteContext = RemoteContext()) {
             document.operations.any { op ->
                 op is FloatExpression && op.value.any { it.isNaN() && WireTypes.fromNaN(it) in 1..4 }
             }
+
+        /**
+         * Opcodes of **container-opening** ops — those whose block is closed by a `CONTAINER_END`
+         * (REM-41 depth counting). This is the authoritative set: upstream `CoreDocument` inflation
+         * pushes on **every** `instanceof Container` and pops on `ContainerEnd`, so this **must** equal
+         * the full set of `implements Container` opcodes — verified one-for-one against upstream (each
+         * Container class's `OP_CODE`). A missed type would desync the depth counter → skip the wrong
+         * span → break layout docs (the 173-render-sweep is the second safety net).
+         *
+         * NOTE (drift): the Container set includes **inheritance subclasses** (e.g. `StateLayout extends
+         * LayoutManager` → Component → Container — a container without an explicit `implements Container`),
+         * not only the explicitly-declaring classes. Guarded by `ConditionalGateTest`'s completeness test
+         * against the authoritative list; the fully drift-proof fix is a `Container` marker interface on
+         * the op classes (cross-lane, deferred). `ListActionsOperation` has no distinct KMP opcode → N/A.
+         */
+        internal val CONTAINER_OPENING_OPCODES: Set<Int> = setOf(
+            // Flow / structural containers
+            Operations.COMPONENT_START,
+            Operations.CANVAS_OPERATIONS,
+            Operations.CONDITIONAL_OPERATIONS,
+            Operations.LOOP_START,
+            Operations.IMPULSE_START,
+            Operations.IMPULSE_PROCESS,
+            Operations.PARTICLE_LOOP,
+            Operations.PARTICLE_COMPARE,
+            Operations.RUN_ACTION,
+            Operations.CORE_TEXT,
+            // Action / click / function / reference containers (REM-41 NO-GO fix — were missing)
+            Operations.MODIFIER_CLICK,
+            Operations.MODIFIER_MULTI_CLICK,
+            Operations.FUNCTION_DEFINE,
+            Operations.REFERENCED_OPERATIONS,
+            // Pattern/macro containers (PatternBlock/Define/ForEach/Inflation) — were missing
+            Operations.MACRO_BLOCK,
+            Operations.MACRO_DEFINE,
+            Operations.MACRO_FOR_EACH,
+            Operations.MACRO_CALL,
+            // Layout managers (upstream `Component` subclasses)
+            Operations.LAYOUT_ROOT,
+            Operations.LAYOUT_CONTENT,
+            Operations.LAYOUT_BOX,
+            Operations.LAYOUT_ROW,
+            Operations.LAYOUT_COLUMN,
+            Operations.LAYOUT_CANVAS,
+            Operations.LAYOUT_CANVAS_CONTENT,
+            Operations.LAYOUT_TEXT,
+            Operations.LAYOUT_IMAGE,
+            Operations.LAYOUT_FIT_BOX,
+            Operations.LAYOUT_FLOW,
+            Operations.LAYOUT_CUSTOM,
+            Operations.LAYOUT_COMPUTE,
+            Operations.LAYOUT_COLLAPSIBLE_ROW,
+            Operations.LAYOUT_COLLAPSIBLE_COLUMN,
+            Operations.LAYOUT_STATE, // StateLayout extends LayoutManager → Container via inheritance (c_state_layout)
+        )
+
+        /** True if [op] opens a CONTAINER_END-terminated block (REM-41 depth counting). */
+        fun opensContainer(op: Operation): Boolean = op.opcode in CONTAINER_OPENING_OPCODES
     }
 }
