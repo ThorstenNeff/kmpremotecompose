@@ -15,16 +15,25 @@
  */
 package com.tneff.kmpremotecompose.remote.core.operations
 
+import com.tneff.kmpremotecompose.remote.player.core.RemoteContext
+import com.tneff.kmpremotecompose.remote.player.core.VariableSupport
 import com.tneff.kmpremotecompose.remote.wire.WireBuffer
 
 /**
  * An id list (`ID_LIST`): binds an array of ids to [id].
  *
  * Wire layout: opcode, `int id`, `int count`, then `count` ints.
+ *
+ * **Binding (REM-59 I2):** a producer — Phase A stores [ids] into the context's id-array collection
+ * ([RemoteContext.loadIdArray]) so `TEXT_LOOKUP` can resolve `dataSet[index] → text-id` (chart labels).
  */
-class DataListIds(val id: Int, val ids: IntArray) : Operation {
+class DataListIds(val id: Int, val ids: IntArray) : Operation, VariableSupport {
 
     override val opcode: Int get() = Operations.ID_LIST
+
+    override fun apply(context: RemoteContext) {
+        context.loadIdArray(id, ids)
+    }
 
     override fun write(buffer: WireBuffer) {
         buffer.writeByte(opcode)
