@@ -118,3 +118,18 @@ The other 5 are NOT visible-pixel quick-wins (dispatch≠visual or by-design) �
 - c_modifier_background_id: blank, DEFERRED color-seed (real gap pending color-seed redo).
 - text_refresh_bug: drawCount=5 but VISUALLY BLANK = dispatch≠visual (text invisible/off-canvas) — potential gap, NOT quick-win.
 - simple_java_anim: drawCount=1 but blank (even &live=1) = dispatch≠visual — potential gap.
+
+## Golden round 8 (2026-06-27) — REM-57 static-time-pin: 16 now-deterministic dynamic-text goldens (develop 144ec70)
+With all 4 eval levers merged (REM-53 text-values + REM-54 text-position + REM-41 conditional-gate + REM-57
+static-time-pin), the time-driven docs render DETERMINISTICALLY (static-mode pins timeSeed=0 → clocks at 12:00,
+fixed values) — no longer wall-clock-flaky, so freezable. Captured on develop 144ec70, full `gradle clean` (the
+:androidApp:clean-doesn't-rebuild-shared gotcha), verified-173-APK, race-guarded sweep.
+- 16 frozen (each VERIFIED deterministic: identical across 2 fresh captures, <1% diff):
+  base, count_down, countdown, experimental_gmt, experimental_solar_gmt, player_info, plot2, plot3, plot4,
+  plot_wave, procedure_simple_clock_fast, procedure_simple_clock_slow, server_clock, texture_demo_texture_clock,
+  texture_demo_texture_clock_test, wake_demo_wake_clock. (server_clock hand straight-up = 12:00 = timeSeed=0 confirmed.)
+- These are the VISIBLE subset (dispatch≠visual): of ~23 headless-text-resolved docs, 16 render visible pixels.
+- NOT frozen (routed to dev-1): flow_control (black in BOTH static & live on-device — green LT-branch not rendering
+  despite timeSeed=0 proven via the 12:00 clock = a real conditional-render gap, NOT a capture-mode issue) +
+  12 complex clocks (clock, digital_clock1, fancy_clocks_*, spline_demo = headless-resolve but no visible glyphs).
+- iOS parity of the 16: pending the Maestro iOS driver (port 22087 down).
