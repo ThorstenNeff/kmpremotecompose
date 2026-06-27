@@ -62,7 +62,12 @@ class RemoteComposePlayer(val context: RemoteContext = RemoteContext()) {
         val docH = document.height.toFloat()
         // Seed system variables (REM-36 E-Seed) BEFORE Phase A — window = DOC dims (revised for the
         // doc→surface scale below), density, and the static time/clock vars.
-        context.seedSystemVariables(docW, docH, frameTimeSeconds)
+        // Static-mode time-pin (REM-57): in static mode (animation off) seed the wall-clock time vars
+        // from t=0 — NOT from whatever `frameTimeSeconds` the host passes — so time-driven docs
+        // (clocks → 12:00:00, countdown, flow_control's `(TIME_IN_SEC%3)-1`) are deterministic and their
+        // goldens freezable. Live mode (animation on) advances from the real `frameTimeSeconds` (clocks tick).
+        val timeSeed = if (context.isAnimationEnabled()) frameTimeSeconds else 0f
+        context.seedSystemVariables(docW, docH, timeSeed)
         // RootContentBehavior doc→surface scaling (REM-36): when a surface box is given, apply
         // translate(align) then scale(doc→surface) — upstream `CoreDocument` order — so doc-space
         // renders with correct proportions instead of 1:1 (a 600-doc stretched into a 924-surface).
