@@ -19,7 +19,6 @@ import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.safeContentPadding
-import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.text.BasicText
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
@@ -29,10 +28,11 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.runtime.withFrameNanos
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.layout.layout
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.platform.LocalFontFamilyResolver
 import androidx.compose.ui.platform.testTag
-import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.Constraints
 import com.tneff.kmpremotecompose.remote.core.document.DocumentReader
 import com.tneff.kmpremotecompose.remote.core.document.RemoteComposeDocument
 import com.tneff.kmpremotecompose.remote.core.operations.Builtins
@@ -118,16 +118,18 @@ fun RemoteComposeApp(loadRc: (String) -> ByteArray, modifier: Modifier = Modifie
     // renderer is null and getTextBounds/drawTextRun no-op → text never renders. Supplied from composition.
     val fontResolver = LocalFontFamilyResolver.current
     val d = doc
-    // Fixed dp box on the doc dimension (density-normalized) so Android/iOS screenshots are coincident
-    // (contract §1 — no fillMaxSize/wrap drift). Falls back to the corpus default until decode lands.
-    val widthDp = if (d != null && d.width > 0) (d.width / density).dp else 500.dp
-    val heightDp = if (d != null && d.height > 0) (d.height / density).dp else 500.dp
+    // REM-51: size the canvas in EXACT pixels (the doc dims are px). The old `(d.width/density).dp` round-trips
+    // px→dp→px; at density 3 (iOS) the dp→px reconversion rounds down 1–2px (e.g. 400→399) → a ±2px A↔iOS
+    // resize in the parity harness. A fixed-px layout (Constraints.fixed) pins the surface to exactly
+    // d.width×d.height px on both platforms → pixel-coincident, no resize.
+    val pxW = if (d != null && d.width > 0) d.width else 500
+    val pxH = if (d != null && d.height > 0) d.height else 500
 
     Column(modifier.safeContentPadding()) {
         // rc-canvas = the render surface (this is what render_smoke crops for parity).
-        Box(Modifier.size(widthDp, heightDp).testTag("rc-canvas")) {
+        Box(Modifier.pxSize(pxW, pxH).testTag("rc-canvas")) {
             if (d != null && decodeError == null) {
-                Canvas(Modifier.size(widthDp, heightDp)) {
+                Canvas(Modifier.pxSize(pxW, pxH)) {
                     val canvas = drawContext.canvas
                     try {
                         val ctx = RemoteContext().also { it.setDensity(density); it.animationEnabled = live }
@@ -174,4 +176,14 @@ fun RemoteComposeApp(loadRc: (String) -> ByteArray, modifier: Modifier = Modifie
             }
         }
     }
+}
+
+/**
+ * REM-51: pin a node to exactly [width]×[height] **pixels** via [Constraints.fixed], bypassing the
+ * `dp`→px reconversion that rounds 1–2px differently per density. Keeps the rc-canvas pixel-coincident
+ * across Android/iOS so the parity harness needs no resize.
+ */
+private fun Modifier.pxSize(width: Int, height: Int): Modifier = layout { measurable, _ ->
+    val placeable = measurable.measure(Constraints.fixed(width, height))
+    layout(width, height) { placeable.place(0, 0) }
 }
