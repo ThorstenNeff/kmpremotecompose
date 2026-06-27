@@ -18,8 +18,10 @@ package com.tneff.kmpremotecompose.remote.player.compose
 import androidx.compose.ui.geometry.CornerRadius
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.geometry.RoundRect
+import androidx.compose.ui.graphics.BlendMode
 import androidx.compose.ui.graphics.Canvas
 import androidx.compose.ui.graphics.ClipOp
+import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.Matrix
 import androidx.compose.ui.graphics.Paint
 import androidx.compose.ui.graphics.Path
@@ -324,8 +326,33 @@ internal class GeometryPaintDelegate(
 
     override fun endGraphicsLayer() { /* deferred (L2-D2) */ }
 
-    @Suppress("UNUSED_PARAMETER")
-    override fun drawToBitmap(bitmapId: Int, mode: Int, color: Int) { deferredPaintTags.add("DRAW_TO_BITMAP") }
+    // REM-40 render-to-bitmap: the main (screen) canvas, captured on the first redirect, and a per-id
+    // cache of offscreen canvases (mirrors upstream mMainCanvas / mCCache).
+    private var mainCanvas: Canvas? = null
+    private val offscreenCanvases = HashMap<Int, Canvas>()
+
+    /**
+     * REM-40: redirect drawing to an offscreen bitmap. `bitmapId == 0` restores the main canvas;
+     * otherwise subsequent draws go into the bitmap registered under [bitmapId] (allocated by
+     * DATA_BITMAP). Cleared with [color] unless `mode & 1` (NO_INITIALIZE). Mirrors upstream
+     * `AndroidPaintContext.drawToBitmap`. Fail-soft: an unknown bitmap id is a no-op (no crash).
+     */
+    override fun drawToBitmap(bitmapId: Int, mode: Int, color: Int) {
+        if (mainCanvas == null) mainCanvas = canvas
+        if (bitmapId == 0) {
+            canvas = mainCanvas!!
+            return
+        }
+        val bitmap = context.getBitmap(bitmapId) ?: return
+        val target = offscreenCanvases.getOrPut(bitmapId) { Canvas(bitmap) }
+        canvas = target
+        if (mode and 1 == 0) { // not NO_INITIALIZE → clear the target with the init colour
+            target.drawRect(
+                0f, 0f, bitmap.width.toFloat(), bitmap.height.toFloat(),
+                Paint().apply { this.color = Color(color); blendMode = BlendMode.Src },
+            )
+        }
+    }
 
     private companion object {
         const val CLIP_DIFFERENCE = 1
