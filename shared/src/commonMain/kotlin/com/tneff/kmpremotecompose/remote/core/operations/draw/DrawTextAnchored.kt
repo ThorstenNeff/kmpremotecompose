@@ -22,6 +22,7 @@ import com.tneff.kmpremotecompose.remote.player.core.PaintContext
 import com.tneff.kmpremotecompose.remote.player.core.PaintOperation
 import com.tneff.kmpremotecompose.remote.player.core.RemoteContext
 import com.tneff.kmpremotecompose.remote.wire.WireBuffer
+import com.tneff.kmpremotecompose.remote.wire.WireTypes
 
 /**
  * `DRAW_TEXT_ANCHOR` (opcode [Operations.DRAW_TEXT_ANCHOR]) — draw a text resource anchored at a
@@ -64,19 +65,25 @@ class DrawTextAnchored(
         } else {
             0
         }
+        // Resolve NaN-encoded variable refs for the anchor position (REM-54): clock/chart number text
+        // anchors at computed var-coords (e.g. jclock2 x→id92=250). Without this the raw NaN passes
+        // through → NaN position → text drawn off-screen/invisible. panX/panY are pan factors, not
+        // coord refs (panY NaN keeps its sentinel meaning below), so they are not resolved here.
+        val rx = if (x.isNaN()) context.getFloat(WireTypes.idFromNan(x)) else x
+        val ry = if (y.isNaN()) context.getFloat(WireTypes.idFromNan(y)) else y
         val bounds = FloatArray(4)
         paint.getTextBounds(textId, 0, -1, measureFlags, bounds)
         val textWidth = bounds[2] - bounds[0]
         val textHeight = bounds[3] - bounds[1]
         val hOffset = -textWidth * (1f + panX) / 2f - bounds[0]
-        val px = x + hOffset
+        val px = rx + hOffset
         val py = if (panY.isNaN()) {
-            y
+            ry
         } else {
             val baselineRelative = flags and BASELINE_RELATIVE != 0
             val vOffset = -textHeight * (1f - panY) / 2f +
                 if (baselineRelative) textHeight / 2f else -bounds[1]
-            y + vOffset
+            ry + vOffset
         }
         paint.drawTextRun(textId, 0, -1, 0, 1, px, py, flags and ANCHOR_TEXT_RTL == 1)
     }
