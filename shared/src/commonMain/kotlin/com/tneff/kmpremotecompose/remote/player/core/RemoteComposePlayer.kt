@@ -20,6 +20,7 @@ import com.tneff.kmpremotecompose.remote.core.operations.ConditionalOperations
 import com.tneff.kmpremotecompose.remote.core.operations.FloatExpression
 import com.tneff.kmpremotecompose.remote.core.operations.Operation
 import com.tneff.kmpremotecompose.remote.core.operations.Operations
+import com.tneff.kmpremotecompose.remote.core.operations.layout.LoopStart
 import com.tneff.kmpremotecompose.remote.core.operations.layout.RootContentBehavior
 import com.tneff.kmpremotecompose.remote.wire.WireTypes
 
@@ -95,21 +96,12 @@ class RemoteComposePlayer(val context: RemoteContext = RemoteContext()) {
         // read already-resolved values (the long-flagged "deferred apply-phase"). MVP evaluates every
         // VariableSupport op each frame (no dirty tracking). updateVariables (resolve NaN refs) then
         // apply (evaluate + load into the store).
-        // Both phases walk through [walkGated], which skips a CONDITIONAL_OPERATIONS' block (up to its
-        // matching CONTAINER_END) when the condition is false (REM-41). Phase A first so the conditional's
-        // a/b are resolved before Phase B re-checks the same (store-persisted) condition consistently.
-        walkGated(document) { op ->
-            if (op is VariableSupport) {
-                op.updateVariables(context)
-                op.apply(context)
-            }
-        }
-        // Phase B: paint — draw ops now see resolved coords.
-        walkGated(document) { op ->
-            if (op is PaintOperation) {
-                op.paint(context, paint)
-            }
-        }
+        // Both phases walk through [walkRange]: CONDITIONAL_OPERATIONS skips its block when false (REM-41);
+        // LOOP_START re-walks its body per iteration (REM-58). Phase A first so a conditional's a/b are
+        // resolved before Phase B re-checks the same (store-persisted) condition consistently.
+        val ops = document.operations
+        walkRange(ops, 0, ops.size, paint, paintPhase = false) // Phase A: eval (VariableSupport)
+        walkRange(ops, 0, ops.size, paint, paintPhase = true) //  Phase B: paint (PaintOperation)
         // Animation (REM-36 E-D1): a time-driven doc (references CONTINUOUS_SEC/TIME_* — clocks, the
         // cube3d spin) requests a continuous repaint so the host loop advances [frameTimeSeconds] and
         // re-renders. Gated by [RemoteContext.animationEnabled] (off ⇒ a single static frame, e.g. the
@@ -119,47 +111,80 @@ class RemoteComposePlayer(val context: RemoteContext = RemoteContext()) {
     }
 
     /**
-     * Walk the flat op list applying [action], **skipping a `CONDITIONAL_OPERATIONS`' gated block**
-     * (the ops up to its matching `CONTAINER_END`) when [ConditionalOperations.conditionHolds] is false
-     * (REM-41). When the condition holds, the conditional and its block are walked normally (its
-     * `CONTAINER_END` is a harmless no-op under [action]).
+     * Walk ops `[start, end)` for one phase. `paintPhase=false` evaluates [VariableSupport]; `true` paints
+     * [PaintOperation]. Container-aware:
+     *  - **CONDITIONAL_OPERATIONS** (REM-41): when [ConditionalOperations.conditionHolds] is false, skip its
+     *    block (to past the matching `CONTAINER_END`); else walk into it.
+     *  - **LOOP_START** (REM-58): re-walk its body per iteration. The loop is run **only in the paint phase**
+     *    (combined eval+paint per iteration, mirroring upstream `LoopOperation.paint`); the eval phase skips
+     *    the body (the loop self-evaluates each iteration so index-dependent coords are fresh per pass).
      */
-    private inline fun walkGated(document: RemoteComposeDocument, action: (Operation) -> Unit) {
-        val ops = document.operations
-        var i = 0
-        while (i < ops.size) {
+    private fun walkRange(ops: List<Operation>, start: Int, end: Int, paint: PaintContext, paintPhase: Boolean) {
+        var i = start
+        while (i < end) {
             val op = ops[i]
-            if (op is ConditionalOperations && !op.conditionHolds(context)) {
-                i = skipConditionalBlock(ops, i)
-            } else {
-                action(op)
-                i++
+            when {
+                op is ConditionalOperations ->
+                    if (op.conditionHolds(context)) i++ else i = matchingContainerEnd(ops, i) + 1
+                op is LoopStart -> {
+                    val endIdx = matchingContainerEnd(ops, i)
+                    if (paintPhase) runLoop(op, ops, i + 1, endIdx, paint)
+                    i = endIdx + 1
+                }
+                paintPhase -> { if (op is PaintOperation) op.paint(context, paint); i++ }
+                else -> { if (op is VariableSupport) { op.updateVariables(context); op.apply(context) }; i++ }
             }
         }
     }
 
     /**
-     * The index just past a conditional's matching `CONTAINER_END`. Nesting-aware: every container-
-     * opening op ([opensContainer], incl. nested conditionals) increments depth, every `CONTAINER_END`
-     * decrements; the match is the `CONTAINER_END` that returns depth to 0.
+     * Run a [LoopStart]'s body `[bodyStart, bodyEnd)` for `i = from; i < until; i += step` (upstream
+     * `LoopOperation.paint`). Each iteration loads the index var (id 0 ⇒ none) then re-walks the body
+     * **eval-then-paint** so index-dependent coords resolve fresh per iteration. from/step/until resolve
+     * NaN var-refs. Guarded by [MAX_LOOP_ITERATIONS] (step ≤ 0 / runaway safety).
      */
-    private fun skipConditionalBlock(ops: List<Operation>, condIndex: Int): Int {
+    private fun runLoop(loop: LoopStart, ops: List<Operation>, bodyStart: Int, bodyEnd: Int, paint: PaintContext) {
+        val from = resolveFloat(loop.from)
+        val step = resolveFloat(loop.step)
+        val until = resolveFloat(loop.until)
+        var v = from
+        var count = 0
+        while (v < until && count < MAX_LOOP_ITERATIONS) {
+            if (loop.indexId != 0) context.loadFloat(loop.indexId, v)
+            walkRange(ops, bodyStart, bodyEnd, paint, paintPhase = false)
+            walkRange(ops, bodyStart, bodyEnd, paint, paintPhase = true)
+            v += step
+            count++
+        }
+    }
+
+    private fun resolveFloat(f: Float): Float = if (f.isNaN()) context.getFloat(WireTypes.idFromNan(f)) else f
+
+    /**
+     * The index **of** a container-opener's matching `CONTAINER_END`. Nesting-aware: every container-opening
+     * op ([opensContainer], incl. nested conditionals/loops) increments depth, every `CONTAINER_END`
+     * decrements; the match returns depth to 0. `ops.size` if malformed (no matching END).
+     */
+    private fun matchingContainerEnd(ops: List<Operation>, openIndex: Int): Int {
         var depth = 0
-        var j = condIndex + 1
+        var j = openIndex + 1
         while (j < ops.size) {
             val o = ops[j]
             if (o.opcode == Operations.CONTAINER_END) {
-                if (depth == 0) return j + 1
+                if (depth == 0) return j
                 depth--
             } else if (opensContainer(o)) {
                 depth++
             }
             j++
         }
-        return j // malformed (no matching END) → consume the rest
+        return ops.size
     }
 
     companion object {
+        /** Safety cap on LOOP_START iterations (step ≤ 0 / runaway guard; real graph docs loop ≤ ~100). */
+        private const val MAX_LOOP_ITERATIONS = 10_000
+
         /** Render-loop contract for [paint]'s return ([RemoteContext.wakeInSeconds]): */
         /** no repaint requested — render a single static frame. */
         const val STATIC = -1f
