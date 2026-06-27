@@ -19,6 +19,7 @@ import androidx.compose.ui.graphics.ImageBitmap
 import com.tneff.kmpremotecompose.remote.player.core.PaintContext
 import com.tneff.kmpremotecompose.remote.player.core.PaintOperation
 import com.tneff.kmpremotecompose.remote.player.core.RemoteContext
+import com.tneff.kmpremotecompose.remote.player.core.decodeImageBitmap
 import com.tneff.kmpremotecompose.remote.wire.WireBuffer
 
 /**
@@ -43,19 +44,20 @@ class BitmapData(
     override val opcode: Int get() = Operations.DATA_BITMAP
 
     /**
-     * REM-40: register the image in the id store so draws/render-to-bitmap can find it. For an
-     * `ENCODING_EMPTY` render-target (no inline pixels — e.g. a DRAW_TO_BITMAP offscreen) allocate an
-     * empty [ImageBitmap] of [width]×[height]. Inline-PNG decoding ([ENCODING_INLINE] with pixel bytes)
-     * is a separate platform expect/actual sub-task (not needed for the render-to-bitmap unblock).
-     * Idempotent: only allocates once (so a re-cleared render target persists across frames).
+     * Register the image in the id store so draws / render-to-bitmap can find it. Idempotent (only the
+     * first time per id, so a re-cleared render target persists across frames). Dimensions are bounded
+     * (fail-closed vs hostile/corrupt sizes) and all allocation/decoding is fail-soft (a missing target
+     * just renders empty, never crashes — incl. corrupt/hostile inline bytes).
+     *  - `ENCODING_EMPTY` (REM-40): allocate an empty [width]×[height] render-target (DRAW_TO_BITMAP).
+     *  - `ENCODING_INLINE` (REM-55): decode the inline PNG bytes via [decodeImageBitmap] (null → empty).
      */
     override fun paint(context: RemoteContext, paint: PaintContext) {
         if (context.getBitmap(imageId) != null) return
-        // Bound the dimensions (fail-closed against hostile/corrupt sizes → no OOM) and fail-soft on any
-        // allocation error (e.g. headless test env without Skiko) — a missing target just renders empty,
-        // never crashes the player.
-        if (encoding == ENCODING_EMPTY && width in 1..MAX_DIM && height in 1..MAX_DIM) {
-            runCatching { context.putBitmap(imageId, ImageBitmap(width, height)) }
+        if (width !in 1..MAX_DIM || height !in 1..MAX_DIM) return
+        when (encoding) {
+            ENCODING_EMPTY -> runCatching { context.putBitmap(imageId, ImageBitmap(width, height)) }
+            ENCODING_INLINE ->
+                if (data.isNotEmpty()) decodeImageBitmap(data, type)?.let { context.putBitmap(imageId, it) }
         }
     }
 
