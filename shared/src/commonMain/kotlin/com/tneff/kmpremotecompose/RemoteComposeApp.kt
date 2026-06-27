@@ -39,6 +39,7 @@ import com.tneff.kmpremotecompose.remote.core.operations.Builtins
 import com.tneff.kmpremotecompose.remote.player.compose.ComposePaintContext
 import com.tneff.kmpremotecompose.remote.player.compose.GeometryPaintDelegate
 import com.tneff.kmpremotecompose.remote.player.core.RemoteComposePlayer
+import com.tneff.kmpremotecompose.remote.player.core.renderOpaque
 import com.tneff.kmpremotecompose.remote.player.core.RemoteContext
 
 /**
@@ -130,11 +131,16 @@ fun RemoteComposeApp(loadRc: (String) -> ByteArray, modifier: Modifier = Modifie
                     val canvas = drawContext.canvas
                     try {
                         val ctx = RemoteContext().also { it.setDensity(density); it.animationEnabled = live }
-                        val paintContext = ComposePaintContext(ctx, canvas, fontFamilyResolver = fontResolver)
-                        // Geometry shares the context's one PlayerPaintState (REM-32) with the text half.
-                        paintContext.geometry =
-                            GeometryPaintDelegate(ctx, canvas, paintContext.paintState)
-                        RemoteComposePlayer(ctx).paint(d, paintContext, frameTimeSeconds = renderTime)
+                        // REM-56: render through an opaque surface (iOS only — Android renders direct) so a
+                        // SRC_OUT/CLEAR draw composites to black, matching upstream's opaque Android View
+                        // canvas. clearColor = white (the app bg behind the canvas). Surface-only; the doc
+                        // render inside the block is unchanged.
+                        renderOpaque(canvas, size.width.toInt(), size.height.toInt(), 0xFFFFFFFF.toInt()) { target ->
+                            val paintContext = ComposePaintContext(ctx, target, fontFamilyResolver = fontResolver)
+                            // Geometry shares the context's one PlayerPaintState (REM-32) with the text half.
+                            paintContext.geometry = GeometryPaintDelegate(ctx, target, paintContext.paintState)
+                            RemoteComposePlayer(ctx).paint(d, paintContext, frameTimeSeconds = renderTime)
+                        }
                         // Draw-phase writes: read only outside this lambda → one settling recompose.
                         if (drawCount != ctx.drawCount) drawCount = ctx.drawCount
                         // rc-doc binds to the name captured WITH this committed frame (`docName` here
