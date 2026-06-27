@@ -155,6 +155,14 @@ class RemoteContext {
     /** Store a FLOAT_LIST's values under [id] (upstream collections). */
     fun loadFloatArray(id: Int, value: FloatArray) { floatArrayStore[id] = value }
 
+    private val idArrayStore: MutableMap<Int, IntArray> = mutableMapOf()
+
+    /** The id-array (ID_LIST) for [id], or null (REM-59 I2; upstream `CollectionsAccess.getArray`). */
+    fun getIdArray(id: Int): IntArray? = idArrayStore[id]
+
+    /** Store an ID_LIST's ids under [id]. */
+    fun loadIdArray(id: Int, value: IntArray) { idArrayStore[id] = value }
+
     /**
      * Seed the **system variables** into the float store (REM-36 E-Seed) — done **before** the player's
      * variable phase so ops that reference window/density (e.g. `drawOval(0,0,FLOAT_WINDOW_WIDTH,…)`)

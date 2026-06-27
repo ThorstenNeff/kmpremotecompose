@@ -15,14 +15,23 @@
  */
 package com.tneff.kmpremotecompose.remote.core.operations
 
+import com.tneff.kmpremotecompose.remote.player.core.PaintContext
+import com.tneff.kmpremotecompose.remote.player.core.PaintOperation
+import com.tneff.kmpremotecompose.remote.player.core.RemoteContext
 import com.tneff.kmpremotecompose.remote.wire.WireBuffer
+import com.tneff.kmpremotecompose.remote.wire.WireTypes
 
 /**
  * Look up a string from a data set by index (`TEXT_LOOKUP`): `textId = dataSet[index]`.
  *
  * Wire layout: opcode, `int textId`, `int dataSet`, `float index` (raw bits — may be a NaN-encoded id).
+ *
+ * **Binding (REM-59 I2):** a `PaintOperation` (runs in the loop body each iteration, after DATA_TEXT +
+ * ID_LIST in pass order) — resolves [index] (NaN var ref → the loop index), looks up the text-id
+ * `dataSet[index]` in the ID_LIST collection, then writes `getText(text-id)` under [textId]
+ * (upstream `TextLookup.apply`). Chart labels (good_pie_chart/pie_chart2).
  */
-class TextLookup(val textId: Int, val dataSet: Int, val index: Float) : Operation {
+class TextLookup(val textId: Int, val dataSet: Int, val index: Float) : PaintOperation {
 
     override val opcode: Int get() = Operations.TEXT_LOOKUP
 
@@ -31,6 +40,12 @@ class TextLookup(val textId: Int, val dataSet: Int, val index: Float) : Operatio
         buffer.writeInt(textId)
         buffer.writeInt(dataSet)
         buffer.writeFloat(index)
+    }
+
+    override fun paint(context: RemoteContext, paint: PaintContext) {
+        val idx = (if (index.isNaN()) context.getFloat(WireTypes.idFromNan(index)) else index).toInt()
+        val targetTextId = context.getIdArray(dataSet)?.getOrNull(idx) ?: return
+        context.putText(textId, context.getText(targetTextId) ?: "")
     }
 
     override fun dump(): String = "TEXT_LOOKUP id=$textId dataSet=$dataSet index=$index"
