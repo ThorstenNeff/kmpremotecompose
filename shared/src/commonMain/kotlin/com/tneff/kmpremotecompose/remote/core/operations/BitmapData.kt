@@ -57,7 +57,7 @@ class BitmapData(
         when (encoding) {
             ENCODING_EMPTY -> runCatching { context.putBitmap(imageId, ImageBitmap(width, height)) }
             ENCODING_INLINE ->
-                if (data.isNotEmpty()) decodeImageBitmap(data, type)?.let { context.putBitmap(imageId, it) }
+                if (data.isNotEmpty()) decodeImageBitmap(data, type, MAX_DIM)?.let { context.putBitmap(imageId, it) }
         }
     }
 

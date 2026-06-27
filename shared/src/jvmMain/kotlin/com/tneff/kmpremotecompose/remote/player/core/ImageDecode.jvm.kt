@@ -22,4 +22,4 @@ import androidx.compose.ui.graphics.ImageBitmap
  * render target (Android + iOS only, PROJECT_CONTEXT §1). Inline decode is unsupported here (returns
  * null → the caller renders empty, fail-soft); real decoding lives in the android/ios actuals.
  */
-actual fun decodeImageBitmap(bytes: ByteArray, type: Int): ImageBitmap? = null
+actual fun decodeImageBitmap(bytes: ByteArray, type: Int, maxDim: Int): ImageBitmap? = null

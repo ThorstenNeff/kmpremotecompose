@@ -27,5 +27,8 @@ import androidx.compose.ui.graphics.ImageBitmap
  *
  * @param type the [DATA_BITMAP][com.tneff.kmpremotecompose.remote.core.operations.BitmapData] image type;
  *   PNG types decode here, raw-pixel types return `null` (a separate sub-task if a doc needs them).
+ * @param maxDim fail-closed bound: the encoded image's **own** width/height (read from its header) must
+ *   each be in `1..maxDim` or it is rejected (`null`) **before** the full raster is allocated — this
+ *   blocks the huge-internal-dims OOM vector (a PNG with small wire dims but enormous header dims).
  */
-expect fun decodeImageBitmap(bytes: ByteArray, type: Int): ImageBitmap?
+expect fun decodeImageBitmap(bytes: ByteArray, type: Int, maxDim: Int): ImageBitmap?

@@ -19,6 +19,12 @@ import androidx.compose.ui.graphics.ImageBitmap
 import androidx.compose.ui.graphics.toComposeImageBitmap
 import org.jetbrains.skia.Image
 
-/** REM-55: iOS PNG decode via Skia [Image.makeFromEncoded]; null on undecodable/corrupt bytes (fail-soft). */
-actual fun decodeImageBitmap(bytes: ByteArray, type: Int): ImageBitmap? =
-    runCatching { Image.makeFromEncoded(bytes).toComposeImageBitmap() }.getOrNull()
+/**
+ * REM-55: iOS PNG decode via Skia [Image.makeFromEncoded]; null on undecodable/corrupt bytes (fail-soft).
+ * Fail-closed: `makeFromEncoded` is a deferred codec — check its header dims and reject `> maxDim` BEFORE
+ * [toComposeImageBitmap] rasterizes, so a hostile small-wire/huge-header PNG can't OOM.
+ */
+actual fun decodeImageBitmap(bytes: ByteArray, type: Int, maxDim: Int): ImageBitmap? = runCatching {
+    val image = Image.makeFromEncoded(bytes)
+    if (image.width in 1..maxDim && image.height in 1..maxDim) image.toComposeImageBitmap() else null
+}.getOrNull()

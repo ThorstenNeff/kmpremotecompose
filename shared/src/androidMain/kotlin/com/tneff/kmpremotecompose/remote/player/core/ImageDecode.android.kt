@@ -19,6 +19,17 @@ import android.graphics.BitmapFactory
 import androidx.compose.ui.graphics.ImageBitmap
 import androidx.compose.ui.graphics.asImageBitmap
 
-/** REM-55: Android PNG decode via [BitmapFactory]; null on undecodable/corrupt bytes (fail-soft). */
-actual fun decodeImageBitmap(bytes: ByteArray, type: Int): ImageBitmap? =
-    runCatching { BitmapFactory.decodeByteArray(bytes, 0, bytes.size)?.asImageBitmap() }.getOrNull()
+/**
+ * REM-55: Android PNG decode via [BitmapFactory]; null on undecodable/corrupt bytes (fail-soft).
+ * Fail-closed: read the header dims first (`inJustDecodeBounds`) and reject `> maxDim` BEFORE the full
+ * raster alloc, so a hostile small-wire/huge-header PNG can't OOM.
+ */
+actual fun decodeImageBitmap(bytes: ByteArray, type: Int, maxDim: Int): ImageBitmap? = runCatching {
+    val bounds = BitmapFactory.Options().apply { inJustDecodeBounds = true }
+    BitmapFactory.decodeByteArray(bytes, 0, bytes.size, bounds)
+    if (bounds.outWidth in 1..maxDim && bounds.outHeight in 1..maxDim) {
+        BitmapFactory.decodeByteArray(bytes, 0, bytes.size)?.asImageBitmap()
+    } else {
+        null
+    }
+}.getOrNull()
