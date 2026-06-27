@@ -71,6 +71,14 @@ object RpnFloatEvaluator {
     private const val OP_DEG = OFFSET + 29
     private const val OP_RAD = OFFSET + 30
 
+    // Array/collection ops (REM-59; upstream A_*): operate on a FLOAT_LIST via its array-id on the stack.
+    private const val OP_A_DEREF = OFFSET + 32
+    private const val OP_A_MAX = OFFSET + 33
+    private const val OP_A_MIN = OFFSET + 34
+    private const val OP_A_SUM = OFFSET + 35
+    private const val OP_A_AVG = OFFSET + 36
+    private const val OP_A_LEN = OFFSET + 37
+
     // upstream radian/degree conversion factors.
     private const val FP_TO_RAD = 57.29578f // 180/PI (DEG: radians → degrees)
     private const val FP_TO_DEG = 0.017453292f // PI/180 (RAD: degrees → radians)
@@ -88,9 +96,14 @@ object RpnFloatEvaluator {
             if (v.isNaN()) {
                 val id = WireTypes.fromNaN(v)
                 if (id > OFFSET) { // upstream `pos > OFFSET` (operators start at OFFSET+1; OFFSET itself is undefined)
-                    sp = opEval(stack, sp, id)
+                    sp = opEval(stack, sp, id, context)
+                } else if (WireTypes.isDataVariable(v) && context.getFloatArray(WireTypes.fromNaN(v)) != null) {
+                    // an array-id with a stored FLOAT_LIST (region 2) — push the RAW NaN so an array op
+                    // (A_DEREF/A_LEN/…) can `fromNaN` it back to the id (REM-59). A scalar data var (no
+                    // stored array) still resolves via getFloat below.
+                    stack[++sp] = v
                 } else {
-                    // data/normal/system variable reference → resolved value from the store
+                    // normal/system variable reference → resolved value from the store
                     stack[++sp] = context.getFloat(WireTypes.idFromNan(v))
                 }
             } else {
@@ -100,7 +113,22 @@ object RpnFloatEvaluator {
         return if (sp >= 0) stack[sp] else 0f
     }
 
-    private fun opEval(stack: FloatArray, sp: Int, id: Int): Int = when (id) {
+    private fun opEval(stack: FloatArray, sp: Int, id: Int, context: RemoteContext): Int = when (id) {
+        // Array ops (REM-59) — the array-id is the RAW NaN on the stack (`fromNaN` → the FLOAT_LIST id).
+        OP_A_DEREF -> { // [arrayId, index] → array[index]
+            val arr = context.getFloatArray(WireTypes.fromNaN(stack[sp - 1]))
+            stack[sp - 1] = arr?.getOrNull(stack[sp].toInt()) ?: 0f
+            sp - 1
+        }
+        OP_A_LEN -> { stack[sp] = (context.getFloatArray(WireTypes.fromNaN(stack[sp]))?.size ?: 0).toFloat(); sp }
+        OP_A_MAX -> { stack[sp] = context.getFloatArray(WireTypes.fromNaN(stack[sp]))?.maxOrNull() ?: 0f; sp }
+        OP_A_MIN -> { stack[sp] = context.getFloatArray(WireTypes.fromNaN(stack[sp]))?.minOrNull() ?: 0f; sp }
+        OP_A_SUM -> { stack[sp] = context.getFloatArray(WireTypes.fromNaN(stack[sp]))?.sum() ?: 0f; sp }
+        OP_A_AVG -> {
+            val a = context.getFloatArray(WireTypes.fromNaN(stack[sp]))
+            stack[sp] = if (a != null && a.isNotEmpty()) a.average().toFloat() else 0f
+            sp
+        }
         OP_ADD -> { stack[sp - 1] = stack[sp - 1] + stack[sp]; sp - 1 }
         OP_SUB -> { stack[sp - 1] = stack[sp - 1] - stack[sp]; sp - 1 }
         OP_MUL -> { stack[sp - 1] = stack[sp - 1] * stack[sp]; sp - 1 }

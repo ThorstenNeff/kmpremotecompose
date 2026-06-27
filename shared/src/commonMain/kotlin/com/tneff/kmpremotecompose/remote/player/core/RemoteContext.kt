@@ -146,6 +146,15 @@ class RemoteContext {
     /** Store a produced 4×4 matrix under [id] (MATRIX_EXPRESSION → MATRIX_VECTOR_MATH). */
     fun loadMatrix(id: Int, value: FloatArray) { matrixStore[id] = value }
 
+    // --- float-array collections (REM-59; upstream CollectionsAccess) — FLOAT_LIST data for chart/loop ---
+    private val floatArrayStore: MutableMap<Int, FloatArray> = mutableMapOf()
+
+    /** The float-array (FLOAT_LIST) for [id], or null. Consumed by the RPN array ops (A_DEREF/A_LEN/…). */
+    fun getFloatArray(id: Int): FloatArray? = floatArrayStore[id]
+
+    /** Store a FLOAT_LIST's values under [id] (upstream collections). */
+    fun loadFloatArray(id: Int, value: FloatArray) { floatArrayStore[id] = value }
+
     /**
      * Seed the **system variables** into the float store (REM-36 E-Seed) — done **before** the player's
      * variable phase so ops that reference window/density (e.g. `drawOval(0,0,FLOAT_WINDOW_WIDTH,…)`)
