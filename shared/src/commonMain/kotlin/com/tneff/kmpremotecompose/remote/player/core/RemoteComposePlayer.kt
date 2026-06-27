@@ -169,13 +169,18 @@ class RemoteComposePlayer(val context: RemoteContext = RemoteContext()) {
 
         /**
          * Opcodes of **container-opening** ops — those whose block is closed by a `CONTAINER_END`
-         * (REM-41 depth counting). Source-grounded against upstream `implements Container`: all layout
-         * managers + `ComponentStart`/`CoreText`, the flow containers (`ConditionalOperations`,
-         * `LoopOperation`, `CanvasOperations`, impulse/particle), and the action containers. **Flagged
-         * for assist completeness-review** against the full `Container` list — a missed type would
-         * mis-count the depth and skip the wrong span (the 173-render-sweep is the second safety net).
+         * (REM-41 depth counting). This is the authoritative set: upstream `CoreDocument` inflation
+         * pushes on **every** `instanceof Container` and pops on `ContainerEnd`, so this **must** equal
+         * the full set of `implements Container` opcodes — verified one-for-one against upstream (each
+         * Container class's `OP_CODE`). A missed type would desync the depth counter → skip the wrong
+         * span → break layout docs (the 173-render-sweep is the second safety net).
+         *
+         * NOTE (drift): kept in sync **manually** with upstream — the drift-proof fix is a `Container`
+         * marker interface on the op classes (cross-lane, touches dev-2's layout ops), deferred/flagged.
+         * `ListActionsOperation` has no distinct KMP opcode (not ported) → N/A.
          */
         private val CONTAINER_OPENING_OPCODES: Set<Int> = setOf(
+            // Flow / structural containers
             Operations.COMPONENT_START,
             Operations.CANVAS_OPERATIONS,
             Operations.CONDITIONAL_OPERATIONS,
@@ -185,6 +190,18 @@ class RemoteComposePlayer(val context: RemoteContext = RemoteContext()) {
             Operations.PARTICLE_LOOP,
             Operations.PARTICLE_COMPARE,
             Operations.RUN_ACTION,
+            Operations.CORE_TEXT,
+            // Action / click / function / reference containers (REM-41 NO-GO fix — were missing)
+            Operations.MODIFIER_CLICK,
+            Operations.MODIFIER_MULTI_CLICK,
+            Operations.FUNCTION_DEFINE,
+            Operations.REFERENCED_OPERATIONS,
+            // Pattern/macro containers (PatternBlock/Define/ForEach/Inflation) — were missing
+            Operations.MACRO_BLOCK,
+            Operations.MACRO_DEFINE,
+            Operations.MACRO_FOR_EACH,
+            Operations.MACRO_CALL,
+            // Layout managers (upstream `Component` subclasses)
             Operations.LAYOUT_ROOT,
             Operations.LAYOUT_CONTENT,
             Operations.LAYOUT_BOX,
@@ -200,7 +217,6 @@ class RemoteComposePlayer(val context: RemoteContext = RemoteContext()) {
             Operations.LAYOUT_COMPUTE,
             Operations.LAYOUT_COLLAPSIBLE_ROW,
             Operations.LAYOUT_COLLAPSIBLE_COLUMN,
-            Operations.CORE_TEXT,
         )
 
         /** True if [op] opens a CONTAINER_END-terminated block (REM-41 depth counting). */
