@@ -15,16 +15,26 @@
  */
 package com.tneff.kmpremotecompose.remote.core.operations
 
+import com.tneff.kmpremotecompose.remote.player.core.RemoteContext
+import com.tneff.kmpremotecompose.remote.player.core.VariableSupport
 import com.tneff.kmpremotecompose.remote.wire.WireBuffer
 
 /**
  * Concatenate two text sources into a new text (`TEXT_MERGE`): `textId = srcId1 + srcId2`.
  *
  * Wire layout: opcode, `int textId`, `int srcId1`, `int srcId2`.
+ *
+ * **Binding (REM-53):** producer op — Phase A reads the two source texts from the store and writes the
+ * concatenation under [textId] (so `TextFromFloat`/`DATA_TEXT` sources, resolved earlier in Phase A,
+ * are already present). Missing source ⇒ empty (fail-soft).
  */
-class TextMerge(val textId: Int, val srcId1: Int, val srcId2: Int) : Operation {
+class TextMerge(val textId: Int, val srcId1: Int, val srcId2: Int) : Operation, VariableSupport {
 
     override val opcode: Int get() = Operations.TEXT_MERGE
+
+    override fun apply(context: RemoteContext) {
+        context.putText(textId, (context.getText(srcId1) ?: "") + (context.getText(srcId2) ?: ""))
+    }
 
     override fun write(buffer: WireBuffer) {
         buffer.writeByte(opcode)
