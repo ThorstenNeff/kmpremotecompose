@@ -107,3 +107,14 @@ platforms (commonMain). Re-froze 11 Android goldens + re-rendered 11 iOS on 9a54
   (also improved: proper gradient/stroke instead of faint outlines/degenerate). All 11 current-A↔current-iOS = 96-99% PASS.
 - SLOT-FIDELITY verified: non-gradient docs (procedure_simple/c_box/maze/path) 0% diff unchanged; throws DROPPED 21→2; no
   cursor-desync/shifted paint-ops. The float-slot fix is clean.
+
+## Golden round 7 (2026-06-27) — REM-47 quick-win renders-now goldens (develop 0b1f546)
+PO listed 9 docs as "render now, need goldens". Verified each (fresh env, visual): only 4 produce VISIBLE pixels →
+frozen A+iOS (99% A↔iOS): c_modifier_fill_max_size (yellow fill), c_modifier_fill_parent_max_size (yellow), c_modifier_vertical_scroll,
+c_state_layout (blue fill). Real color-fill layout demos, not degenerate.
+The other 5 are NOT visible-pixel quick-wins (dispatch≠visual or by-design) — reported, NOT frozen:
+- c_modifier_wrap_content_size: white-on-white BY-DESIGN (correctly invisible, like empty doc).
+- path_demo_path_tween_demo: designed-overflow BY-DESIGN (blank).
+- c_modifier_background_id: blank, DEFERRED color-seed (real gap pending color-seed redo).
+- text_refresh_bug: drawCount=5 but VISUALLY BLANK = dispatch≠visual (text invisible/off-canvas) — potential gap, NOT quick-win.
+- simple_java_anim: drawCount=1 but blank (even &live=1) = dispatch≠visual — potential gap.
