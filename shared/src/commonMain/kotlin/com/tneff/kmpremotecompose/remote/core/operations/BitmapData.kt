@@ -15,6 +15,10 @@
  */
 package com.tneff.kmpremotecompose.remote.core.operations
 
+import androidx.compose.ui.graphics.ImageBitmap
+import com.tneff.kmpremotecompose.remote.player.core.PaintContext
+import com.tneff.kmpremotecompose.remote.player.core.PaintOperation
+import com.tneff.kmpremotecompose.remote.player.core.RemoteContext
 import com.tneff.kmpremotecompose.remote.wire.WireBuffer
 
 /**
@@ -34,9 +38,26 @@ class BitmapData(
     val data: ByteArray,
     val type: Int = TYPE_PNG_8888,
     val encoding: Int = ENCODING_INLINE,
-) : Operation {
+) : Operation, PaintOperation {
 
     override val opcode: Int get() = Operations.DATA_BITMAP
+
+    /**
+     * REM-40: register the image in the id store so draws/render-to-bitmap can find it. For an
+     * `ENCODING_EMPTY` render-target (no inline pixels — e.g. a DRAW_TO_BITMAP offscreen) allocate an
+     * empty [ImageBitmap] of [width]×[height]. Inline-PNG decoding ([ENCODING_INLINE] with pixel bytes)
+     * is a separate platform expect/actual sub-task (not needed for the render-to-bitmap unblock).
+     * Idempotent: only allocates once (so a re-cleared render target persists across frames).
+     */
+    override fun paint(context: RemoteContext, paint: PaintContext) {
+        if (context.getBitmap(imageId) != null) return
+        // Bound the dimensions (fail-closed against hostile/corrupt sizes → no OOM) and fail-soft on any
+        // allocation error (e.g. headless test env without Skiko) — a missing target just renders empty,
+        // never crashes the player.
+        if (encoding == ENCODING_EMPTY && width in 1..MAX_DIM && height in 1..MAX_DIM) {
+            runCatching { context.putBitmap(imageId, ImageBitmap(width, height)) }
+        }
+    }
 
     override fun write(buffer: WireBuffer) {
         buffer.writeByte(opcode)
@@ -72,6 +93,8 @@ class BitmapData(
     companion object : OperationReader {
 
         // Encodings (high 16 bits of the height word).
+        /** Max render-target dimension (fail-closed bound against hostile/corrupt sizes). */
+        const val MAX_DIM = 8192
         const val ENCODING_INLINE = 0
         const val ENCODING_URL = 1
         const val ENCODING_FILE = 2

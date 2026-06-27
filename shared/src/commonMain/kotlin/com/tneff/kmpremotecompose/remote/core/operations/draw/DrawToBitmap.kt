@@ -18,6 +18,9 @@ package com.tneff.kmpremotecompose.remote.core.operations.draw
 import com.tneff.kmpremotecompose.remote.core.operations.Operation
 import com.tneff.kmpremotecompose.remote.core.operations.OperationReader
 import com.tneff.kmpremotecompose.remote.core.operations.Operations
+import com.tneff.kmpremotecompose.remote.player.core.PaintContext
+import com.tneff.kmpremotecompose.remote.player.core.PaintOperation
+import com.tneff.kmpremotecompose.remote.player.core.RemoteContext
 import com.tneff.kmpremotecompose.remote.wire.WireBuffer
 
 /**
@@ -31,9 +34,17 @@ class DrawToBitmap(
     val bitmapId: Int,
     val mode: Int,
     val color: Int,
-) : Operation {
+) : Operation, PaintOperation {
 
     override val opcode: Int get() = Operations.DRAW_TO_BITMAP
+
+    /**
+     * REM-40: redirect subsequent drawing into the offscreen bitmap [bitmapId] (or back to the main
+     * canvas when `bitmapId == 0`). Mirrors upstream `DrawToBitmap.paint` → `PaintContext.drawToBitmap`.
+     */
+    override fun paint(context: RemoteContext, paint: PaintContext) {
+        paint.drawToBitmap(bitmapId, mode, color)
+    }
 
     override fun write(buffer: WireBuffer) {
         buffer.writeByte(opcode)
