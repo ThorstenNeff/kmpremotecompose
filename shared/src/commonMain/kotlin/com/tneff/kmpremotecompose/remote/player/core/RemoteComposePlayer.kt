@@ -20,6 +20,7 @@ import com.tneff.kmpremotecompose.remote.core.operations.ConditionalOperations
 import com.tneff.kmpremotecompose.remote.core.operations.FloatExpression
 import com.tneff.kmpremotecompose.remote.core.operations.Operation
 import com.tneff.kmpremotecompose.remote.core.operations.Operations
+import com.tneff.kmpremotecompose.remote.core.operations.layout.LoopStart
 import com.tneff.kmpremotecompose.remote.core.operations.layout.RootContentBehavior
 import com.tneff.kmpremotecompose.remote.wire.WireTypes
 
@@ -95,17 +96,17 @@ class RemoteComposePlayer(val context: RemoteContext = RemoteContext()) {
         // read already-resolved values (the long-flagged "deferred apply-phase"). MVP evaluates every
         // VariableSupport op each frame (no dirty tracking). updateVariables (resolve NaN refs) then
         // apply (evaluate + load into the store).
-        // Both phases walk through [walkGated], which skips a CONDITIONAL_OPERATIONS' block (up to its
-        // matching CONTAINER_END) when the condition is false (REM-41). Phase A first so the conditional's
-        // a/b are resolved before Phase B re-checks the same (store-persisted) condition consistently.
-        walkGated(document) { op ->
+        // Both phases walk through [walkGated]: the conditional/non-loop path is the original verbatim walk
+        // (CONDITIONAL_OPERATIONS skips its block when false — REM-41); LOOP_START is intercepted by an
+        // isolated branch (REM-58) that triggers ONLY on a loop, so non-loop docs walk byte-identically.
+        val ops = document.operations
+        walkGated(ops, 0, ops.size, paintPhase = false, paint) { op ->
             if (op is VariableSupport) {
                 op.updateVariables(context)
                 op.apply(context)
             }
         }
-        // Phase B: paint — draw ops now see resolved coords.
-        walkGated(document) { op ->
+        walkGated(ops, 0, ops.size, paintPhase = true, paint) { op ->
             if (op is PaintOperation) {
                 op.paint(context, paint)
             }
@@ -119,33 +120,73 @@ class RemoteComposePlayer(val context: RemoteContext = RemoteContext()) {
     }
 
     /**
-     * Walk the flat op list applying [action], **skipping a `CONDITIONAL_OPERATIONS`' gated block**
-     * (the ops up to its matching `CONTAINER_END`) when [ConditionalOperations.conditionHolds] is false
-     * (REM-41). When the condition holds, the conditional and its block are walked normally (its
-     * `CONTAINER_END` is a harmless no-op under [action]).
+     * Walk ops `[start, end)` applying [action] for one phase. The **non-loop path is the original verbatim
+     * walk** (REM-41): a `CONDITIONAL_OPERATIONS` whose [ConditionalOperations.conditionHolds] is false skips
+     * its block (to past the matching `CONTAINER_END`); everything else is handed to [action] linearly.
+     *
+     * **`LOOP_START` is intercepted by an isolated branch (REM-58)** that triggers ONLY on a loop — so docs
+     * without loops walk byte-identically to before. The loop runs its body per iteration **only in the
+     * paint phase** ([runLoop], combined eval+paint, mirroring upstream `LoopOperation.paint`); the eval
+     * phase skips the loop body (the loop self-evaluates each iteration so index-dependent coords are fresh).
      */
-    private inline fun walkGated(document: RemoteComposeDocument, action: (Operation) -> Unit) {
-        val ops = document.operations
-        var i = 0
-        while (i < ops.size) {
+    private fun walkGated(
+        ops: List<Operation>,
+        start: Int,
+        end: Int,
+        paintPhase: Boolean,
+        paint: PaintContext,
+        action: (Operation) -> Unit,
+    ) {
+        var i = start
+        while (i < end) {
             val op = ops[i]
-            if (op is ConditionalOperations && !op.conditionHolds(context)) {
-                i = skipConditionalBlock(ops, i)
-            } else {
-                action(op)
-                i++
+            when {
+                op is LoopStart -> { // isolated loop interception — non-loop path below is untouched
+                    val afterEnd = skipConditionalBlock(ops, i) // index past the matching CONTAINER_END
+                    if (paintPhase) runLoop(op, ops, i + 1, afterEnd - 1, paint) // body = [i+1, END)
+                    i = afterEnd
+                }
+                op is ConditionalOperations && !op.conditionHolds(context) -> i = skipConditionalBlock(ops, i)
+                else -> { action(op); i++ }
             }
         }
     }
 
     /**
-     * The index just past a conditional's matching `CONTAINER_END`. Nesting-aware: every container-
-     * opening op ([opensContainer], incl. nested conditionals) increments depth, every `CONTAINER_END`
-     * decrements; the match is the `CONTAINER_END` that returns depth to 0.
+     * Run a [LoopStart]'s body `[bodyStart, bodyEnd)` for `i = from; i < until; i += step` (upstream
+     * `LoopOperation.paint`). Each iteration loads the index var (id 0 ⇒ none) then re-walks the body
+     * **eval-then-paint** (via [walkGated], nesting-aware) so index-dependent coords resolve fresh per
+     * iteration. from/step/until resolve NaN var-refs. Guarded by [MAX_LOOP_ITERATIONS] (step ≤ 0 / runaway).
      */
-    private fun skipConditionalBlock(ops: List<Operation>, condIndex: Int): Int {
+    private fun runLoop(loop: LoopStart, ops: List<Operation>, bodyStart: Int, bodyEnd: Int, paint: PaintContext) {
+        val from = resolveFloat(loop.from)
+        val step = resolveFloat(loop.step)
+        val until = resolveFloat(loop.until)
+        var v = from
+        var count = 0
+        while (v < until && count < MAX_LOOP_ITERATIONS) {
+            if (loop.indexId != 0) context.loadFloat(loop.indexId, v)
+            walkGated(ops, bodyStart, bodyEnd, paintPhase = false, paint) { op ->
+                if (op is VariableSupport) { op.updateVariables(context); op.apply(context) }
+            }
+            walkGated(ops, bodyStart, bodyEnd, paintPhase = true, paint) { op ->
+                if (op is PaintOperation) op.paint(context, paint)
+            }
+            v += step
+            count++
+        }
+    }
+
+    private fun resolveFloat(f: Float): Float = if (f.isNaN()) context.getFloat(WireTypes.idFromNan(f)) else f
+
+    /**
+     * The index **just past** a container-opener's matching `CONTAINER_END` (original REM-41 verbatim).
+     * Nesting-aware: every container-opening op ([opensContainer], incl. nested conditionals/loops)
+     * increments depth, every `CONTAINER_END` decrements; the match returns depth to 0.
+     */
+    private fun skipConditionalBlock(ops: List<Operation>, openIndex: Int): Int {
         var depth = 0
-        var j = condIndex + 1
+        var j = openIndex + 1
         while (j < ops.size) {
             val o = ops[j]
             if (o.opcode == Operations.CONTAINER_END) {
@@ -160,6 +201,9 @@ class RemoteComposePlayer(val context: RemoteContext = RemoteContext()) {
     }
 
     companion object {
+        /** Safety cap on LOOP_START iterations (step ≤ 0 / runaway guard; real graph docs loop ≤ ~100). */
+        private const val MAX_LOOP_ITERATIONS = 10_000
+
         /** Render-loop contract for [paint]'s return ([RemoteContext.wakeInSeconds]): */
         /** no repaint requested — render a single static frame. */
         const val STATIC = -1f
