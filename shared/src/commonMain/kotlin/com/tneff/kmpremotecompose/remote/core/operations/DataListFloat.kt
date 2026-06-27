@@ -15,16 +15,25 @@
  */
 package com.tneff.kmpremotecompose.remote.core.operations
 
+import com.tneff.kmpremotecompose.remote.player.core.RemoteContext
+import com.tneff.kmpremotecompose.remote.player.core.VariableSupport
 import com.tneff.kmpremotecompose.remote.wire.WireBuffer
 
 /**
  * A float list (`FLOAT_LIST`): binds an array of floats to [id].
  *
  * Wire layout: opcode, `int id`, `int count`, then `count` raw floats.
+ *
+ * **Binding (REM-59):** a producer — Phase A stores [values] into the context's float-array collection
+ * ([RemoteContext.loadFloatArray]) so the RPN array ops (A_DEREF/A_LEN/A_MIN/…) and loop bounds can read it.
  */
-class DataListFloat(val id: Int, val values: FloatArray) : Operation {
+class DataListFloat(val id: Int, val values: FloatArray) : Operation, VariableSupport {
 
     override val opcode: Int get() = Operations.FLOAT_LIST
+
+    override fun apply(context: RemoteContext) {
+        context.loadFloatArray(id, values)
+    }
 
     override fun write(buffer: WireBuffer) {
         buffer.writeByte(opcode)
