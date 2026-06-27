@@ -22,6 +22,7 @@ import com.tneff.kmpremotecompose.remote.player.core.PaintContext
 import com.tneff.kmpremotecompose.remote.player.core.PaintOperation
 import com.tneff.kmpremotecompose.remote.player.core.RemoteContext
 import com.tneff.kmpremotecompose.remote.wire.WireBuffer
+import com.tneff.kmpremotecompose.remote.wire.WireTypes
 
 /**
  * `DRAW_BITMAP_FONT_TEXT_RUN` (opcode [Operations.DRAW_BITMAP_FONT_TEXT_RUN]) — draws a run of text
@@ -61,7 +62,11 @@ class DrawBitmapFontText(
 
     /** Render: the adapter resolves text [textId] + font [bitmapFontId] + glyph bitmaps from context. */
     override fun paint(context: RemoteContext, paint: PaintContext) {
-        paint.drawBitmapFontText(textId, bitmapFontId, start, end, x, y, glyphSpacing)
+        // Resolve NaN-encoded var refs for the run position (REM-54-class), like DrawText/DrawTextAnchored —
+        // upstream uses the resolved mOutX/mOutY. Clock digits anchor at computed var-coords.
+        val rx = if (x.isNaN()) context.getFloat(WireTypes.idFromNan(x)) else x
+        val ry = if (y.isNaN()) context.getFloat(WireTypes.idFromNan(y)) else y
+        paint.drawBitmapFontText(textId, bitmapFontId, start, end, rx, ry, glyphSpacing)
     }
 
     override fun dump(): String =

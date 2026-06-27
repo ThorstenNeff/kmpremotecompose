@@ -201,8 +201,10 @@ class ComposeTextRenderer(
             penX += glyph.marginLeft
             if (glyph.bitmapId != -1) {
                 bitmapById(glyph.bitmapId)?.let { bmp ->
-                    // top-left = pen + top margin; baseline at y, bitmap height grows downward from top.
-                    canvas.drawImage(bmp, Offset(penX, y - glyph.bitmapHeight + glyph.marginTop), paint)
+                    // Top-left = (penX, y + marginTop); the glyph grows DOWNWARD from y (upstream
+                    // `DrawBitmapFontText.paint`: top = mOutY + marginTop). NOT `y - bitmapHeight` —
+                    // that pushed glyphs above y → off-screen/negative → invisible digits (REM-42).
+                    canvas.drawImage(bmp, Offset(penX, y + glyph.marginTop), paint)
                 }
             }
             penX += glyph.bitmapWidth + glyph.marginRight + glyphSpacing
