@@ -22,6 +22,7 @@ import com.tneff.kmpremotecompose.remote.player.core.PaintContext
 import com.tneff.kmpremotecompose.remote.player.core.PaintOperation
 import com.tneff.kmpremotecompose.remote.player.core.RemoteContext
 import com.tneff.kmpremotecompose.remote.wire.WireBuffer
+import com.tneff.kmpremotecompose.remote.wire.WireTypes
 
 /**
  * `DRAW_TEXT_RUN` (opcode [Operations.DRAW_TEXT_RUN]) — draw a run of a text resource.
@@ -57,7 +58,10 @@ class DrawText(
 
     /** Render the run: fields map 1:1 onto the text primitive (color/size from the shared paint state). */
     override fun paint(context: RemoteContext, paint: PaintContext) {
-        paint.drawTextRun(textId, start, end, contextStart, contextEnd, x, y, rtl)
+        // Resolve NaN-encoded variable refs for the run position (REM-54), like DrawTextAnchored.
+        val rx = if (x.isNaN()) context.getFloat(WireTypes.idFromNan(x)) else x
+        val ry = if (y.isNaN()) context.getFloat(WireTypes.idFromNan(y)) else y
+        paint.drawTextRun(textId, start, end, contextStart, contextEnd, rx, ry, rtl)
     }
 
     override fun dump(): String =
