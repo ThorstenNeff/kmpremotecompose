@@ -161,8 +161,20 @@ fun RemoteComposeContext.pathAppendReset(pathId: Int) {
  * **bare** id (low 24 bits, no winding) — that's the value to pass to [drawPath] or other path
  * consumers. Floats are written as `Float.toRawBits()`, preserving NaN-encoded variable ids
  * exactly (matches [PathData]'s wire which writes ints).
+ *
+ * **Fail-closed (REM-103-followup).** Mirrors upstream `RemoteComposeBuffer.java:895-898`:
+ * winding ≠ 0 requires apiLevel ≥ 7. Flat-form documents (apiLevel = 6 — `Profile.Baseline`) can
+ * not encode the winding-in-high-byte convention; a player on flat-form would either reject or
+ * mis-decode the wire id. Without the throw the DSL would silently produce a doc the upstream
+ * player can't read. Fail at write-time so the caller can pick map-form (apiLevel 7) or drop
+ * the winding override.
  */
 fun RemoteComposeContext.addPathData(floats: FloatArray, winding: Int = 0): Int {
+    require(winding == 0 || writer.apiLevel >= 7) {
+        "winding=$winding requires apiLevel >= 7 (current = ${writer.apiLevel}, flat-form). " +
+            "Use document(profile = ...) with a non-baseline profile to switch to map-form, " +
+            "or call addPathData without the winding override."
+    }
     val id = ids.nextId()
     val wireId = if (winding != 0) id or (winding shl 24) else id
     val intBits = IntArray(floats.size) { floats[it].toRawBits() }
