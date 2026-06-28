@@ -52,6 +52,20 @@ class EvalE2Test {
     }
 
     @Test
+    fun rem104_hypotAndSiblingOperators_matchUpstreamFormulas() {
+        // REM-104: HYPOT drives the radial-gradient radius in countdown/demo_use_of_global
+        // (radius = hypot(w/2, h/2)); the unimplemented op previously threw → radius 0 → false
+        // "GRADIENT_DEGENERATE". Verified against upstream AnimatedFloatExpression.
+        assertEquals(5f, eval(3f, 4f, op(47)), "HYPOT(3,4) = 5")
+        assertEquals(353.553f, eval(250f, 250f, op(47)), 0.01f, "HYPOT(250,250) = countdown radius")
+        assertEquals(25f, eval(3f, 4f, op(43)), "SQUARE_SUM(3,4) = 9+16")
+        assertEquals(9f, eval(3f, op(45)), "SQUARE(3) = 9")
+        assertEquals(14f, eval(7f, op(46), op(1)), "DUP then ADD = 7+7 = 14")
+        // SWAP then SUB: stack [10, 3] → swap → [3, 10] → SUB → 3-10 = -7
+        assertEquals(-7f, eval(10f, 3f, op(48), op(2)), "SWAP then SUB")
+    }
+
+    @Test
     fun offsetBoundary_isVariableNotOperator() {
         // `> OFFSET` (assist parity fix): id == OFFSET itself is not an operator → treated as a var ref.
         assertEquals(0f, eval(op(0)), "asNan(OFFSET) resolves as an (unset) variable → 0, no throw")
