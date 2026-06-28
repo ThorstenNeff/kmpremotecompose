@@ -258,6 +258,18 @@ class RemoteContext {
 
     fun putText(id: Int, text: String) { idObjects[id] = text }
 
+    // --- shader store (REM-77, DATA_SHADER) ----------------------------------------------------
+
+    private val shaderStore = HashMap<Int, com.tneff.kmpremotecompose.remote.core.operations.ShaderData>()
+
+    /** Phase-A producer: register a decoded [ShaderData] by its shaderId (see `ShaderData.apply`). */
+    fun loadShaderData(id: Int, data: com.tneff.kmpremotecompose.remote.core.operations.ShaderData) {
+        shaderStore[id] = data
+    }
+
+    /** The shader (source-text id + uniforms) bound to [id] by a `DATA_SHADER` op, or null. */
+    fun getShaderData(id: Int): com.tneff.kmpremotecompose.remote.core.operations.ShaderData? = shaderStore[id]
+
     // --- density (player-evaluated, never hardcoded; PROJECT_CONTEXT §5) ------------------------
 
     /**

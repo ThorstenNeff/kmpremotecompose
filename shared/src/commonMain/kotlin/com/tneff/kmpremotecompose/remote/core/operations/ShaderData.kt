@@ -15,6 +15,8 @@
  */
 package com.tneff.kmpremotecompose.remote.core.operations
 
+import com.tneff.kmpremotecompose.remote.player.core.RemoteContext
+import com.tneff.kmpremotecompose.remote.player.core.VariableSupport
 import com.tneff.kmpremotecompose.remote.wire.WireBuffer
 import com.tneff.kmpremotecompose.remote.wire.WireTypes
 
@@ -36,7 +38,7 @@ class ShaderData(
     val floatUniforms: List<FloatUniform> = emptyList(),
     val intUniforms: List<IntUniform> = emptyList(),
     val bitmapUniforms: List<BitmapUniform> = emptyList(),
-) : Operation {
+) : Operation, VariableSupport {
 
     class FloatUniform(val name: String, val values: FloatArray) {
         override fun equals(other: Any?): Boolean =
@@ -55,6 +57,16 @@ class ShaderData(
     data class BitmapUniform(val name: String, val bitmapId: Int)
 
     override val opcode: Int get() = Operations.DATA_SHADER
+
+    /**
+     * REM-77 (Epic D, DATA_SHADER): Phase-A producer — register this shader (source + uniforms) into the
+     * context's shader store by [shaderId] so the `SHADER` paint-bundle tag can resolve it at paint time
+     * (mirrors upstream `ShaderData` landing in `RemoteComposeState`). Decode (write/read) is untouched —
+     * byte-format invariant preserved. Uniform NaN var-ref resolution (`updateVariables`) is a follow-up.
+     */
+    override fun apply(context: RemoteContext) {
+        context.loadShaderData(shaderId, this)
+    }
 
     override fun write(buffer: WireBuffer) {
         buffer.writeByte(opcode)

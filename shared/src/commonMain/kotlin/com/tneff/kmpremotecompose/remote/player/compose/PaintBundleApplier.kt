@@ -29,7 +29,10 @@ import androidx.compose.ui.graphics.StrokeCap
 import androidx.compose.ui.graphics.StrokeJoin
 import androidx.compose.ui.graphics.SweepGradientShader
 import androidx.compose.ui.graphics.TileMode
+import com.tneff.kmpremotecompose.remote.core.operations.ShaderData
 import com.tneff.kmpremotecompose.remote.player.core.RemoteContext
+import com.tneff.kmpremotecompose.remote.player.core.createRuntimeShader
+import com.tneff.kmpremotecompose.remote.wire.WireTypes
 
 /**
  * REM-31 (L2-S2) — applies a Layer-1 `PAINT_VALUES` bundle (raw `IntArray` from
@@ -143,7 +146,11 @@ internal object PaintBundleApplier {
 
                 // ---- out of S2/text scope: advance correctly, record, do not apply ----
                 FALLBACK_TYPEFACE -> { i++; deferred?.add("FALLBACK_TYPEFACE") }
-                SHADER -> { i++; deferred?.add("SHADER") }
+                // REM-77: the SHADER tag carries a shaderId → resolve the DATA_SHADER (source text +
+                // uniforms) from the context store and build a platform runtime shader (AGSL on Android,
+                // AGSL→SkSL on Skiko). Fail-soft: a missing/unsupported shader leaves the paint unshaded
+                // (plain fill) and is recorded in [deferred] — never throws the render path.
+                SHADER -> applyShader(context, paint, values[i++], deferred)
                 SHADER_MATRIX -> { i++; deferred?.add("SHADER_MATRIX") }
                 FONT_AXIS -> { i += 2 * (cmd shr 16); deferred?.add("FONT_AXIS") }
                 TEXTURE -> { i += 3; deferred?.add("TEXTURE") }
@@ -258,6 +265,38 @@ internal object PaintBundleApplier {
         }
         // Fail-soft default: solid fill with the first color (a single-color "gradient" is just that color).
         colors.firstOrNull()?.let { paint.shader = null; paint.color = it }
+    }
+
+    /**
+     * REM-77: resolve [shaderId] → its `DATA_SHADER` (source-text id + uniforms) → a platform runtime
+     * shader, and set it on [paint]. Source text is resolved via [RemoteContext.getText]; the AGSL→SkSL
+     * split lives in the platform [createRuntimeShader] actual. Fail-soft at every miss (no shader data,
+     * no source text, build returns null) — the paint is left unshaded and the reason recorded.
+     */
+    private fun applyShader(context: RemoteContext, paint: Paint, shaderId: Int, deferred: MutableSet<String>?) {
+        // Upstream `setShader(0)` clears the runtime shader on this paint (a SHADER bundle entry with id 0
+        // is intentional reset, not a missing shader) — do not flag it.
+        if (shaderId == 0) { paint.shader = null; return }
+        val data = context.getShaderData(shaderId)
+        if (data == null) { deferred?.add("SHADER_NO_DATA"); return }
+        val source = context.getText(data.shaderTextId)
+        if (source.isNullOrEmpty()) { deferred?.add("SHADER_NO_SOURCE"); return }
+        if (data.bitmapUniforms.isNotEmpty()) deferred?.add("SHADER_BITMAP_UNIFORM") // scaffold: not yet bound
+        // Resolve NaN-encoded var-ref float uniforms (e.g. `iTime`) via getFloat — mirrors
+        // BackgroundModifier.resolveArgb's NaN handling (static time → 0). Non-NaN uniforms pass through.
+        val floats = data.floatUniforms.map { u ->
+            if (u.values.none { it.isNaN() }) u
+            else ShaderData.FloatUniform(
+                u.name,
+                FloatArray(u.values.size) { k ->
+                    val v = u.values[k]
+                    if (v.isNaN()) context.getFloat(WireTypes.idFromNan(v)) else v
+                },
+            )
+        }
+        val shader = createRuntimeShader(source, floats, data.intUniforms)
+        if (shader == null) { deferred?.add("SHADER_UNSUPPORTED"); return }
+        paint.shader = shader
     }
 
     /** Upstream `Paint.Style` order: 0=FILL, 1=STROKE, 2=FILL_AND_STROKE (no exact CMP equivalent). */
