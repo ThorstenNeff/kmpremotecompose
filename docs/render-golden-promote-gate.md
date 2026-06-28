@@ -1,17 +1,24 @@
-# Render-Golden Promote-Gate — Upstream-Player-Oracle für dynamische Kurven-Docs
+# Render-Golden Promote-Gate — Unabhängiges Daten-Orakel für dynamische Kurven-Docs
 
 > **Status:** Working-Rule (PO-verankert im STATUS, bestätigt 2026-06-28 via Discord
-> `1520876838862196909`). **Nicht** in PROJECT_CONTEXT §6 hochgezogen — der Schritt zur
-> Invariante geht über den Menschen (PROJECT_CONTEXT §6 = Invarianten-Änderung).
-> **Aktivierung:** ab REM-121-Fix verbindlich. **Geltung:** team-weit (assist, test-1,
-> test-2, test-3) für jeden Golden-Promote im Geltungsbereich, nicht plattform-spezifisch.
+> `1520876838862196909`; Orakel-Realisierung präzisiert via `1520879916248469585`).
+> **Nicht** in PROJECT_CONTEXT §6 hochgezogen — der Schritt zur Invariante geht über den
+> Menschen (PROJECT_CONTEXT §6 = Invarianten-Änderung). **Aktivierung:** ab REM-121-Fix
+> verbindlich. **Geltung:** team-weit (assist, test-1, test-2, test-3) für jeden
+> Golden-Promote im Geltungsbereich, nicht plattform-spezifisch.
 
-> **Verhältnis zu PROJECT_CONTEXT §6:** §6 fordert das **Upstream-JVM = Orakel**-Prinzip
-> auf der **Byte-Ebene** (jedes `.rc` muss byte-identisch zur JVM-Referenz sein). Diese
-> Working-Rule erweitert das gleiche Prinzip auf die **Render-Golden-Ebene** für eine
-> klar abgegrenzte Klasse von Docs. Die Erweiterung ist konservativ: §6 bleibt unverändert
-> als alles-überschreibende Invariante; die Render-Erweiterung wird empirisch erprobt und
-> erst bei Bewährung dem Menschen zur §6-Anhebung vorgeschlagen.
+> **Verhältnis zu PROJECT_CONTEXT §6 und §3/§8:** §6 fordert das **Upstream-JVM =
+> Orakel**-Prinzip auf der **Byte-Ebene** (jedes `.rc` muss byte-identisch zur
+> JVM-Referenz sein). Diese Working-Rule überträgt den **Geist** des Prinzips auf die
+> **Render-Golden-Ebene**: das Orakel muss **unabhängig vom shared-Render-Code** sein,
+> der das Golden produziert hat — sonst wiederholt der Vergleich nur den Bug. Weil §3/§8
+> einen literalen Upstream-Build verbieten (`./androidx` ist read-only, kein
+> Upstream-Build), wird die Unabhängigkeit **nicht** durch literales Rendern im
+> Upstream-JVM-Player realisiert, sondern durch **data-driven Rekonstruktion** der
+> erwarteten Render-Punkte aus unit-verifizierten Building-Blocks (siehe Abschnitt 3,
+> Schritt 1). Die §8-Klärung für einen optionalen literal-Upstream-Render im
+> Conformance-Test-Kontext flaggt der PO dem Menschen separat — kein Teil dieser
+> Working-Rule.
 
 ---
 
@@ -62,27 +69,44 @@ markiert hat. Routing geht über den PO (Hub-and-Spoke, PROJECT_CONTEXT §7).
 
 ---
 
-## 3. Der Gate — 4-Schritt-Re-Verify gegen Upstream-Player
+## 3. Der Gate — 4-Schritt-Re-Verify gegen das unabhängige Daten-Orakel
 
 Für jedes Doc im Geltungsbereich (vor Promote oder Re-Promote nach Fix), auf jedem
 Target, das einen Golden hält (Android, iOS, Desktop, später Web):
 
-**Schritt 1 — Upstream-JVM-Referenz-Frame erzeugen.**
-Den Upstream-`remote-creation-core` + `remote-player-core` (oder den entsprechenden
-JVM-Player aus `./androidx/compose/remote/`) nutzen, um das Referenz-Frame des Docs
-zu erzeugen. **Dieses Frame ist das Orakel** — nicht das in-repo-PNG, das wir gerade
-promoten wollen, und auch nicht ein KMP-Render eines anderen Targets.
+**Schritt 1 — Daten-Orakel-Rekonstruktion erzeugen (unabhängig vom shared-Render-Code).**
+Der Code-Autor der jeweiligen Render-Op (z.B. dev-2 für REM-121) liefert die
+**erwarteten per-Iteration-Coords** des Docs, berechnet über die **unit-verifizierten
+Building-Blocks**, die der Bug NICHT berührt:
+- Für Kurven-Docs (heart_rate, graphs, paths): `(x_i, y_i) = getPos(i, data[i])`, wobei
+  `getPos` unit-getestet vorliegt. Die Loop-Akkumulations-Logik (die im PathAppend-Bug
+  lag) wird damit **umgangen**: das Orakel ruft `getPos` direkt pro Iteration auf und
+  vergleicht die so ermittelten Punkte gegen das, was der Renderer tatsächlich gezeichnet
+  hat.
+- Für Clock-Docs: Hand-Endpunkt = `(cx + r·cos(angle(t)), cy + r·sin(angle(t)))`, mit
+  `angle(t)` aus der Time-/Data-Eingabe und unit-getesteter Winkel-Berechnung.
+- **Das Orakel ist diese Punkt-Liste** — nicht das in-repo-PNG, nicht ein KMP-Render
+  eines anderen Targets, und (per §3/§8) nicht ein literaler Upstream-Player-Render.
+  Der Schlüssel: die Orakel-Berechnung teilt **keinen Code-Pfad mit dem akkumulierenden
+  Render**, ist also nicht co-buggy.
+- **Doc nicht data-rekonstruierbar** (z.B. akkumulierende Logik, die ohne den Loop nicht
+  reproduzierbar ist) → an den PO melden, case-by-case-Routing. Nicht raten, nicht
+  ad-hoc-improvisieren.
 
-**Schritt 2 — KMP-Render gegen Upstream-Frame diffen.**
-Den (gefixten) KMP-Render durch `parity_compare.py` o.ä. gegen das Upstream-Frame
-fahren. Identische Tolerance-Klasse wie der bestehende Cross-Plat-Vergleich
+**Schritt 2 — KMP-Render gegen Daten-Orakel-Punkte diffen.**
+Den (gefixten) KMP-Render gegen die Orakel-Punkt-Liste prüfen: liegt der gerenderte Pfad
+an jedem erwarteten `(x_i, y_i)` ± Tolerance? Realisiert über eine
+punkt-fokussierte Variante von `parity_compare.py` (oder direktes Pixel-Sampling am
+erwarteten Punkt). Tolerance-Klasse wie der bestehende Cross-Plat-Vergleich
 (Stufe B: Δ≤8/255, ≤2.0 % Pixel, ≤0.5 % Cluster — Werte aus dem etablierten
-Cross-Plat-Sweep, ggf. Klasse anpassen bei AA-empfindlichen Docs).
+Cross-Plat-Sweep, ggf. anpassen bei AA-empfindlichen Docs). **Konkrete Beweisrichtung:**
+zeigt, dass die Kurve die Datenpunkte tatsächlich nachzeichnet und nicht flach
+durchläuft.
 
-**Schritt 3 — Erst bei grünem Upstream-Match: Golden einbacken.**
+**Schritt 3 — Erst bei grünem Orakel-Match: Golden einbacken.**
 Wenn (und nur wenn) Schritt 2 PASS verdiktet, das KMP-Render als neues Golden in
 `screenshots/reference/<platform>/<doc>.png` einbacken und das bisherige Golden
-überschreiben. **PASS auf in-repo-Self-Compare ≠ PASS auf Upstream-Match** —
+überschreiben. **PASS auf in-repo-Self-Compare ≠ PASS auf Orakel-Match** —
 nicht durchwinken.
 
 **Schritt 4 — Cross-Density-Sweep-Re-Run zur Absicherung.**
@@ -110,17 +134,24 @@ REM-117 als Ganzes ist nicht zurückzurollen — nur die Loop+PathAppend-Subset.
 
 ## 5. Verhältnis zu anderen Methodologien
 
-- **PROJECT_CONTEXT §6 — Upstream-JVM = Orakel (Byte-Ebene):** unverändert. Diese Regel
-  ist die Render-Ebenen-Erweiterung desselben Prinzips, aber **eingeschränkt** auf die
-  Loop+PathAppend-Klasse, nicht universell.
+- **PROJECT_CONTEXT §6 — Upstream-JVM = Orakel (Byte-Ebene):** unverändert. §6 gilt
+  weiterhin als literale Byte-Äquivalenz zur Upstream-JVM-Referenz auf der `.rc`-Ebene.
+  Diese Regel überträgt nur den **Geist** des Prinzips (unabhängiges Orakel) auf die
+  Render-Ebene und realisiert ihn — §3/§8-konform — als Daten-Rekonstruktion, nicht
+  als literalen Upstream-Render. Eingeschränkt auf die Loop+PathAppend-Klasse, nicht
+  universell.
+- **PROJECT_CONTEXT §3/§8 — `./androidx` read-only, kein Upstream-Build:** unverändert.
+  Diese Working-Rule baut bewusst keinen Upstream-Player und kompiliert nichts aus
+  dem Upstream-Tree. Eine optionale §8-Klärung (literal-Upstream-Render im
+  Conformance-Test-Kontext) flaggt der PO dem Menschen separat.
 - **Cross-Density-Sweep auf einem Target:** bleibt der Gate für density-getriebene
   Klassen (REM-93-Vorgang); Schritt 4 oben ruft ihn als Absicherung auf, ersetzt
   ihn nicht.
 - **Pre/Post-Differential auf gleicher Base:** unverändert; greift bei file-disjunkten
   Fixes (wie REM-93). Hier nicht direkt anwendbar, weil REM-121 den Render-Pfad selbst
   berührt und damit nicht file-disjunkt zum Golden-Build ist.
-- **3-Sweep-cross-time** für time-driven Docs: unverändert; orthogonal zur Upstream-
-  Oracle-Regel (ein Doc kann beides brauchen, dann beide Gates seriell anwenden).
+- **3-Sweep-cross-time** für time-driven Docs: unverändert; orthogonal zur Daten-
+  Orakel-Regel (ein Doc kann beides brauchen, dann beide Gates seriell anwenden).
 
 ---
 
