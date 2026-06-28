@@ -73,6 +73,10 @@ Ich habe `document(300,300,contentDescription="Clock"){}` ausgeführt + decoded 
 
 ---
 
+## 3a. 🔑 Watchpoint — NaN-geboxte System-Variablen-Refs in Draw-Floats (E2, verifiziert an procedure_simple2)
+
+procedure_simple2s `DRAW_OVAL(0,0,r,b)` hat **r/b NICHT als Literal-Floats**, sondern **NaN-geboxte System-Var-ids**: roh decodiert `r=0xff800005`, `b=0xff800006` = Region-0-System-Variablen **id 5 (`ID_WINDOW_WIDTH`)** + **id 6 (`ID_WINDOW_HEIGHT`)**, NaN-encoded in die Float-Slots. **DSL-Idiom (E2):** `drawOval(0f, 0f, WireTypes.asNan(RemoteContext.ID_WINDOW_WIDTH), WireTypes.asNan(RemoteContext.ID_WINDOW_HEIGHT))`. **Byte-Risiko:** der NaN muss **bit-exakt** (`0xff80000N`, raw-bits, NICHT kanonisch `0x7fc00000`) durch den Writer → mein Harness-Test `simple2_bytesMatchOracle` ist grün, also reicht der E2-Pfad die rohen Bits durch. **Relevant für die E3/E4-Fixtures:** gleiche NaN-Box für jede koord/wert-Bindung an eine Variable (nicht nur window-dims) — beim Un-ignore der 4 darauf achten, dass koord-Bindungen als asNan(id) und nicht als Literal repliziert werden.
+
 ## 4. Gate-Stand + nächste Schritte
 - **AKTIV jetzt:** Stufe-1-Round-trip (grün) — beweist Harness-Mechanik + E1-Encode-Selbstkonsistenz.
 - **dev-3 (via PO):** (a) flat/map-API-Auto-Auswahl → E1-Prolog byte-treu (§3); (b) E2–E4-Ops → Body-Replikation der 4 Targets (§2).

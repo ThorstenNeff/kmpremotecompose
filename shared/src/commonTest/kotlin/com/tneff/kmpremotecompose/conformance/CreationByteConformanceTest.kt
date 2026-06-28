@@ -15,7 +15,15 @@
  */
 package com.tneff.kmpremotecompose.conformance
 
+import com.tneff.kmpremotecompose.remote.creation.ROOT_ALIGNMENT_CENTER
+import com.tneff.kmpremotecompose.remote.creation.ROOT_SCALE_FIT
+import com.tneff.kmpremotecompose.remote.creation.ROOT_SCROLL_NONE
+import com.tneff.kmpremotecompose.remote.creation.ROOT_SIZING_SCALE
 import com.tneff.kmpremotecompose.remote.creation.document
+import com.tneff.kmpremotecompose.remote.creation.drawOval
+import com.tneff.kmpremotecompose.remote.creation.setRootContentBehavior
+import com.tneff.kmpremotecompose.remote.player.core.RemoteContext
+import com.tneff.kmpremotecompose.remote.wire.WireTypes
 import kotlin.test.Ignore
 import kotlin.test.Test
 import kotlin.test.assertContentEquals
@@ -23,12 +31,14 @@ import kotlin.test.assertContentEquals
 /**
  * E5 — Creation-Byte-Conformance (REM-84, test-2). The §2-WRITE-side gate: a `.rc` produced by our
  * KMP DSL must be **byte-identical** to the upstream-procedural oracle (`procedure_*` corpus fixtures).
+ * This is the canonical E5 conformance gate (dev-3 also smoke-tests fixtures as they build the ops;
+ * this suite is the holistic byte-equality tracker test-2 owns).
  *
  * Three-stage strategy (TechSpec-REM-E §4): (1) round-trip self-consistency, (2) decode-and-inspect,
- * (3) byte-equality vs oracle. Active now: stage 1 (round-trip/determinism) **and** the stage-3 prolog
- * checkpoint (`e1Prolog_byteMatchesOracleHeaderBlock`) — green since REM-85 made `document{}` byte-faithful.
- * The four full-fixture targets stay `@Ignore`d until E2–E4 deliver their body ops (draw/text/path/map);
- * un-ignore each as its ops land. Op-sequence + id-order replication target: `docs/e5-creation-byte-conformance-prep.md`
+ * (3) byte-equality vs oracle. **Green now:** stage 1 (round-trip/determinism), the stage-3 prolog
+ * checkpoint (REM-85), and `procedure_simple2` full byte-equality (REM-86 E2 draw/path + RCB surface).
+ * The four richer fixtures stay `@Ignore`d until E3–E4 deliver text/gradient/color-expr/ID_MAP ops;
+ * un-ignore each as its ops land. Replication target: `docs/e5-creation-byte-conformance-prep.md`
  * + the canonical `docs/TECHSPEC-E5-id-order-reference.md`.
  */
 class CreationByteConformanceTest {
@@ -53,11 +63,37 @@ class CreationByteConformanceTest {
         assertContentEquals(a, b, "same DSL script must produce identical bytes (id-allocation per-document)")
     }
 
-    // ---- Stage 3: byte-equality vs the four named oracle fixtures ----
+    // ---- Stage 3: byte-equality vs the oracle fixtures ----
     // Targets (op-sequence + id-order) documented in docs/e5-creation-byte-conformance-prep.md §2.
     // Each asserts: document(300,300,contentDescription="Clock"){ <replicated ops> } == oracle bytes.
 
-    @Ignore // blocked: E1 prolog not byte-faithful yet (flat/map-API §3) + draw/text ops are E2/E3.
+    /**
+     * E2 milestone (REM-86, ACTIVE/green): full byte-equality vs procedure_simple2 (82 B).
+     * Body = setRootContentBehavior(NONE, CENTER, SCALE, SCALE_FIT) + drawOval(0,0,WIN_W,WIN_H), where
+     * the right/bottom coords are the region-0 system-variable ids 5/6 (ID_WINDOW_WIDTH/HEIGHT),
+     * NaN-boxed into the float slots (decoded raw: 0xff800005 / 0xff800006 — see prep §3a). Exercises
+     * the E2 draw + RCB surface on top of REM-85's prolog.
+     */
+    @Test
+    fun simple2_bytesMatchOracle() {
+        val produced = document(width = 300, height = 300, contentDescription = "Clock") {
+            setRootContentBehavior(
+                scroll = ROOT_SCROLL_NONE,
+                alignment = ROOT_ALIGNMENT_CENTER,
+                sizing = ROOT_SIZING_SCALE,
+                mode = ROOT_SCALE_FIT,
+            )
+            drawOval(
+                left = 0f,
+                top = 0f,
+                right = WireTypes.asNan(RemoteContext.ID_WINDOW_WIDTH),
+                bottom = WireTypes.asNan(RemoteContext.ID_WINDOW_HEIGHT),
+            )
+        }
+        assertContentEquals(oracle("procedure_simple2"), produced, "DSL must byte-match procedure_simple2 oracle")
+    }
+
+    @Ignore // blocked on E3 (DATA_TEXT body "gradient" + gradient paint/shader + DRAW_TEXT_ANCHOR).
     @Test
     fun gradient1_bytesMatchOracle() {
         // Target: HEADER(v1.0.0 flat) + DATA_TEXT(42 "Clock") + ROOT_CONTENT_DESCRIPTION(42) +
@@ -67,21 +103,21 @@ class CreationByteConformanceTest {
         assertContentEquals(oracle("procedure_gradient1"), produced)
     }
 
-    @Ignore // blocked on E2/E3 (TEXT_FROM_FLOAT, TEXT_MEASURE, DRAW_RECT) + E1 prolog.
+    @Ignore // blocked on E3 (TEXT_FROM_FLOAT, TEXT_MEASURE, DRAW_RECT, text body).
     @Test
     fun centerText1_bytesMatchOracle() {
         val produced = document(width = 300, height = 300, contentDescription = "Clock") { /* E3 text ops */ }
         assertContentEquals(oracle("procedure_center_text1"), produced)
     }
 
-    @Ignore // blocked on E4 (ID_MAP@2097194 collection-range, DATA_MAP_LOOKUP) + E2/E3 + E1 prolog.
+    @Ignore // blocked on E3/E4 (text body, ID_MAP@2097194 collection-range, DATA_MAP_LOOKUP, TEXT_MEASURE).
     @Test
     fun lookUp1_bytesMatchOracle() {
         val produced = document(width = 300, height = 300, contentDescription = "Clock") { /* E4 map/lookup ops */ }
         assertContentEquals(oracle("procedure_look_up1"), produced)
     }
 
-    @Ignore // blocked on E2/E3 (DATA_PATH 2141-pt, COLOR_EXPRESSIONS, DRAW_PATH) + E1 prolog.
+    @Ignore // blocked on E3 (COLOR_EXPRESSIONS, DATA_TEXT body, DRAW_TEXT_ANCHOR); DATA_PATH/DRAW_PATH are E2.
     @Test
     fun textPathEffects1_bytesMatchOracle() {
         val produced = document(width = 300, height = 300, contentDescription = "Clock") { /* E2/E3 path ops */ }
