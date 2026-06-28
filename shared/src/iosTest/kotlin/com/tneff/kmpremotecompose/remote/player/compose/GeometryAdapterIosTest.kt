@@ -212,11 +212,13 @@ class GeometryAdapterIosTest {
     @Test
     fun paintBundle_staysInSyncPastDeferredTag() {
         // TEXTURE(24) + 3 args, then COLOR(4) + color. The COLOR must still land → walk stayed in sync.
+        // REM-98: TEXTURE now resolves; bitmapId 7 has no registered bitmap → fail-soft TEXTURE_NO_BITMAP
+        // (still advances exactly 3 slots, so the trailing COLOR proves cursor sync).
         val arr = intArrayOf(24, 7, 0, 0, 4, 0xFF00FF00.toInt())
         val deferred = mutableSetOf<String>()
         val state = PlayerPaintState()
         PaintBundleApplier.applyTo(RemoteContext(), state,arr, deferred = deferred)
-        assertTrue("TEXTURE" in deferred, "deferred tag recorded")
+        assertTrue("TEXTURE_NO_BITMAP" in deferred, "deferred tag recorded")
         assertEquals(Color(0xFF00FF00.toInt()), state.paint.color, "color after deferred tag applied")
     }
 
@@ -262,6 +264,33 @@ class GeometryAdapterIosTest {
         assertNotNull(state.paint.shader, "linear gradient should set a shader")
     }
 
+    // REM-98: TEXTURE(24) carries [bitmapId][tileX|tileY<<16][filterMode|maxAnisotropy<<16]. A registered
+    // bitmap → tiled ImageShader on the paint, no longer deferred. Slot count (3) cross-checked vs ./androidx.
+
+    @Test
+    fun paintBundle_textureSetsBitmapShaderWhenBitmapPresent() {
+        val context = RemoteContext()
+        context.putBitmap(42, ImageBitmap(8, 8))
+        // [TEXTURE=24][bitmapId=42][tileX=1(REPEAT)|tileY=1<<16][filterMode=1|0]
+        val arr = intArrayOf(24, 42, 1 or (1 shl 16), 1)
+        val deferred = mutableSetOf<String>()
+        val state = PlayerPaintState()
+        PaintBundleApplier.applyTo(context, state, arr, deferred = deferred)
+        assertNotNull(state.paint.shader, "TEXTURE with a registered bitmap must set an image shader")
+        assertTrue("TEXTURE" !in deferred && "TEXTURE_NO_BITMAP" !in deferred, "resolved texture not deferred")
+    }
+
+    @Test
+    fun paintBundle_textureMissingBitmapFailsSoftAndIsLogged() {
+        // No bitmap registered under id 7 → fail-soft: no shader set, recorded (not silent, never throws).
+        val arr = intArrayOf(24, 7, 0, 0)
+        val deferred = mutableSetOf<String>()
+        val state = PlayerPaintState()
+        PaintBundleApplier.applyTo(RemoteContext(), state, arr, deferred = deferred)
+        assertTrue(state.paint.shader == null, "missing texture bitmap leaves paint unshaded")
+        assertTrue("TEXTURE_NO_BITMAP" in deferred, "missing texture bitmap must be logged")
+    }
+
     @Test
     fun paintBundle_cursorStaysInSyncAcrossEveryTagType() {
         // P3 (critical): each tag's advance must match upstream PaintBundle slot counts exactly — a
@@ -300,7 +329,9 @@ class GeometryAdapterIosTest {
         // TEXT_SIZE/TYPEFACE now land in the shared state (REM-32); the rest stay deferred. REM-77: the SHADER
         // tag is no longer blindly deferred — it now RESOLVES the shaderId (9, 99) → no ShaderData(99) →
         // `SHADER_NO_DATA` (cursor still advances exactly 1 slot, so the sentinel above proves sync holds).
-        for (tag in listOf("SHADER_NO_DATA", "SHADER_MATRIX", "FONT_AXIS", "TEXTURE", "PATH_EFFECT")) {
+        // REM-98: TEXTURE likewise resolves now — bitmapId 0 has no registered bitmap → `TEXTURE_NO_BITMAP`
+        // (cursor still advances exactly 3 slots, so the sentinel still proves sync).
+        for (tag in listOf("SHADER_NO_DATA", "SHADER_MATRIX", "FONT_AXIS", "TEXTURE_NO_BITMAP", "PATH_EFFECT")) {
             assertTrue(tag in deferred, "deferred should record $tag")
         }
         assertEquals(12f, state.textSizePx, "TEXT_SIZE applied to state")
