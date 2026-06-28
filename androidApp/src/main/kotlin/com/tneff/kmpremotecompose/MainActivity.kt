@@ -37,9 +37,13 @@ class MainActivity : ComponentActivity() {
         selectFromIntent(intent)
     }
 
-    /** Apply the `rc` (doc) and `live` (REM-37 E-D1 animation) query params of a `kmprc://render` URI. */
+    /**
+     * Apply the `rc` (doc), `live` (REM-37 E-D1 animation) and `t` (REM-62 static frame pin, seconds)
+     * query params of a `kmprc://render` URI.
+     */
     private fun selectFromIntent(intent: Intent?) {
         RcRouter.select(intent?.data?.getQueryParameter("rc"))
         RcRouter.live = intent?.data?.getQueryParameter("live") == "1"
+        RcRouter.setStaticTime(intent?.data?.getQueryParameter("t"))
     }
 }

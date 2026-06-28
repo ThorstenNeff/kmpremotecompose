@@ -13,6 +13,9 @@ struct iOSApp: App {
                     RcRouter.shared.select(name: items?.first(where: { $0.name == "rc" })?.value)
                     // REM-37 E-D1: &live=1 opts into the live-animation loop (clocks tick, cube3d spins).
                     RcRouter.shared.live = (items?.first(where: { $0.name == "live" })?.value == "1")
+                    // REM-62: &t=<sec> pins the static-mode frame (deterministic non-zero capture, spread
+                    // analog-clock hands). Absent / 0 / invalid → t=0 (the original static path).
+                    RcRouter.shared.setStaticTime(value: items?.first(where: { $0.name == "t" })?.value)
                 }
         }
     }

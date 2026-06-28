@@ -29,9 +29,12 @@ import kotlin.test.assertEquals
  */
 class StaticTimePinTest {
 
-    private fun timeInSecAfterPaint(animation: Boolean, frameTime: Float): Float {
+    private fun timeInSecAfterPaint(animation: Boolean, frameTime: Float, staticPin: Float = 0f): Float {
         val ctx = RemoteContext().apply { animationEnabled = animation }
-        RemoteComposePlayer(ctx).paint(RemoteComposeDocument(emptyList<Operation>()), NoOpPaintContext(ctx), frameTimeSeconds = frameTime)
+        RemoteComposePlayer(ctx).paint(
+            RemoteComposeDocument(emptyList<Operation>()), NoOpPaintContext(ctx),
+            frameTimeSeconds = frameTime, staticTimeSeconds = staticPin,
+        )
         return ctx.getFloat(RemoteContext.ID_TIME_IN_SEC)
     }
 
@@ -48,6 +51,36 @@ class StaticTimePinTest {
         assertEquals(
             5f, timeInSecAfterPaint(animation = true, frameTime = 5f),
             "live (animation on) → time advances from frameTimeSeconds (clocks tick)",
+        )
+    }
+
+    @Test
+    fun staticMode_defaultStaticPin_isZero_unchangedFromBefore() {
+        // REM-62: the new staticTimeSeconds param defaults to 0f → byte-for-byte the pre-REM-62 static
+        // path (the existing callers/tests that pass no pin must seed exactly t=0).
+        assertEquals(
+            0f, timeInSecAfterPaint(animation = false, frameTime = 5f, staticPin = 0f),
+            "static + pin=0 → t=0 (identical to the original static render)",
+        )
+    }
+
+    @Test
+    fun staticMode_withPin_seedsFromPin() {
+        // REM-62: a fixed non-zero static pin seeds the wall-clock time vars deterministically (spread
+        // analog-clock hands). 20s → TIME_IN_SEC=20 (sec-within-hour), regardless of frameTimeSeconds.
+        assertEquals(
+            20f, timeInSecAfterPaint(animation = false, frameTime = 0f, staticPin = 20f),
+            "static + pin=20 → TIME_IN_SEC seeded from the pin (deterministic non-zero frame)",
+        )
+    }
+
+    @Test
+    fun liveMode_ignoresStaticPin() {
+        // REM-62: the live loop is untouched — the pin is read ONLY in the static branch. Live still
+        // advances from frameTimeSeconds even when a static pin is set.
+        assertEquals(
+            5f, timeInSecAfterPaint(animation = true, frameTime = 5f, staticPin = 99f),
+            "live → frameTimeSeconds wins, static pin ignored (live loop untouched)",
         )
     }
 }
