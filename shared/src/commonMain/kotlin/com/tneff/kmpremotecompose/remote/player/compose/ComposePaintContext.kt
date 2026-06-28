@@ -224,7 +224,11 @@ class ComposePaintContext(
         val c = canvas ?: return
         val r = textRenderer ?: return
         val text = context.getText(textId) ?: return
-        r.drawTextRun(c, text, start, end, x, y, rtl)
+        // REM-120: text/glyph draws are real pixel-emitting primitives → bump the honest-render counter
+        // (geometry does this in GeometryPaintDelegate.emit). Without it a text-only doc (e.g. the ❤ in
+        // spline_demo, DrawTextAnchored→drawTextRun) draws but the gate falsely reports "rendered empty".
+        // Guard on the renderer's drew-result so an empty slice (start==end) counts nothing (assist nit).
+        if (r.drawTextRun(c, text, start, end, x, y, rtl)) context.incrementDrawCount()
     }
 
     override fun drawTextOnPath(textId: Int, pathId: Int, hOffset: Float, vOffset: Float) {
@@ -244,7 +248,10 @@ class ComposePaintContext(
         val font = context.getFromId(bitmapFontId) as? BitmapFontData ?: return
         val from = start.coerceIn(0, text.length)
         val to = if (end < 0 || end > text.length) text.length else end.coerceIn(from, text.length)
-        r.drawBitmapFontText(c, font, text.substring(from, to), x, y, glyphSpacing) { context.getBitmap(it) }
+        // REM-120: glyph (bitmap-font) text counts too — guarded on the drew-result (empty substring = no count).
+        if (r.drawBitmapFontText(c, font, text.substring(from, to), x, y, glyphSpacing) { context.getBitmap(it) }) {
+            context.incrementDrawCount()
+        }
     }
 
     override fun getTextBounds(textId: Int, start: Int, end: Int, flags: Int, bounds: FloatArray) {
@@ -281,7 +288,10 @@ class ComposePaintContext(
 
     override fun drawComplexText(computedTextLayout: ComputedTextLayout?) {
         val c = canvas ?: return
-        textRenderer?.drawComplexText(c, computedTextLayout)
+        val r = textRenderer ?: return
+        if (computedTextLayout == null) return // nothing laid out → no draw, no count
+        r.drawComplexText(c, computedTextLayout)
+        context.incrementDrawCount() // REM-120: multi-line/complex text counts too
     }
 
     override fun getText(id: Int): String? = context.getText(id)
