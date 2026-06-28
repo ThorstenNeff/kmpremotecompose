@@ -19,6 +19,8 @@ import com.tneff.kmpremotecompose.conformance.RcCorpus
 import com.tneff.kmpremotecompose.conformance.RcDocumentCodec
 import com.tneff.kmpremotecompose.remote.core.operations.draw.DrawCircle
 import com.tneff.kmpremotecompose.remote.core.operations.draw.DrawRect
+import com.tneff.kmpremotecompose.remote.player.core.RemoteContext
+import com.tneff.kmpremotecompose.remote.wire.WireTypes
 import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertTrue
@@ -85,6 +87,45 @@ class DocumentDslSmokeTest {
         if (!oracle.contentEquals(bytes)) {
             throw AssertionError(
                 "creation-DSL diverged from procedure_simple1 oracle " +
+                    "(oracle=${oracle.size}B, dsl=${bytes.size}B). " +
+                    "First diff at byte ${firstDiffIndex(oracle, bytes)}.\n" +
+                    "oracle: ${hex(oracle)}\n" +
+                    "dsl:    ${hex(bytes)}",
+            )
+        }
+    }
+
+    /**
+     * REM-86 gate: full-document byte-equality against the upstream `procedure_simple2.rc` oracle
+     * (82 B). This pins the E2 surface (`drawOval`, `setRootContentBehavior` with an explicit
+     * SCALE_FIT mode) plus REM-85's prolog onto a single fixture. The oracle's body is
+     * `setRootContentBehavior(NONE, ALIGNMENT_CENTER, SIZING_SCALE, SCALE_FIT)` then
+     * `drawOval(0, 0, FLOAT_WINDOW_WIDTH, FLOAT_WINDOW_HEIGHT)` — the WINDOW_*-bound coords are
+     * region-0 system-variable ids 5 and 6 (`RemoteContext.ID_WINDOW_*`), NaN-encoded into the
+     * `DrawOval` float slots.
+     */
+    @Test
+    fun procedureSimple2_fullDocument_matchesOracleByteForByte() {
+        val oracle = RcCorpus.readFixture("corpus/procedure_simple2.rc")
+
+        val bytes = document(width = 300, height = 300, contentDescription = "Clock") {
+            setRootContentBehavior(
+                scroll = ROOT_SCROLL_NONE,
+                alignment = ROOT_ALIGNMENT_CENTER,
+                sizing = ROOT_SIZING_SCALE,
+                mode = ROOT_SCALE_FIT,
+            )
+            drawOval(
+                left = 0f,
+                top = 0f,
+                right = WireTypes.asNan(RemoteContext.ID_WINDOW_WIDTH),
+                bottom = WireTypes.asNan(RemoteContext.ID_WINDOW_HEIGHT),
+            )
+        }
+
+        if (!oracle.contentEquals(bytes)) {
+            throw AssertionError(
+                "creation-DSL diverged from procedure_simple2 oracle " +
                     "(oracle=${oracle.size}B, dsl=${bytes.size}B). " +
                     "First diff at byte ${firstDiffIndex(oracle, bytes)}.\n" +
                     "oracle: ${hex(oracle)}\n" +
