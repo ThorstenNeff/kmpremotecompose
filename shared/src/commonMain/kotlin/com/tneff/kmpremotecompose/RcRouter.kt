@@ -63,6 +63,26 @@ object RcRouter {
         private set
 
     /**
+     * Forced render density (REM-91): set from a deep-link `&density=<f>` to override the platform density
+     * ([RemoteComposeApp] uses `forcedDensity ?: LocalDensity`). **Default `null` = use the real platform
+     * density** (untouched behavior). Cross-target parity needs a uniform density: iOS-Sim is fixed @3x with
+     * no OS lever, so `&density=1.0` forces a uniform 1.0 on every target → raw-px Desktop↔Mobile compare
+     * without the platform density asymmetry. Parsed/validated via [setForcedDensity].
+     */
+    var forcedDensity: Float? by mutableStateOf(null)
+        private set
+
+    /**
+     * Parse a deep-link `&density=<f>` value into [forcedDensity]. **Fail-safe to `null`** (use platform
+     * density): `null` / blank / non-numeric / non-positive / non-finite all map to `null`, so only a valid
+     * positive number ever forces the density. Centralized so platform parsers and tests share one rule.
+     */
+    fun setForcedDensity(value: String?) {
+        val parsed = value?.trim()?.toFloatOrNull()
+        forcedDensity = if (parsed != null && parsed.isFinite() && parsed > 0f) parsed else null
+    }
+
+    /**
      * Parse a deep-link `&t=<sec>` value into [staticTimeSeconds]. **Fail-safe to `0f`** (the pre-REM-62
      * path): `null` / blank / non-numeric / negative / non-finite all map to `0f`, so only a valid
      * non-negative number ever changes the static frame. Centralized here so both platform deep-link
@@ -84,6 +104,7 @@ object RcRouter {
     fun resetForLaunch() {
         live = false
         setStaticTime(null) // → staticTimeSeconds = 0f
+        setForcedDensity(null) // → forcedDensity = null (use platform density)
     }
 
     /**

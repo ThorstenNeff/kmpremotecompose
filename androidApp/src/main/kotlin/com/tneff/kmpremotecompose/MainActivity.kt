@@ -50,5 +50,6 @@ class MainActivity : ComponentActivity() {
         RcRouter.select(intent?.data?.getQueryParameter("rc"))
         RcRouter.live = intent?.data?.getQueryParameter("live") == "1"
         RcRouter.setStaticTime(intent?.data?.getQueryParameter("t"))
+        RcRouter.setForcedDensity(intent?.data?.getQueryParameter("density"))
     }
 }
