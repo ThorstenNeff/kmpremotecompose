@@ -78,6 +78,10 @@ object RpnFloatEvaluator {
     private const val OP_IFELSE = OFFSET + 26 // upstream TERNARY_CONDITIONAL: [a, b, cond] → cond>0 ? b : a
     private const val OP_A_SPLINE = OFFSET + 38 // [arrayId, t] → MonotonicSpline(array).getPos(t)
 
+    // REM-109 (slice 2): the remaining E-D3 operators by impact. PINGPONG = triangle wave (used by
+    // text-transform / paths_demos for back-and-forth animation phase).
+    private const val OP_PINGPONG = OFFSET + 54 // [v, max] → triangle wave in [0, max]
+
     // REM-104: stack/geometry ops (upstream AnimatedFloatExpression). HYPOT computes a radial-gradient
     // radius = hypot(w/2, h/2) in countdown/demo_use_of_global; the unimplemented operator previously threw,
     // leaving the radius unset (→ 0 → false "degenerate gradient"). Siblings SQUARE/SQUARE_SUM/DUP/SWAP are
@@ -163,6 +167,13 @@ object RpnFloatEvaluator {
         OP_CLAMP -> { stack[sp - 2] = min(max(stack[sp - 2], stack[sp]), stack[sp - 1]); sp - 2 }
         // REM-109: upstream TERNARY_CONDITIONAL — [a, b, cond] → cond>0 ? b : a (result at sp-2).
         OP_IFELSE -> { stack[sp - 2] = if (stack[sp] > 0f) stack[sp - 1] else stack[sp - 2]; sp - 2 }
+        // REM-109: PINGPONG [v, max] → triangle wave; upstream: tmp = v % (2max); tmp<max ? tmp : 2max-tmp.
+        OP_PINGPONG -> {
+            val max2 = stack[sp] * 2
+            val t = stack[sp - 1] % max2
+            stack[sp - 1] = if (t < stack[sp]) t else max2 - t
+            sp - 1
+        }
         OP_POW -> { stack[sp - 1] = stack[sp - 1].pow(stack[sp]); sp - 1 }
         OP_SQRT -> { stack[sp] = sqrt(stack[sp]); sp }
         OP_ABS -> { stack[sp] = abs(stack[sp]); sp }

@@ -76,6 +76,15 @@ class EvalE2Test {
     }
 
     @Test
+    fun rem109_pingpong_isTriangleWave() {
+        // REM-109: PINGPONG [v, max] → max2=2·max; t=v%max2; t<max ? t : max2-t.
+        assertEquals(1f, eval(1f, 3f, op(54)), "rising")
+        assertEquals(2f, eval(4f, 3f, op(54)), "falling (4 → 6-4)")
+        assertEquals(1f, eval(7f, 3f, op(54)), "wraps past 2·max")
+        assertEquals(3f, eval(3f, 3f, op(54)), "peak at max")
+    }
+
+    @Test
     fun offsetBoundary_isVariableNotOperator() {
         // `> OFFSET` (assist parity fix): id == OFFSET itself is not an operator → treated as a var ref.
         assertEquals(0f, eval(op(0)), "asNan(OFFSET) resolves as an (unset) variable → 0, no throw")
