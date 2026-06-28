@@ -281,8 +281,10 @@ class GeometryAdapterIosTest {
         val state = PlayerPaintState()
         PaintBundleApplier.applyTo(RemoteContext(), state,arr, deferred = deferred)
         assertEquals(Color(sentinel), state.paint.color, "sentinel COLOR after every tag → cursor stayed in sync")
-        // TEXT_SIZE/TYPEFACE now land in the shared state (REM-32); the rest stay deferred.
-        for (tag in listOf("SHADER", "SHADER_MATRIX", "FONT_AXIS", "TEXTURE", "PATH_EFFECT")) {
+        // TEXT_SIZE/TYPEFACE now land in the shared state (REM-32); the rest stay deferred. REM-77: the SHADER
+        // tag is no longer blindly deferred — it now RESOLVES the shaderId (9, 99) → no ShaderData(99) →
+        // `SHADER_NO_DATA` (cursor still advances exactly 1 slot, so the sentinel above proves sync holds).
+        for (tag in listOf("SHADER_NO_DATA", "SHADER_MATRIX", "FONT_AXIS", "TEXTURE", "PATH_EFFECT")) {
             assertTrue(tag in deferred, "deferred should record $tag")
         }
         assertEquals(12f, state.textSizePx, "TEXT_SIZE applied to state")
