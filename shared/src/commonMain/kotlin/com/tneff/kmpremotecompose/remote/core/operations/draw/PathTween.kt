@@ -22,6 +22,8 @@ import com.tneff.kmpremotecompose.remote.player.compose.PathGeometry
 import com.tneff.kmpremotecompose.remote.player.core.PaintContext
 import com.tneff.kmpremotecompose.remote.player.core.PaintOperation
 import com.tneff.kmpremotecompose.remote.player.core.RemoteContext
+import com.tneff.kmpremotecompose.remote.player.core.VariableSupport
+import com.tneff.kmpremotecompose.remote.player.core.resolveCoord
 import com.tneff.kmpremotecompose.remote.wire.WireBuffer
 
 /**
@@ -35,9 +37,18 @@ class PathTween(
     val pathId1: Int,
     val pathId2: Int,
     val tween: Float,
-) : PaintOperation {
+) : PaintOperation, VariableSupport {
 
     override val opcode: Int get() = Operations.PATH_TWEEN
+
+    // REM-125: NaN-encoded var-ref tween resolved at render time; raw field untouched (byte-safe).
+    // A computed tween (e.g. path_tween_demo's 0.75 via an ANIMATED_FLOAT) reached tweenPathData as raw
+    // NaN → degenerate interpolation. Mirrors ClipRect/DrawRect/DrawTweenPath.
+    var rTween: Float = tween
+
+    override fun updateVariables(context: RemoteContext) {
+        rTween = context.resolveCoord(tween)
+    }
 
     override fun write(buffer: WireBuffer) {
         buffer.writeByte(opcode)
@@ -51,7 +62,7 @@ class PathTween(
     override fun paint(context: RemoteContext, paint: PaintContext) {
         val d1 = context.getPathData(pathId1) ?: return
         val d2 = context.getPathData(pathId2) ?: return
-        context.putPathData(outId, PathGeometry.tweenPathData(d1, d2, tween))
+        context.putPathData(outId, PathGeometry.tweenPathData(d1, d2, rTween))
     }
 
     override fun dump(): String = "PATH_TWEEN outId=$outId pathId1=$pathId1 pathId2=$pathId2 tween=$tween"
