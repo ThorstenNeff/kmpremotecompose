@@ -15,6 +15,8 @@
  */
 package com.tneff.kmpremotecompose.conformance
 
+import com.tneff.kmpremotecompose.remote.core.document.DocumentReader
+import com.tneff.kmpremotecompose.remote.core.operations.draw.PaintData
 import com.tneff.kmpremotecompose.remote.creation.RcExpression
 import com.tneff.kmpremotecompose.remote.creation.RcPaint
 import com.tneff.kmpremotecompose.remote.creation.ROOT_ALIGNMENT_CENTER
@@ -24,24 +26,27 @@ import com.tneff.kmpremotecompose.remote.creation.ROOT_SCROLL_NONE
 import com.tneff.kmpremotecompose.remote.creation.ROOT_SIZING_SCALE
 import com.tneff.kmpremotecompose.remote.creation.addDataMapIds
 import com.tneff.kmpremotecompose.remote.creation.addInt
+import com.tneff.kmpremotecompose.remote.creation.addPathData
 import com.tneff.kmpremotecompose.remote.creation.addText
+import com.tneff.kmpremotecompose.remote.creation.colorExpressionHsv
 import com.tneff.kmpremotecompose.remote.creation.createTextFromFloat
 import com.tneff.kmpremotecompose.remote.creation.dataMapEntry
 import com.tneff.kmpremotecompose.remote.creation.dataMapLookup
 import com.tneff.kmpremotecompose.remote.creation.document
 import com.tneff.kmpremotecompose.remote.creation.drawOval
+import com.tneff.kmpremotecompose.remote.creation.drawPath
 import com.tneff.kmpremotecompose.remote.creation.drawRect
 import com.tneff.kmpremotecompose.remote.creation.drawTextAnchored
 import com.tneff.kmpremotecompose.remote.creation.floatExpression
 import com.tneff.kmpremotecompose.remote.creation.matrixRestore
 import com.tneff.kmpremotecompose.remote.creation.matrixSave
 import com.tneff.kmpremotecompose.remote.creation.matrixScale
+import com.tneff.kmpremotecompose.remote.creation.matrixTranslate
 import com.tneff.kmpremotecompose.remote.creation.paint
 import com.tneff.kmpremotecompose.remote.creation.setRootContentBehavior
 import com.tneff.kmpremotecompose.remote.creation.textMeasure
 import com.tneff.kmpremotecompose.remote.player.core.RemoteContext
 import com.tneff.kmpremotecompose.remote.wire.WireTypes
-import kotlin.test.Ignore
 import kotlin.test.Test
 import kotlin.test.assertContentEquals
 
@@ -52,14 +57,14 @@ import kotlin.test.assertContentEquals
  * this suite is the holistic byte-equality tracker test-2 owns).
  *
  * Three-stage strategy (TechSpec-REM-E §4): (1) round-trip self-consistency, (2) decode-and-inspect,
- * (3) byte-equality vs oracle. **Green now (post E3/E4, REM-90/REM-92):** stage 1 (round-trip/
- * determinism), the stage-3 prolog checkpoint (REM-85), and full byte-equality vs `procedure_simple2`
- * (REM-86) **plus the three richer watchpoint fixtures `procedure_gradient1` / `procedure_center_text1`
- * / `procedure_look_up1`** (transform + RPN ANIMATED_FLOAT + TEXT_MEASURE + TEXT_FROM_FLOAT + ID_MAP/
- * DATA_MAP_LOOKUP + gradient/stroke/fill paint surfaces). The single remaining `@Ignore` —
- * `procedure_text_path_effects` — is blocked on a missing DATA_PATH raw-blob emitter (see its KDoc),
- * not on a defect. Replication target: `docs/e5-creation-byte-conformance-prep.md`
- * + the canonical `docs/TECHSPEC-E5-id-order-reference.md`.
+ * (3) byte-equality vs oracle. **GATE CLOSED 4/4 (post E3/E4/REM-103, Host + iOS):** stage 1
+ * (round-trip/determinism), the stage-3 prolog checkpoint (REM-85), `procedure_simple2` (REM-86), and
+ * **all four watchpoint fixtures** `procedure_gradient1` / `procedure_center_text1` / `procedure_look_up1`
+ * / `procedure_text_path_effects` are full-byte-equal to the oracle — covering transform + RPN
+ * ANIMATED_FLOAT + TEXT_MEASURE/TEXT_FROM_FLOAT + ID_MAP/DATA_MAP_LOOKUP + linear/sweep gradient +
+ * HSV COLOR_EXPRESSIONS + DATA_PATH (REM-103 [addPathData]) + stroke/fill/clear paint surfaces. The
+ * whole Creation-DSL byte gate ("create on a server" 100%-byte milestone) is green. Replication target:
+ * `docs/e5-creation-byte-conformance-prep.md` + the canonical `docs/TECHSPEC-E5-id-order-reference.md`.
  */
 class CreationByteConformanceTest {
 
@@ -299,24 +304,81 @@ class CreationByteConformanceTest {
     }
 
     /**
-     * NOT hand-byte-authorable — kept `@Ignore` by design (decoded structure: 27 ops, 8986 B). Two
-     * verified blockers, flagged to PO for a dev-3 follow-up (neither is a defect — both are missing
-     * write-side surface):
-     *  1. The oracle bakes its geometry as a **single DATA_PATH op (id=49, count=2141 floats = 8573 B)**.
-     *     The KMP DSL has **no DATA_PATH raw-blob emitter** — `PathBuilder` builds paths incrementally as
-     *     `PATH_CREATE` + N×`PATH_ADD` ops, a structurally different op stream → cannot byte-match this
-     *     op shape even if the 2141 floats were supplied. (grep: no `DataPath`/`dataPath` helper in creation.)
-     *  2. `COLOR_EXPRESSIONS(id46, params=[9371652,-8388565,1063675494,1063675494])` + the path-effect
-     *     PAINT_VALUES slots are not yet decode-verified against a DSL emitter.
-     * The other 3 watchpoint fixtures (gradient1/center_text1/look_up1) are full-byte green above and
-     * cover the shared transform/measure/lookup/paint surface; this one's residual is the DATA_PATH blob.
-     * Un-ignore once a DATA_PATH raw-float helper lands and the path floats can be sourced.
+     * E5 4/4 CLOSE (REM-103, ACTIVE/green): full byte-equality vs procedure_text_path_effects (8986 B,
+     * 27 ops). Unblocked by the REM-103 one-shot [addPathData] emitter (the oracle bakes its geometry
+     * as a single `DATA_PATH` op, count=2141 floats — the incremental PathBuilder produced a divergent
+     * op-shape). The 2141 path floats are **sourced from the oracle's own DATA_PATH payload** (input
+     * geometry, not hand-authored); the test validates that the full op sequence + id allocation + every
+     * surrounding op is byte-faithful: HSV `COLOR_EXPRESSIONS` (mode 4, alpha 143, hue=id43),
+     * SWEEP `sweepGradient` (3 colors incl. the colorId id46), RPN ANIMATED_FLOATs (DIV/MOD/MUL/SUB/ABS),
+     * MATRIX scale/translate, 2×`DRAW_PATH`, stroke/fill paints, and `CLEAR_COLOR_FILTER`.
+     * **DSL gap flagged to dev-3:** `RcPaint` has no `clearColorFilter()` helper for the bare
+     * `PAINT_VALUES[CLEAR_COLOR_FILTER]` (tag 21) bundle → emitted here via the raw L1-proven [PaintData] op.
      */
-    @Ignore
     @Test
     fun textPathEffects1_bytesMatchOracle() {
-        val produced = document(width = 300, height = 300, contentDescription = "Clock") { /* needs DATA_PATH emitter */ }
-        assertContentEquals(oracle("procedure_text_path_effects"), produced)
+        val oracleBytes = oracle("procedure_text_path_effects")
+        // Source the path geometry from the oracle's single DATA_PATH op (firstFloat = byteStart + 9:
+        // opcode(1) + wireId(4) + count(4)). Geometry is input data; the emitter framing is what we test.
+        val (_, spans) = DocumentReader.inflateWithTrace(oracleBytes)
+        val pathSpan = spans.first { it.name == "DATA_PATH" }
+        fun be(o: Int): Int {
+            var v = 0
+            for (j in 0 until 4) v = (v shl 8) or (oracleBytes[o + j].toInt() and 0xff)
+            return v
+        }
+        val pathCount = be(pathSpan.byteStart + 5)
+        val pathFloats = FloatArray(pathCount) { Float.fromBits(be(pathSpan.byteStart + 9 + it * 4)) }
+
+        val produced = document(width = 300, height = 300, contentDescription = "Clock") {
+            setRootContentBehavior(
+                scroll = ROOT_SCROLL_NONE,
+                alignment = ROOT_ALIGNMENT_CENTER,
+                sizing = ROOT_SIZING_SCALE,
+                mode = ROOT_SCALE_FILL_BOUNDS,
+            )
+            val hue = floatExpression(
+                RcExpression.CONTINUOUS_SEC, 6.2831855f, RcExpression.DIV, 1.0f, RcExpression.MOD,
+            ) // id43 = (continuousSec / 2π) % 1
+            val centerX = floatExpression(RcExpression.WINDOW_WIDTH, 0.5f, RcExpression.MUL) // id44
+            val centerY = floatExpression(RcExpression.WINDOW_HEIGHT, 0.5f, RcExpression.MUL) // id45
+            val hsv = colorExpressionHsv(hue = hue, saturation = 0.9f, value = 0.9f, alpha = 143) // id46
+            val topY = floatExpression(centerY, 100.0f, RcExpression.SUB) // id47 = centerY − 100
+            paint {
+                sweepGradient(
+                    centerX = centerX, centerY = centerY,
+                    colors = intArrayOf(0xff0022ff.toInt(), hsv, 0xff0022ff.toInt()),
+                )
+                textSize(64f)
+            }
+            val scale = floatExpression(
+                RcExpression.CONTINUOUS_SEC, 2.0f, RcExpression.MOD, 1.0f, RcExpression.SUB,
+            ) // id48
+            matrixSave()
+            matrixScale(scaleX = scale, scaleY = 0.5f, centerX = centerX, centerY = centerY)
+            drawOval(
+                left = 0f, top = 0f,
+                right = WireTypes.asNan(RemoteContext.ID_WINDOW_WIDTH),
+                bottom = WireTypes.asNan(RemoteContext.ID_WINDOW_HEIGHT),
+            )
+            matrixRestore()
+            matrixSave()
+            matrixTranslate(centerX, topY)
+            val path = addPathData(pathFloats, winding = 0) // id49
+            drawPath(path)
+            val strokeW = floatExpression(scale, RcExpression.ABS, 10.0f, RcExpression.MUL) // id50 = abs(id48)*10
+            paint {
+                style(RcPaint.STYLE_STROKE)
+                strokeWidth(strokeW)
+            }
+            drawPath(path)
+            paint { style(RcPaint.STYLE_FILL) }
+            matrixRestore()
+            add(PaintData(intArrayOf(PaintData.CLEAR_COLOR_FILTER))) // tag 21 — no RcPaint helper yet (dev-3)
+            val text = addText("0123456789") // id51
+            drawTextAnchored(textId = text, x = centerX, y = centerY)
+        }
+        assertContentEquals(oracleBytes, produced, "DSL must byte-match procedure_text_path_effects oracle")
     }
 
     // ---- Stage-3 early checkpoint: E1 prolog byte-faithfulness (the smallest end-to-end byte proof) ----
