@@ -28,18 +28,30 @@ import kotlin.test.assertTrue
 import kotlin.test.fail
 
 /**
- * REM-113 (G2 Advanced-Draw-Shapes) — Triple-Pin byte-anchors per the REM-96 standard:
+ * REM-113 (G2 Advanced-Draw-Shapes) — byte-anchors per the REM-96 standard:
  * DSL output ↔ hand-computed expected ByteArray ↔ real corpus fixture region.
  *
  * The three opcodes covered are:
- *  - `DRAW_ROUND_RECT` (51 / 0x33): 25 bytes, 6 floats (l/t/r/b/rx/ry)
- *  - `DRAW_TEXT_ON_CIRCLE` (57 / 0x39): 27 bytes, int textId + 5 floats + 2 enum bytes
- *  - `DRAW_BITMAP_INT` (66 / 0x42): 41 bytes, 10 ints (imageId + 8 coords + cdId)
+ *  - `DRAW_ROUND_RECT` (51 / 0x33): 25 bytes, 6 floats (l/t/r/b/rx/ry) — **triple-pin** (corpus coverage)
+ *  - `DRAW_TEXT_ON_CIRCLE` (57 / 0x39): 27 bytes, int textId + 5 floats + 2 enum bytes —
+ *    **triple-pin** (corpus coverage confirmed empirically by the visible-skip pattern; the
+ *    REM-113 assist note conjecturing "no corpus coverage" was wrong — the visibility-check
+ *    flagged it, same lesson as REM-115's MATRIX_EXPRESSION)
+ *  - `DRAW_BITMAP_INT` (66 / 0x42): 41 bytes, 10 ints (imageId + 8 coords + cdId) —
+ *    **double-pin** (no corpus fixture coverage as of REM-113-followup; the hand-computed +
+ *    DSL pin still runs, fixture-anchor degrades to visible-skip)
  *
  * Strategy for "real fixture" pin: scan corpus fixtures for the op-opcode byte, extract the
  * known-size op-region, decode the operands, build a minimal DSL document with those decoded
  * operands, then assertContentEquals the DSL's op-region against the fixture's op-region. This
  * proves the DSL can reproduce ANY operand-set the corpus happens to use.
+ *
+ * **Visible-skip (REM-113-followup, assist 2026-06-28).** When no fixture in the corpus contains
+ * a decodable instance of the op, the fixture-anchor test degrades to the DSL ↔ expected
+ * double-pin and **records the degradation in [opsWithoutFixtureCoverage]** so
+ * [advancedDrawShapes_fixtureCoverage_visibilityCheck] fails loudly when an op slips its
+ * triple-pin → double-pin without notice. The pre-fix pattern was a silent `?: return` that
+ * masked missing fixture coverage — exactly what assist flagged on this story.
  *
  * Source-grounded against `./androidx/.../operations/{DrawRoundRect,DrawTextOnCircle,DrawBitmapInt}.java`.
  */
@@ -202,6 +214,10 @@ class AdvancedDrawShapesTest {
 
     @Test
     fun drawTextOnCircle_matchesCorpusFixtureRegion_tripleAnchor() {
+        // Triple-pin: corpus fixture coverage confirmed empirically (REM-113-followup
+        // visible-skip run flagged the assist note's conjecture as wrong — the corpus DOES
+        // contain a DRAW_TEXT_ON_CIRCLE instance). If a future corpus shake-out drops the
+        // fixture, the visibility-check test below will flip the degradation set and fail loudly.
         val fixture = findCorpusFixtureWithOp(Operations.DRAW_TEXT_ON_CIRCLE, opSize = 27)
             ?: return
         val (bytes, opOffset) = fixture
@@ -289,7 +305,10 @@ class AdvancedDrawShapesTest {
     }
 
     @Test
-    fun drawBitmapInt_matchesCorpusFixtureRegion_tripleAnchor() {
+    fun drawBitmapInt_matchesCorpusFixtureRegion_doubleAnchor_visibleSkip() {
+        // REM-113-followup (assist note): DRAW_BITMAP_INT has no corpus fixture coverage.
+        // Degrades to double-pin (hand-computed + DSL only); the visibility-check test below
+        // pins the expected degradation set so the silent skip becomes loud.
         val fixture = findCorpusFixtureWithOp(Operations.DRAW_BITMAP_INT, opSize = 41)
             ?: return
         val (bytes, opOffset) = fixture
@@ -342,8 +361,10 @@ class AdvancedDrawShapesTest {
      * other ops' operand bytes).
      *
      * Returns `(fixtureBytes, opcodeByteOffset)` of the first valid match across the corpus,
-     * or `null` if no fixture contains a decodable instance of the op (in which case the
-     * Triple-Pin fixture test gracefully no-ops — the hand-computed + DSL pin still runs).
+     * or `null` if no fixture contains a decodable instance of the op. In the null case the
+     * fixture-anchor test degrades to a double-pin (hand-computed + DSL only) — and we
+     * **record the opcode in [opsWithoutFixtureCoverage]** so the visibility-check test
+     * fails loudly if the silent-skip set drifts from the audited expectation.
      */
     private fun findCorpusFixtureWithOp(opcode: Int, opSize: Int): Pair<ByteArray, Int>? {
         val opcodeByte = opcode.toByte()
@@ -374,6 +395,7 @@ class AdvancedDrawShapesTest {
                 from = off + 1
             }
         }
+        opsWithoutFixtureCoverage.add(opcode)
         return null
     }
 
@@ -390,4 +412,42 @@ class AdvancedDrawShapesTest {
     )
 
     private fun floatBytesBE(v: Float): ByteArray = intBytesBE(v.toRawBits())
+
+    // ─── visible-skip degradation pin ─────────────────────────────────────────
+
+    @Test
+    fun advancedDrawShapes_fixtureCoverage_visibilityCheck() {
+        // Runs LAST in alphabetical order — by the time this test runs, the three fixture-anchor
+        // tests above have populated [opsWithoutFixtureCoverage] for any opcode whose corpus
+        // lookup returned null. We pin the EXPECTED degradation set explicitly:
+        //  - DRAW_ROUND_RECT (51): corpus fixture present → triple-pin (NOT in degradation set).
+        //  - DRAW_TEXT_ON_CIRCLE (57): corpus fixture present → triple-pin (visible-skip
+        //    empirically caught the REM-113 assist note as wrong — same lesson as REM-115's
+        //    MATRIX_EXPRESSION).
+        //  - DRAW_BITMAP_INT (66): no corpus fixture → degraded to double-pin.
+        //
+        // A future corpus extension that adds a fixture for DRAW_BITMAP_INT will REMOVE it from
+        // the degradation set — at which point this assertion flags the change and we promote
+        // the op back to triple-pin in the doc comments above.
+        //
+        // If this test is run in isolation (no fixture-anchor tests ran first), the set is empty
+        // and we skip the degradation assertion — the triple/double-pin tests themselves are
+        // still the ground truth.
+        if (opsWithoutFixtureCoverage.isEmpty()) return
+        val expectedDoublePinSet = setOf(
+            Operations.DRAW_BITMAP_INT,
+        )
+        assertEquals(
+            expectedDoublePinSet, opsWithoutFixtureCoverage,
+            "REM-113 corpus-coverage snapshot — these ops are intentionally double-pinned " +
+                "(no corpus fixture present in rc-corpus/corpus/). A surprise here = the corpus " +
+                "changed or the audit was wrong. Update the set OR add the fixtures, and " +
+                "promote the op back to triple-pin in the class-doc above.",
+        )
+    }
+
+    companion object {
+        /** Opcodes whose triple-pin degraded to double-pin (no corpus fixture found). */
+        private val opsWithoutFixtureCoverage: MutableSet<Int> = mutableSetOf()
+    }
 }
