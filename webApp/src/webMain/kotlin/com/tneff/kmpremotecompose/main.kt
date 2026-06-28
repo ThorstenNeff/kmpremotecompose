@@ -1,7 +1,9 @@
 package com.tneff.kmpremotecompose
 
+import androidx.compose.runtime.remember
 import androidx.compose.ui.ExperimentalComposeUiApi
 import androidx.compose.ui.window.ComposeViewport
+import com.tneff.kmpremotecompose.remote.player.core.WebSensorSource
 
 /**
  * REM-82/C5 + W1 — the wasmJs entry. Two jobs, symmetric to MainActivity / MainViewController:
@@ -23,7 +25,10 @@ import androidx.compose.ui.window.ComposeViewport
 fun main() {
     applyWebQueryToRouter(webLocationSearch())
     ComposeViewport {
-        RemoteComposeApp()
+        // REM-101 (D5) S4: inject the browser DeviceMotion sensor source (App-Shell injection, TechSpec
+        // §5). Live + sensor-driven docs start it; static/no-motion → null → static frame (capability-floor).
+        val sensorSource = remember { WebSensorSource() }
+        RemoteComposeApp(sensorSource = sensorSource)
     }
 }
 
