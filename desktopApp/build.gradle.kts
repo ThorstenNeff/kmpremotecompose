@@ -13,6 +13,14 @@ dependencies {
     implementation(libs.kotlinx.coroutinesSwing)
 
     implementation(libs.compose.uiToolingPreview)
+
+    // REM-81 (Desktop Compose-UI-Test analog): in-lane Aequivalent zu Maestro fuer Compose-Desktop,
+    // weil Maestro nur Android/iOS/RN/Flutter-mobile/Web-Browser unterstuetzt (kein nativer
+    // Compose-Desktop, REM-81-Spec §2 Watchpoint test-3-resolved 2026-06-28). Selbe testTag-API,
+    // post-frame-commit via awaitIdle(), headless JVM. Test-only (kein commonMain/Prod-Dep) → die
+    // PROJECT_CONTEXT §5/§8 "kein Dep ohne iOS-Target"-Regel greift nicht (jvm-Test-Scope).
+    testImplementation(libs.compose.uiTestJunit4)
+    testImplementation(libs.junit)
 }
 
 compose.desktop {
