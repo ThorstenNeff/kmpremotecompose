@@ -46,11 +46,19 @@ class PlayerPaintState {
     /** Font weight (REM-37: CSS 100–900; `0` = renderer default); read by the text renderer (dev-1). */
     var fontWeight: Int = DEFAULT_FONT_WEIGHT
 
+    /**
+     * REM-94: `STYLE = FILL_AND_STROKE` (2) has no single CMP [androidx.compose.ui.graphics.PaintingStyle]
+     * (only Fill/Stroke). When set, the geometry adapter draws each shape **twice** — a fill pass then a
+     * stroke pass — matching upstream `Paint.Style.FILL_AND_STROKE`. `paint.style` carries Fill (the fill
+     * pass default); this flag drives the extra stroke pass.
+     */
+    var fillAndStroke: Boolean = DEFAULT_FILL_AND_STROKE
+
     private val stack = ArrayDeque<Snapshot>()
 
     /** Push a snapshot of all fields (upstream `savePaint`). */
     fun save() {
-        stack.addLast(Snapshot(paint.copyOf(), textSizePx, typefaceId, fontStyle, fontWeight))
+        stack.addLast(Snapshot(paint.copyOf(), textSizePx, typefaceId, fontStyle, fontWeight, fillAndStroke))
     }
 
     /** Pop the last snapshot, restoring all fields (upstream `restorePaint`); no-op if empty. */
@@ -61,6 +69,7 @@ class PlayerPaintState {
         typefaceId = s.typefaceId
         fontStyle = s.fontStyle
         fontWeight = s.fontWeight
+        fillAndStroke = s.fillAndStroke
     }
 
     /** Reset to defaults (upstream `reset`). */
@@ -70,10 +79,12 @@ class PlayerPaintState {
         typefaceId = DEFAULT_TYPEFACE_ID
         fontStyle = DEFAULT_FONT_STYLE
         fontWeight = DEFAULT_FONT_WEIGHT
+        fillAndStroke = DEFAULT_FILL_AND_STROKE
     }
 
     private class Snapshot(
         val paint: Paint, val textSizePx: Float, val typefaceId: Int, val fontStyle: Int, val fontWeight: Int,
+        val fillAndStroke: Boolean,
     )
 
     companion object {
@@ -81,5 +92,6 @@ class PlayerPaintState {
         const val DEFAULT_TYPEFACE_ID: Int = 0
         const val DEFAULT_FONT_STYLE: Int = 0
         const val DEFAULT_FONT_WEIGHT: Int = 0
+        const val DEFAULT_FILL_AND_STROKE: Boolean = false
     }
 }

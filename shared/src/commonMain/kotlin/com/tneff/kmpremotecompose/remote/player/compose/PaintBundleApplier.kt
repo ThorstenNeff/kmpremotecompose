@@ -118,10 +118,11 @@ internal object PaintBundleApplier {
                 STROKE_JOIN -> paint.strokeJoin = strokeJoin(cmd shr 16)
                 STYLE -> {
                     val s = cmd shr 16
-                    // (b) MVP: FILL_AND_STROKE has no CMP equivalent → approximated as Fill (lossy:
-                    // outline dropped). Logged visibly (PO 2026-06-26) so test-2's render sweep can
-                    // trigger the (a) two-pass retrofit if any doc uses style=2 with a visible stroke.
-                    if (s == STYLE_FILL_AND_STROKE) deferred?.add("STYLE_FILL_AND_STROKE")
+                    // REM-94: FILL_AND_STROKE has no single CMP PaintingStyle → flag it so the geometry
+                    // adapter draws a fill pass + a stroke pass (two-pass), matching upstream
+                    // Paint.Style.FILL_AND_STROKE. paint.style carries Fill (the fill-pass default); a
+                    // plain FILL/STROKE clears the flag so a later shape isn't accidentally double-drawn.
+                    state.fillAndStroke = (s == STYLE_FILL_AND_STROKE)
                     paint.style = paintingStyle(s)
                 }
                 ALPHA -> paint.alpha = Float.fromBits(values[i++])
