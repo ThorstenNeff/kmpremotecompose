@@ -89,6 +89,13 @@ kotlin {
             // Generated absolute corpus-root constant (see generateCorpusRoot above).
             kotlin.srcDir(generateCorpusRoot)
         }
+        // REM-128 §3 Triple-Pin: the Compose-DSL byte anchor lives next to the corpus oracle
+        // (a :shared commonTest resource) — :creation-compose is its only test-scope consumer.
+        // Edge points only from :shared.jvmTest → :creation-compose.main (acyclic; :creation-compose
+        // doesn't depend on :shared.test).
+        jvmTest.dependencies {
+            implementation(projects.creationCompose)
+        }
     }
 }
 

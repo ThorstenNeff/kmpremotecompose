@@ -88,4 +88,13 @@ class RemoteComposeWriter(
 
     /** The encoded `.rc` document bytes. */
     fun encodeToByteArray(): ByteArray = buffer.toByteArray()
+
+    /**
+     * REM-128 W1 (Compose-creation clean-composition guard, additive byte-neutral). Returns the
+     * current buffer high-water mark without materialising or copying bytes. The Compose-capture
+     * orchestrator records this immediately on entering the `document{}` content lambda and rechecks
+     * it after Phase A (composition) so that Phase A having written ops fails loudly instead of
+     * silently corrupting render-walk order.
+     */
+    fun currentBufferSize(): Int = buffer.size
 }
