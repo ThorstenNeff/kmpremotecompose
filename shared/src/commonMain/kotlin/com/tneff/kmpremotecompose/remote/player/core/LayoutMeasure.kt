@@ -31,8 +31,10 @@ import com.tneff.kmpremotecompose.remote.core.operations.layout.DimensionType
 import com.tneff.kmpremotecompose.remote.core.operations.layout.HeightModifier
 import com.tneff.kmpremotecompose.remote.core.operations.layout.LayoutContent
 import com.tneff.kmpremotecompose.remote.core.operations.layout.PaddingModifier
+import com.tneff.kmpremotecompose.remote.core.operations.layout.ClipRectModifier
 import com.tneff.kmpremotecompose.remote.core.operations.layout.RootLayout
 import com.tneff.kmpremotecompose.remote.core.operations.layout.RowLayout
+import com.tneff.kmpremotecompose.remote.core.operations.layout.ScrollModifier
 import com.tneff.kmpremotecompose.remote.core.operations.layout.WidthModifier
 import com.tneff.kmpremotecompose.remote.wire.WireTypes
 
@@ -57,6 +59,22 @@ import com.tneff.kmpremotecompose.remote.wire.WireTypes
  */
 internal object LayoutMeasure {
 
+    /**
+     * REM-108 S3b — a measured scroll viewport the paint walk brackets: clip the content holder
+     * [contentHolderId] to the absolute viewport `[clipL,clipT,clipR,clipB]` and translate it by the
+     * live [scroll] offset along [scroll]`.direction`. Measure-only (no wire/byte change). The clip is
+     * applied only when the component carries a `ClipRectModifier` (upstream's viewport clip source).
+     */
+    internal class ScrollBracket(
+        val contentHolderId: Int,
+        val clipL: Float,
+        val clipT: Float,
+        val clipR: Float,
+        val clipB: Float,
+        val clip: Boolean,
+        val scroll: ScrollModifier,
+    )
+
     private const val MAX_DEPTH = 32 // bounded-depth guard; real docs are 2–4 deep
 
     // ComponentValue.type wire constants (upstream ComponentValue): which dimension a value exposes.
@@ -79,7 +97,7 @@ internal object LayoutMeasure {
     private const val SPACE_EVENLY = 7
     private const val SPACE_AROUND = 8
 
-    private enum class Kind { ROOT, BOX, ROW, COLUMN, CONTENT, COMPONENT, TEXT }
+    private enum class Kind { ROOT, BOX, ROW, COLUMN, CONTENT, COMPONENT, TEXT, MODIFIER }
 
     private class Node(val componentId: Int, val kind: Kind, val startW: Float, val startH: Float) {
         var width: WidthModifier? = null
@@ -91,6 +109,9 @@ internal object LayoutMeasure {
         var textTop = 0f
         var background: BackgroundModifier? = null
         var border: BorderModifier? = null
+        // REM-108 S3b: a component made scrollable (ScrollModifier) + whether it clips its viewport.
+        var scroll: ScrollModifier? = null
+        var hasClip = false
         var horizontalPositioning = 0
         var verticalPositioning = 0
         var spacedBy = 0f
@@ -108,11 +129,16 @@ internal object LayoutMeasure {
      * load each `ComponentValue.valueId` (width/height/position) into the [context] float store. Safe
      * no-op for documents without a layout tree.
      */
-    fun measure(document: RemoteComposeDocument, surfaceW: Float, surfaceH: Float, context: RemoteContext) {
+    fun measure(
+        document: RemoteComposeDocument,
+        surfaceW: Float,
+        surfaceH: Float,
+        context: RemoteContext,
+    ): Map<Int, ScrollBracket> {
         // REM-37 c_text: pre-load DATA_TEXT so CoreText intrinsic measure (getTextBounds) sees the text —
         // mirrors upstream, which loads TextData at inflate (into mTextData) before any layout measure.
         for (op in document.operations) if (op is TextData) context.putText(op.id, op.text)
-        val root = buildTree(document) ?: return
+        val root = buildTree(document) ?: return emptyMap()
         val byId = HashMap<Int, Node>()
         index(root, byId)
 
@@ -138,6 +164,40 @@ internal object LayoutMeasure {
                 context.loadFloat(op.valueId, value)
             }
         }
+
+        // REM-108 S3b — scroll bounds publish + bracket map. For each scrollable component: contentDimension
+        // = the children's aggregate extent along the scroll axis; viewport = the component's own measured
+        // size along that axis; maxScroll = max(0, content − viewport). `applyScrollBounds` runs HERE (in the
+        // measure phase, BEFORE the eval Phase-A) so the paired TouchExpression clamps against a fresh max
+        // (TechSpec §5 sequencing — in delta-mode docs `max` is the TE's own clamp id). The returned brackets
+        // are applied by the paint walk (clip viewport + translate by the live offset). Empty ⇒ no scroll doc.
+        return collectScrollBrackets(root, context)
+    }
+
+    /** Walk the tree, publish scroll bounds, and build the content-holder → [ScrollBracket] map. */
+    private fun collectScrollBrackets(root: Node, context: RemoteContext): Map<Int, ScrollBracket> {
+        val out = HashMap<Int, ScrollBracket>()
+        fun visit(node: Node) {
+            val scroll = node.scroll
+            if (scroll != null) {
+                val horizontal = scroll.direction == ScrollModifier.HORIZONTAL
+                val contentDim = aggregate(node, horizontal)
+                val viewport = if (horizontal) node.w else node.h
+                val maxScroll = (contentDim - viewport).coerceAtLeast(0f)
+                // §5: publish max/notchMax BEFORE Phase-A TE eval (we are in the measure phase).
+                scroll.applyScrollBounds(context, maxScroll, contentDim)
+                // Bracket the component's content holder (the transparent CONTENT child); fall back to the
+                // component itself so a holder-less scroll component still clips+translates.
+                val holderId = node.children.firstOrNull { it.kind == Kind.CONTENT }?.componentId
+                    ?: node.componentId
+                out[holderId] = ScrollBracket(
+                    holderId, node.x, node.y, node.x + node.w, node.y + node.h, node.hasClip, scroll,
+                )
+            }
+            for (c in node.children) visit(c)
+        }
+        visit(root)
+        return out
     }
 
     /** Walk the flat op list into a shallow tree: layout/content ops push, [ContainerEnd] pops. */
@@ -176,6 +236,15 @@ internal object LayoutMeasure {
                 is PaddingModifier -> stack.lastOrNull()?.let { it.padding = op }
                 is BackgroundModifier -> stack.lastOrNull()?.let { if (it.background == null) it.background = op }
                 is BorderModifier -> stack.lastOrNull()?.let { if (it.border == null) it.border = op }
+                is ClipRectModifier -> stack.lastOrNull()?.let { it.hasClip = true }
+                // REM-108 S3b: ScrollModifier (upstream `ScrollModifierOperation extends ListActionsOperation`)
+                // is a CONTAINER wrapping its paired TouchExpression — it carries its own CONTAINER_END. Attach
+                // it to the current component, then push a stack-only sentinel (NOT added to children) so that
+                // trailing CONTAINER_END pops the sentinel instead of prematurely closing the component.
+                is ScrollModifier -> {
+                    stack.lastOrNull()?.let { if (it.scroll == null) it.scroll = op }
+                    stack.addLast(Node(0, Kind.MODIFIER, Float.NaN, Float.NaN))
+                }
                 is ContainerEnd -> if (stack.isNotEmpty()) stack.removeLast()
                 else -> {}
             }
