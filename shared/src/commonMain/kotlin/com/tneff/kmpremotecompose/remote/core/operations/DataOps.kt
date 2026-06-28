@@ -92,5 +92,7 @@ object DataOps {
         Operations.registerInBase(Operations.ATTRIBUTE_TEXT, TextAttribute)
         Operations.registerInBase(Operations.ATTRIBUTE_TIME, TimeAttribute)
         Operations.registerInLayer(Operations.Layer.V7_BASE, Operations.MATRIX_VECTOR_MATH, MatrixVectorMath)
+        // REM-115 G4 — MATRIX_CONSTANT is a V7_BASE always-on (matching MATRIX_EXPRESSION / _VECTOR_MATH).
+        Operations.registerInLayer(Operations.Layer.V7_BASE, Operations.MATRIX_CONSTANT, MatrixConstant)
     }
 }
