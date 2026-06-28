@@ -16,10 +16,17 @@
 package com.tneff.kmpremotecompose.remote.player.core
 
 import androidx.compose.ui.graphics.ImageBitmap
+import androidx.compose.ui.graphics.toComposeImageBitmap
+import org.jetbrains.skia.Image
 
 /**
- * REM-55: the JVM source set exists only for the headless conformance/unit harness — it is not a product
- * render target (Android + iOS only, PROJECT_CONTEXT §1). Inline decode is unsupported here (returns
- * null → the caller renders empty, fail-soft); real decoding lives in the android/ios actuals.
+ * REM-75 (Epic B Desktop): Compose-Desktop is Skiko like iOS, so this is the 1:1 iOS impl — decode the
+ * encoded bytes via Skia [Image.makeFromEncoded], bound the dimensions (fail-closed vs hostile sizes) and
+ * convert to a Compose [ImageBitmap]. runCatching keeps it fail-soft (corrupt bytes → null → empty render).
+ * (Headless jvmTest never reaches this path — it does byte round-trip, not render — so the Skiko native
+ * load only happens in a real Desktop render.)
  */
-actual fun decodeImageBitmap(bytes: ByteArray, type: Int, maxDim: Int): ImageBitmap? = null
+actual fun decodeImageBitmap(bytes: ByteArray, type: Int, maxDim: Int): ImageBitmap? = runCatching {
+    val image = Image.makeFromEncoded(bytes)
+    if (image.width in 1..maxDim && image.height in 1..maxDim) image.toComposeImageBitmap() else null
+}.getOrNull()

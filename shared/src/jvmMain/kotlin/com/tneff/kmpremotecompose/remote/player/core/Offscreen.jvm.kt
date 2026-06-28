@@ -6,16 +6,22 @@ package com.tneff.kmpremotecompose.remote.player.core
 
 import androidx.compose.ui.graphics.Canvas
 import androidx.compose.ui.graphics.ImageBitmap
+import androidx.compose.ui.graphics.asComposeCanvas
+import androidx.compose.ui.graphics.toComposeImageBitmap
+import org.jetbrains.skia.ColorAlphaType
+import org.jetbrains.skia.ColorType
+import org.jetbrains.skia.ImageInfo
+import org.jetbrains.skia.Surface
 
 /**
- * jvm is the headless conformance harness only — bitmap docs are not rendered there (Skiko can't decode
- * bitmaps in headless), so this path is never exercised. Direct raster keeps parity with Android and
- * never needs the Skia flush.
+ * REM-75 (Epic B Desktop): Compose-Desktop is Skiko like iOS → 1:1 the iOS impl (REM-60). Draw into a Skia
+ * raster Surface whose snapshot() = makeImageSnapshot() forces the flush before the tiled DRAW_BITMAP_SCALED
+ * reads (a bare Canvas(ImageBitmap) leaves the writes unflushed on Skiko). N32/PREMUL keeps the alpha channel.
  */
 private class JvmOffscreen(width: Int, height: Int) : Offscreen {
-    private val bitmap = ImageBitmap(width, height)
-    override val canvas: Canvas = Canvas(bitmap)
-    override fun snapshot(): ImageBitmap = bitmap
+    private val surface = Surface.makeRaster(ImageInfo(width, height, ColorType.N32, ColorAlphaType.PREMUL))
+    override val canvas: Canvas = surface.canvas.asComposeCanvas()
+    override fun snapshot(): ImageBitmap = surface.makeImageSnapshot().toComposeImageBitmap()
 }
 
 internal actual fun createOffscreen(width: Int, height: Int): Offscreen =
