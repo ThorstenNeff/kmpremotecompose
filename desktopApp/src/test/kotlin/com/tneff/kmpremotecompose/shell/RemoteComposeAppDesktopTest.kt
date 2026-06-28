@@ -6,11 +6,12 @@ package com.tneff.kmpremotecompose.shell
 
 import androidx.compose.ui.semantics.SemanticsProperties
 import androidx.compose.ui.semantics.getOrNull
+import androidx.compose.ui.test.ComposeUiTest
 import androidx.compose.ui.test.ExperimentalTestApi
 import androidx.compose.ui.test.assertTextEquals
 import androidx.compose.ui.test.onAllNodesWithTag
 import androidx.compose.ui.test.onNodeWithTag
-import androidx.compose.ui.test.runComposeUiTest
+import androidx.compose.ui.test.v2.runComposeUiTest
 import com.tneff.kmpremotecompose.RcRouter
 import com.tneff.kmpremotecompose.RemoteComposeApp
 import org.junit.Assert.assertTrue
@@ -109,7 +110,7 @@ class RemoteComposeAppDesktopTest {
      * the Android Maestro flow's `^[1-9][0-9]*$` regex check (smoke-defense vs blank-but-committed
      * frames where rc-rendered would otherwise false-green).
      */
-    private fun androidx.compose.ui.test.ComposeUiTest.assertDrawCountAtLeastOne() {
+    private fun ComposeUiTest.assertDrawCountAtLeastOne() {
         val node = onNodeWithTag("rc-draw-count").fetchSemanticsNode("rc-draw-count not found")
         val text = node.config.getOrNull(SemanticsProperties.Text)
             ?.joinToString("") { ann -> ann.text }
