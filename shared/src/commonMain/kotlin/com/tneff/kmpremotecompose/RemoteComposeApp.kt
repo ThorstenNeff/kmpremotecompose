@@ -41,6 +41,7 @@ import com.tneff.kmpremotecompose.remote.player.compose.GeometryPaintDelegate
 import com.tneff.kmpremotecompose.remote.player.core.RemoteComposePlayer
 import com.tneff.kmpremotecompose.remote.player.core.renderOpaque
 import com.tneff.kmpremotecompose.remote.player.core.RemoteContext
+import com.tneff.kmpremotecompose.remote.player.core.systemAccentPalette
 
 /**
  * REM-8 — the "touchable app" render vehicle. Loads one bundled `.rc`, decodes it through the Layer-1
@@ -120,6 +121,11 @@ fun RemoteComposeApp(loadRc: (String) -> ByteArray, modifier: Modifier = Modifie
     // The CMP font resolver for the text half (REM-37 c_text / all text docs): without it the text
     // renderer is null and getTextBounds/drawTextRun no-op → text never renders. Supplied from composition.
     val fontResolver = LocalFontFamilyResolver.current
+    // REM-68: the host system-accent / Material-You palette (name → ARGB), resolved once per composition
+    // (Android reads real device colors; iOS/desktop mirror the baseline). Seeded into each render's
+    // context below so a `NamedVariable`-bound theme color (e.g. color.system_accent1_100) overrides the
+    // doc's debug `ColorConstant` fallback (REM-61/67) — clock/digital_clock1/color_table get real tones.
+    val themePalette = remember { systemAccentPalette() }
     val d = doc
     // REM-51: size the canvas in EXACT pixels (the doc dims are px). The old `(d.width/density).dp` round-trips
     // px→dp→px; at density 3 (iOS) the dp→px reconversion rounds down 1–2px (e.g. 400→399) → a ±2px A↔iOS
@@ -135,7 +141,14 @@ fun RemoteComposeApp(loadRc: (String) -> ByteArray, modifier: Modifier = Modifie
                 Canvas(Modifier.pxSize(pxW, pxH)) {
                     val canvas = drawContext.canvas
                     try {
-                        val ctx = RemoteContext().also { it.setDensity(density); it.animationEnabled = live }
+                        val ctx = RemoteContext().also {
+                            it.setDensity(density)
+                            it.animationEnabled = live
+                            // REM-68 wiring: seed the host theme palette BEFORE paint (Phase A). Stored as
+                            // pending name→ARGB overrides; as NamedVariable.apply registers each name during
+                            // Phase A, the override binds to its colorId and wins over the ColorConstant fallback.
+                            it.setThemePaletteByName(themePalette)
+                        }
                         // REM-56: render through an opaque surface (iOS only — Android renders direct) so a
                         // SRC_OUT/CLEAR draw composites to black, matching upstream's opaque Android View
                         // canvas. clearColor = white (the app bg behind the canvas). Surface-only; the doc
