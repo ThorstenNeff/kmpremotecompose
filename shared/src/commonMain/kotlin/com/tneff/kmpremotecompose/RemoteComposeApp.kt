@@ -32,7 +32,6 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.layout.layout
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.platform.LocalFontFamilyResolver
-import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.unit.Constraints
 import com.tneff.kmpremotecompose.remote.core.document.DocumentReader
@@ -47,8 +46,6 @@ import com.tneff.kmpremotecompose.remote.player.core.RemoteContext
 import com.tneff.kmpremotecompose.remote.player.core.SensorSource
 import com.tneff.kmpremotecompose.remote.player.core.systemAccentPalette
 import kmpremotecompose.shared.generated.resources.Res
-import kmpremotecompose.shared.generated.resources.rc_symbol_fallback
-import org.jetbrains.compose.resources.Font
 
 /**
  * REM-8 — the "touchable app" render vehicle. Loads one bundled `.rc`, decodes it through the Layer-1
@@ -153,11 +150,12 @@ fun RemoteComposeApp(
     // The CMP font resolver for the text half (REM-37 c_text / all text docs): without it the text
     // renderer is null and getTextBounds/drawTextRun no-op → text never renders. Supplied from composition.
     val fontResolver = LocalFontFamilyResolver.current
-    // REM-110: bundled symbol-fallback family (♥/❤/⚡/⬩/▲/↑/↓). The CMP default web font has Latin but
-    // not these Misc-Symbols/Dingbats/Geometric glyphs → tofu on wasm (Android/iOS fall back via the
-    // system font). Built here at composition scope (Font() is @Composable; the render lambda below is
-    // not) and handed to the text half; the renderer applies it per-run only to symbol-carrying text.
-    val symbolFallback = FontFamily(Font(Res.font.rc_symbol_fallback))
+    // REM-110: bundled symbol-fallback family (♥/❤/⚡/⬩/▲/↑/↓), provided ONLY on wasm (the bug is web-only;
+    // Android/iOS/Desktop render these via the system font → [symbolFallbackFamily] returns null there, so
+    // their goldens don't shift). Resolved at composition scope (the resource Font is @Composable; the
+    // render lambda below is not) and handed to the text half; the renderer applies it per-run only to
+    // symbol-carrying text.
+    val symbolFallback = symbolFallbackFamily()
     // REM-68: the host system-accent / Material-You palette (name → ARGB), resolved once per composition
     // (Android reads real device colors; iOS/desktop mirror the baseline). Seeded into each render's
     // context below so a `NamedVariable`-bound theme color (e.g. color.system_accent1_100) overrides the
