@@ -28,14 +28,23 @@ import kotlin.test.assertEquals
 import kotlin.test.assertTrue
 
 /**
- * REM-115 (G4 Matrix-Triplet) — Triple-Pin byte-anchors per the REM-96 standard:
+ * REM-115 (G4 Matrix-Triplet) — byte-anchors per the REM-96 standard:
  * DSL output ↔ hand-computed expected ByteArray ↔ real corpus fixture region (where present).
  *
  * The three opcodes (all V7_BASE_EXTRA — always-on at apiLevel ≥ 7, NOT in V6):
- *  - `MATRIX_CONSTANT` (186 / 0xBA): opcode + int matrixId + int type + int count + count×float
- *  - `MATRIX_EXPRESSION` (187 / 0xBB): same wire shape as MATRIX_CONSTANT (different opcode)
+ *  - `MATRIX_CONSTANT`    (186 / 0xBA): opcode + int matrixId + int type + int count + count×float —
+ *    **double-pin** (corpus-ABSENT per the order-independent visibility-check below).
+ *  - `MATRIX_EXPRESSION`  (187 / 0xBB): same wire shape as MATRIX_CONSTANT — **triple-pin** (corpus-PRESENT).
  *  - `MATRIX_VECTOR_MATH` (188 / 0xBC): opcode + short type + int matrixId + int outCount +
- *    outCount×int + int inCount + inCount×float
+ *    outCount×int + int inCount + inCount×float — **triple-pin** (corpus-PRESENT in cube3d.rc,
+ *    confirmed by assist + the REM-113-followup-redo cube3d-leg test below).
+ *
+ * **Visible-skip (REM-113-followup-redo, assist 2026-06-28).** The visibility-check is now
+ * **order-INDEPENDENT** — it does its own corpus inflate scan (no shared mutable state with the
+ * triple/double-pin tests, no empty-escape) and includes a **control-positive**
+ * (MATRIX_VECTOR_MATH must be found) so a broken inflate path fails the gate instead of
+ * silently passing. The pre-fix pattern (companion mutable set + alphabetical-order assumption +
+ * empty-escape) was the same vacuous-green trap as the AdvancedDrawShapesTest pre-fix.
  *
  * Profile-gated: emit only under non-baseline (apiLevel ≥ 7). All tests use a direct
  * `RemoteComposeContext` constructed with `PROFILE_ANDROIDX | PROFILE_EXPERIMENTAL` + apiLevel 7.
@@ -306,7 +315,11 @@ class MatrixTripletTest {
     // ─── Triple-Pin against corpus fixtures (graceful skip if absent) ─────────
 
     @Test
-    fun matrixConstant_matchesCorpusFixtureRegion_tripleAnchor() {
+    fun matrixConstant_matchesCorpusFixtureRegion_doubleAnchor_visibleSkip() {
+        // Double-pin: MATRIX_CONSTANT (186) is corpus-ABSENT per the order-independent
+        // visibility-check below. This test stays as a marker — a future corpus extension
+        // that adds a MATRIX_CONSTANT fixture activates the byte-match branch (triple-pin),
+        // and the visibility-check will fail loudly to flag the promotion.
         runCorpusFixtureMatch(
             opcode = Operations.MATRIX_CONSTANT,
             minOpSize = 13, // opcode + 3 ints + 0 floats — minimum if values is empty
@@ -355,17 +368,59 @@ class MatrixTripletTest {
         )
     }
 
+    @Test
+    fun matrixVectorMath_matchesCorpusFixtureRegion_tripleAnchor() {
+        // REM-113-followup-redo (REM-115 leg, assist 2026-06-28): assist's full-inflate scan
+        // found MATRIX_VECTOR_MATH(188) corpus-present in cube3d.rc. Real triple-pin against
+        // the corpus operand-set. Wire: opcode(1) + short type(2) + int matrixId(4) +
+        // int outCount(4) + outCount×int(4) + int inCount(4) + inCount×float(4).
+        runCorpusFixtureMatch(
+            opcode = Operations.MATRIX_VECTOR_MATH,
+            minOpSize = 19, // opcode + short + 3 ints + 1 int + 1 float — single in/out lower bound
+            decodeAndRebuild = { _, fullBytes ->
+                val type = fullBytes.readShortBE(1)
+                val matrixId = fullBytes.readIntBE(3)
+                val outCount = fullBytes.readIntBE(7)
+                if (outCount !in 1..4) return@runCorpusFixtureMatch null
+                val outputs = IntArray(outCount) { i -> fullBytes.readIntBE(11 + i * 4) }
+                val inCountOff = 11 + outCount * 4
+                if (inCountOff + 4 > fullBytes.size) return@runCorpusFixtureMatch null
+                val inCount = fullBytes.readIntBE(inCountOff)
+                if (inCount !in 1..4) return@runCorpusFixtureMatch null
+                val inputsOff = inCountOff + 4
+                val opByteSize = inputsOff + inCount * 4
+                if (opByteSize > fullBytes.size) return@runCorpusFixtureMatch null
+                val inputs = FloatArray(inCount) { i -> fullBytes.readFloatBE(inputsOff + i * 4) }
+                val region = fullBytes.copyOfRange(0, opByteSize)
+                // Rebuild via DSL: pin matrix id-pool, allocate the matrix, then pin the
+                // output ids to the corpus values (region-0 plain allocator, sequential).
+                val ctx = nonBaselineContext()
+                ctx.ids.setNextId(matrixId)
+                val matrixRef = ctx.matrixConstant(FloatArray(16))
+                ctx.ids.setNextId(outputs[0])
+                val emittedOutputs = ctx.matrixVectorMath(matrixRef, inputs, outputCount = outCount, type = type)
+                // If id-pool drift means the outputs don't match, this is a real divergence —
+                // fall through with null so runCorpusFixtureMatch tries the next match.
+                for (i in outputs.indices) {
+                    if (emittedOutputs[i] != outputs[i]) return@runCorpusFixtureMatch null
+                }
+                val dslBytes = ctx.encodeToByteArray()
+                val dslOff = findOpcode(dslBytes, Operations.MATRIX_VECTOR_MATH)
+                val dslRegion = dslBytes.copyOfRange(dslOff, dslOff + opByteSize)
+                region to dslRegion
+            },
+        )
+    }
+
     /**
      * Scan all corpus fixtures for one containing a DocumentReader-validated instance of [opcode];
      * call [decodeAndRebuild] with the matching fixture-region (sized via fixture's own length
      * fields) + full byte slice; assertContentEquals the (fixture, DSL) pair.
      *
-     * **Visible-skip (REM-113-followup, assist 2026-06-28).** If no fixture in the corpus contains
-     * a decodable instance of the op, this test degrades to the DSL ↔ expected double-pin (the
-     * non-corpus tests above) and **records the degradation in [opsWithoutFixtureCoverage]** so a
-     * companion test fails loudly when an op slips its triple-pin → double-pin without notice.
-     * The pre-fix pattern was a silent `?: return` that maskied missing fixture coverage —
-     * exactly the regression assist flagged on REM-113's DRAW_TEXT_ON_CIRCLE / DRAW_BITMAP_INT.
+     * When no fixture in the corpus contains a decodable instance of the op, this test silently
+     * no-ops (the DSL ↔ expected double-pin from the non-corpus tests above still runs). The
+     * loud gate for absence-drift is [matrixTriplet_fixtureCoverage_visibilityCheck] — it does
+     * its own order-independent corpus scan with a control-positive.
      */
     private fun runCorpusFixtureMatch(
         opcode: Int,
@@ -398,45 +453,53 @@ class MatrixTripletTest {
                 from = off + 1
             }
         }
-        // No fixture in the corpus contains a decodable instance of this opcode.
-        opsWithoutFixtureCoverage.add(opcode)
     }
 
     @Test
     fun matrixTriplet_fixtureCoverage_visibilityCheck() {
-        // Runs LAST in alphabetical order (Junit default) — by the time this test runs, the two
-        // triple-pin tests above have populated [opsWithoutFixtureCoverage] for any opcode that
-        // degraded to double-pin. We pin the EXPECTED degradation set explicitly: MatrixConstant
-        // + MatrixExpression have no corpus coverage as of REM-115 (assist-confirmed audit).
-        // A future corpus extension that DOES include these ops will flip the set to empty —
-        // delete this assertion at that point.
+        // Order-INDEPENDENT scan: this test does its own corpus inflation; no shared mutable
+        // state with the other tests, no empty-escape, no alphabetical-order assumption.
         //
-        // The two triple-pin tests must have run first; if this test is somehow run in isolation
-        // the set is empty (no degradation observed) — which would silently pass even though no
-        // corpus check happened. So we also require the corpus-scanning pre-conditions ran.
-        if (opsWithoutFixtureCoverage.isEmpty()) {
-            // Triple-pin tests didn't run yet (unusual test ordering); skip the degradation
-            // assertion — corpus coverage is verified by the triple-pin tests themselves.
-            return
-        }
-        // Empirically (REM-115 visible-skip run 2026-06-28): only MATRIX_CONSTANT degraded —
-        // MATRIX_EXPRESSION DID appear in a corpus fixture (the audit's "no matrix fixtures"
-        // recon was wrong; the visible-skip pattern caught the discrepancy). The expected set
-        // pins the current state; a future corpus extension that adds MATRIX_CONSTANT will flip
-        // the set to empty — update or delete at that point.
-        val expectedDoublePinSet = setOf(
+        // Pins the EXPECTED corpus-absence set (REM-113-followup-redo 2026-06-28):
+        //  - MATRIX_CONSTANT     (186): corpus-ABSENT → double-pin
+        //  - MATRIX_EXPRESSION   (187): corpus-PRESENT → triple-pin
+        //  - MATRIX_VECTOR_MATH  (188): corpus-PRESENT in cube3d.rc → triple-pin
+        //                                (used here as CONTROL-POSITIVE)
+        //
+        // Control-positive matters: if DocumentReader.inflate ever silently fails for the whole
+        // corpus, the scan would report all 3 ops absent — only the control-positive distinguishes
+        // "corpus genuinely lacks the op" from "scan is broken".
+        val checked = setOf(
             Operations.MATRIX_CONSTANT,
+            Operations.MATRIX_EXPRESSION,
+            Operations.MATRIX_VECTOR_MATH,
         )
+        val present = mutableSetOf<Int>()
+        for (name in RcCorpus.corpusNames()) {
+            val bytes = try {
+                RcCorpus.readFixture("corpus/$name")
+            } catch (_: Throwable) { continue }
+            val decoded = try {
+                DocumentReader.inflate(bytes).operations
+            } catch (_: Throwable) { continue }
+            for (op in decoded) if (op.opcode in checked) present.add(op.opcode)
+            if (present.size == checked.size) break
+        }
+        assertTrue(
+            Operations.MATRIX_VECTOR_MATH in present,
+            "Control-positive failed: MATRIX_VECTOR_MATH (188) not found in any corpus fixture " +
+                "via DocumentReader.inflate. cube3d.rc should contain it — either the inflate " +
+                "path regressed, or the corpus has changed substantially.",
+        )
+        val expectedAbsent = setOf(Operations.MATRIX_CONSTANT)
+        val actualAbsent = checked - present
         assertEquals(
-            expectedDoublePinSet, opsWithoutFixtureCoverage,
+            expectedAbsent, actualAbsent,
             "REM-115 corpus-coverage snapshot — these ops are intentionally double-pinned " +
-                "(no corpus fixture present in rc-corpus/corpus/). A surprise here = the corpus " +
-                "changed or the audit was wrong. Update the set OR add the fixtures.",
+                "(no corpus fixture in rc-corpus/corpus/). A surprise here = the corpus " +
+                "changed or the audit was wrong. Update the expectedAbsent set AND the " +
+                "class-doc + double-pin test comments to promote (absent → present) or " +
+                "demote (present → absent) the affected op.",
         )
-    }
-
-    companion object {
-        /** Opcodes whose triple-pin degraded to double-pin (no corpus fixture found). */
-        private val opsWithoutFixtureCoverage: MutableSet<Int> = mutableSetOf()
     }
 }

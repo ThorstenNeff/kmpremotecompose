@@ -28,18 +28,33 @@ import kotlin.test.assertTrue
 import kotlin.test.fail
 
 /**
- * REM-113 (G2 Advanced-Draw-Shapes) — Triple-Pin byte-anchors per the REM-96 standard:
+ * REM-113 (G2 Advanced-Draw-Shapes) — byte-anchors per the REM-96 standard:
  * DSL output ↔ hand-computed expected ByteArray ↔ real corpus fixture region.
  *
  * The three opcodes covered are:
- *  - `DRAW_ROUND_RECT` (51 / 0x33): 25 bytes, 6 floats (l/t/r/b/rx/ry)
- *  - `DRAW_TEXT_ON_CIRCLE` (57 / 0x39): 27 bytes, int textId + 5 floats + 2 enum bytes
- *  - `DRAW_BITMAP_INT` (66 / 0x42): 41 bytes, 10 ints (imageId + 8 coords + cdId)
+ *  - `DRAW_ROUND_RECT` (51 / 0x33): 25 bytes, 6 floats (l/t/r/b/rx/ry) — **triple-pin** (corpus coverage)
+ *  - `DRAW_TEXT_ON_CIRCLE` (57 / 0x39): 27 bytes, int textId + 5 floats + 2 enum bytes —
+ *    **double-pin** (corpus-ABSENT per assist's authoritative 173-doc inflate scan,
+ *    REM-113-followup-redo 2026-06-28; the hand-computed + DSL round-trip pin still runs,
+ *    the fixture-anchor degrades to visible-skip). My earlier "audit was wrong" claim was
+ *    itself wrong — the prior visible-skip test was vacuous-green because of `?: return`
+ *    + alphabetical-order assumption + cross-test mutable state. Lesson re-learned: trust
+ *    the full-inflate probe with a control-positive, not a unit-test status indicator.
+ *  - `DRAW_BITMAP_INT` (66 / 0x42): 41 bytes, 10 ints (imageId + 8 coords + cdId) —
+ *    **double-pin** (corpus-ABSENT; same harness as op-57)
  *
  * Strategy for "real fixture" pin: scan corpus fixtures for the op-opcode byte, extract the
  * known-size op-region, decode the operands, build a minimal DSL document with those decoded
  * operands, then assertContentEquals the DSL's op-region against the fixture's op-region. This
  * proves the DSL can reproduce ANY operand-set the corpus happens to use.
+ *
+ * **Visible-skip (REM-113-followup-redo, assist 2026-06-28).** The visibility-check is now
+ * **order-INDEPENDENT** — it does its own corpus inflate scan (no shared mutable state with the
+ * triple/double-pin tests, no empty-escape) and includes a **control-positive** (op-51 must be
+ * found) so a broken inflate path fails the gate instead of silently passing. The corpus tests
+ * for op-57 + op-66 keep `findCorpusFixtureWithOp(...) ?: return` as a soft fail (a future
+ * corpus extension that adds either op activates the byte-match branch) — the visibility-check
+ * is the loud gate that pins the expected corpus-absence set.
  *
  * Source-grounded against `./androidx/.../operations/{DrawRoundRect,DrawTextOnCircle,DrawBitmapInt}.java`.
  */
@@ -201,7 +216,13 @@ class AdvancedDrawShapesTest {
     }
 
     @Test
-    fun drawTextOnCircle_matchesCorpusFixtureRegion_tripleAnchor() {
+    fun drawTextOnCircle_matchesCorpusFixtureRegion_doubleAnchor_visibleSkip() {
+        // Double-pin: op-57 DRAW_TEXT_ON_CIRCLE is corpus-ABSENT per assist's authoritative
+        // 173-doc inflate scan (REM-113-followup-redo). This test stays as a marker — if the
+        // corpus ever adds a DRAW_TEXT_ON_CIRCLE fixture, the lookup returns non-null and the
+        // byte-match branch activates (triple-pin). The visibility-check test below is the
+        // loud gate: it pins op-57 in the expected corpus-absence set, so a corpus shake-out
+        // that adds op-57 will fail loudly and force this comment to be updated.
         val fixture = findCorpusFixtureWithOp(Operations.DRAW_TEXT_ON_CIRCLE, opSize = 27)
             ?: return
         val (bytes, opOffset) = fixture
@@ -289,7 +310,10 @@ class AdvancedDrawShapesTest {
     }
 
     @Test
-    fun drawBitmapInt_matchesCorpusFixtureRegion_tripleAnchor() {
+    fun drawBitmapInt_matchesCorpusFixtureRegion_doubleAnchor_visibleSkip() {
+        // Double-pin: op-66 DRAW_BITMAP_INT is corpus-ABSENT per assist's authoritative
+        // 173-doc inflate scan. Same harness as drawTextOnCircle_matches... above; the
+        // visibility-check below pins op-66 in the expected corpus-absence set.
         val fixture = findCorpusFixtureWithOp(Operations.DRAW_BITMAP_INT, opSize = 41)
             ?: return
         val (bytes, opOffset) = fixture
@@ -338,12 +362,14 @@ class AdvancedDrawShapesTest {
     /**
      * Scan all corpus fixtures (`corpus/` subdir) for a byte at value [opcode]. Validates the
      * match by decoding the candidate fixture and checking that an op of that opcode actually
-     * exists at the matched offset (filters out coincidental opcode-byte matches embedded in
-     * other ops' operand bytes).
+     * exists in the decoded op stream (filters out coincidental opcode-byte matches embedded
+     * in other ops' operand bytes).
      *
      * Returns `(fixtureBytes, opcodeByteOffset)` of the first valid match across the corpus,
-     * or `null` if no fixture contains a decodable instance of the op (in which case the
-     * Triple-Pin fixture test gracefully no-ops — the hand-computed + DSL pin still runs).
+     * or `null` if no fixture contains a decodable instance of the op. The caller decides
+     * whether `null` is acceptable (double-pin via `?: return`) or a hard fail — the loud
+     * gate is [advancedDrawShapes_fixtureCoverage_visibilityCheck], which does its own
+     * order-independent corpus scan.
      */
     private fun findCorpusFixtureWithOp(opcode: Int, opSize: Int): Pair<ByteArray, Int>? {
         val opcodeByte = opcode.toByte()
@@ -353,8 +379,8 @@ class AdvancedDrawShapesTest {
             } catch (_: Throwable) {
                 continue
             }
-            // Decode the fixture; any decodable instance of `opcode` confirms a real op at
-            // the candidate offset (uses the same OperationReader that the player uses).
+            // Decode the fixture; any decodable instance of `opcode` confirms a real op
+            // somewhere in the stream (uses the same OperationReader that the player uses).
             val decoded = try {
                 DocumentReader.inflate(bytes).operations
             } catch (_: Throwable) {
@@ -390,4 +416,60 @@ class AdvancedDrawShapesTest {
     )
 
     private fun floatBytesBE(v: Float): ByteArray = intBytesBE(v.toRawBits())
+
+    // ─── visible-skip degradation pin (order-INDEPENDENT, own-scan) ───────────
+
+    @Test
+    fun advancedDrawShapes_fixtureCoverage_visibilityCheck() {
+        // Order-INDEPENDENT scan: this test does its own corpus inflation; no shared mutable
+        // state with the other tests, no empty-escape, no alphabetical-order assumption.
+        //
+        // Pins the EXPECTED corpus-absence set against assist's authoritative 173-doc inflate
+        // probe (REM-113-followup-redo 2026-06-28):
+        //  - DRAW_ROUND_RECT  (51): corpus-PRESENT → triple-pin (used as CONTROL-POSITIVE here)
+        //  - DRAW_TEXT_ON_CIRCLE (57): corpus-ABSENT → double-pin
+        //  - DRAW_BITMAP_INT  (66): corpus-ABSENT → double-pin
+        //
+        // The control-positive matters: if DocumentReader.inflate ever silently fails for the
+        // whole corpus, the scan would report all 3 ops absent — and only the control-positive
+        // gives us a way to distinguish "corpus genuinely lacks the op" from "scan is broken".
+        val checked = setOf(
+            Operations.DRAW_ROUND_RECT,
+            Operations.DRAW_TEXT_ON_CIRCLE,
+            Operations.DRAW_BITMAP_INT,
+        )
+        val present = mutableSetOf<Int>()
+        for (name in RcCorpus.corpusNames()) {
+            val bytes = try {
+                RcCorpus.readFixture("corpus/$name")
+            } catch (_: Throwable) { continue }
+            val decoded = try {
+                DocumentReader.inflate(bytes).operations
+            } catch (_: Throwable) { continue }
+            for (op in decoded) if (op.opcode in checked) present.add(op.opcode)
+            if (present.size == checked.size) break
+        }
+        // Control-positive: op-51 MUST be found. If it's absent here, the inflate path is
+        // broken (or the corpus actually lost DRAW_ROUND_RECT, which would itself be news).
+        assertTrue(
+            Operations.DRAW_ROUND_RECT in present,
+            "Control-positive failed: DRAW_ROUND_RECT (51) not found in any corpus fixture " +
+                "via DocumentReader.inflate. Either the inflate path regressed, or the " +
+                "corpus has changed substantially — investigate before trusting any " +
+                "double-pin assertion here.",
+        )
+        val expectedAbsent = setOf(
+            Operations.DRAW_TEXT_ON_CIRCLE,
+            Operations.DRAW_BITMAP_INT,
+        )
+        val actualAbsent = checked - present
+        assertEquals(
+            expectedAbsent, actualAbsent,
+            "REM-113 corpus-coverage snapshot — these ops are intentionally double-pinned " +
+                "per assist's authoritative scan (no corpus fixture in rc-corpus/corpus/). " +
+                "A surprise here = the corpus changed or the audit was wrong. Update the " +
+                "expectedAbsent set AND the class-doc + double-pin test comments to promote " +
+                "(absent → present) or demote (present → absent) the affected op.",
+        )
+    }
 }
