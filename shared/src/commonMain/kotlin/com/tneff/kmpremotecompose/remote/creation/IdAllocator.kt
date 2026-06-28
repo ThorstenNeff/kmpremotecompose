@@ -22,53 +22,46 @@ package com.tneff.kmpremotecompose.remote.creation
  * wire shape — `addText` / `addColor` / `addPathData` etc. embed the id into the operation that
  * consumes it, and a different id ⇒ different bytes.
  *
- * **Region-aware counters (REM-87, E3 byte-contract).** Mirrors upstream `RemoteComposeState`:
- *  - **Region 0 (plain)** — `nextId()`, starts at [START_ID] (42). Pool for DATA_TEXT / DATA_INT /
- *    DATA_FLOAT / COLOR_CONSTANT / ANIMATED_FLOAT / TEXT_FROM_FLOAT / TEXT_MEASURE / COLOR_EXPRESSIONS
- *    / DATA_PATH / NAMED_VARIABLE / DATA_MAP_LOOKUP-result. Every id-bearing op in §E2/§E3 except
- *    `ID_MAP` itself pulls from here.
+ * **Region-aware counters.** Mirrors upstream `RemoteComposeState`:
+ *  - **Region 0 (plain)** — `nextId()`, starts at [START_ID] (42). Pool for every id-bearing op
+ *    *except* `ID_MAP`: DATA_TEXT / DATA_INT / DATA_FLOAT / COLOR_CONSTANT / ANIMATED_FLOAT /
+ *    TEXT_FROM_FLOAT / TEXT_MEASURE / COLOR_EXPRESSIONS / DATA_PATH / DATA_BITMAP /
+ *    DATA_MAP_LOOKUP-result, and — verified against upstream `RemoteComposeWriter.createNamed-
+ *    Variable` + the `color_table.rc` oracle — also `NAMED_VARIABLE` (upstream binds varIds from
+ *    the plain pool; the `NanMap.TYPE_VARIABLE` region is creation-vestigial, nothing in the
+ *    creation path calls it). REM-92 byte-blocker fix.
  *  - **Region 2 (array/data-map)** — `nextArrayId()`, starts at [START_ARRAY] (`(2 shl 20) + 42 =
  *    2097194`). Pool for `ID_MAP` / array / data-map collections. `cacheData(…, TYPE_ARRAY)` /
  *    `createID(TYPE_ARRAY)` upstream ⇒ `mIdMaps[2]++`. **Independent** of the plain counter:
  *    `nextArrayId()` does not advance `nextId()` and vice versa, exactly as upstream — verified
  *    against `RemoteComposeState.java` + `NanMap.java` (see `docs/TECHSPEC-E3-datamap-id-allocation.md`).
- *  - **Region 1 (var)** — upstream `NanMap.START_VAR = (1 shl 20) + 42` — separate counter for
- *    named variables. Not wired here yet; the 4 E5-fixture targets don't exercise it. Add when an
- *    E4 helper needs it.
+ *
+ * **Region 1 (TYPE_VARIABLE) is intentionally NOT wired here.** Upstream's `NanMap.START_VAR =
+ * (1 shl 20) + 42` exists in the state machine but the creation-side writer never allocates from
+ * it — every `addNamedX` / `createNamedVariable` / `setNamedVariable` overload pulls from the
+ * plain pool (verified against `RemoteComposeWriter.java`). Adding a separate region-1 counter
+ * would produce byte-divergent documents AND a name→id-registry mismatch (consumers reference the
+ * plain id; a region-1 key would never resolve). If a future feature needs the TYPE_VARIABLE
+ * region (e.g. mid-document var-id remapping for macros), reintroduce it explicitly then.
  *
  * Keeping the counters on the context — not on a global — means each `document { … }` call starts
  * from a known baseline (deterministic byte output for the same script).
  */
-class IdAllocator(
-    start: Int = START_ID,
-    startArray: Int = START_ARRAY,
-    startVariable: Int = START_VAR,
-) {
+class IdAllocator(start: Int = START_ID, startArray: Int = START_ARRAY) {
     private var next: Int = start
     private var nextArray: Int = startArray
-    private var nextVar: Int = startVariable
 
     /**
-     * Next region-0 id. Pool: every id-bearing op except `ID_MAP` (see [nextArrayId]) and
-     * `NAMED_VARIABLE` (see [nextVariableId]). Mirrors upstream `createNextAvailableId(0)` /
-     * `createNextAvailableId()` ⇒ `mNextId++`.
+     * Next region-0 id. Pool: every id-bearing op except `ID_MAP` (see [nextArrayId]). Mirrors
+     * upstream `createNextAvailableId(0)` / `createNextAvailableId()` ⇒ `mNextId++`.
      */
     fun nextId(): Int = next++
 
     /**
      * Next region-2 (array/data-map) id. Mirrors upstream `createNextAvailableId(TYPE_ARRAY)` ⇒
-     * `mIdMaps[2]++`. **Independent** of [nextId] / [nextVariableId] — pulling here advances no
-     * other counter.
+     * `mIdMaps[2]++`. **Independent** of [nextId] — pulling here advances no other counter.
      */
     fun nextArrayId(): Int = nextArray++
-
-    /**
-     * Next region-1 (variable) id. Mirrors upstream `createNextAvailableId(TYPE_VARIABLE)` ⇒
-     * `mIdMaps[1]++`. **Independent** of [nextId] / [nextArrayId]. Used by `NamedVariable` /
-     * `addNamedVariable`; the four E5-watchpoint fixtures don't exercise this counter (so a value
-     * here is verifiable only against the upstream `NanMap.START_VAR` constant — see [START_VAR]).
-     */
-    fun nextVariableId(): Int = nextVar++
 
     /** Reseed the plain counter (mirrors upstream `RemoteComposeState.setNextId`). */
     fun setNextId(id: Int) { next = id }
@@ -76,17 +69,11 @@ class IdAllocator(
     /** Reseed the array (region-2) counter. */
     fun setNextArrayId(id: Int) { nextArray = id }
 
-    /** Reseed the variable (region-1) counter. */
-    fun setNextVariableId(id: Int) { nextVar = id }
-
     /** Current value of the plain counter without consuming it. */
     fun peek(): Int = next
 
     /** Current value of the array (region-2) counter without consuming it. */
     fun peekArray(): Int = nextArray
-
-    /** Current value of the variable (region-1) counter without consuming it. */
-    fun peekVariable(): Int = nextVar
 
     companion object {
         /** Upstream `NanMap.START_VARIABLE_ID` / `RemoteComposeState.START_ID`. */
@@ -94,8 +81,5 @@ class IdAllocator(
 
         /** Upstream `NanMap.START_ARRAY = (2 << 20) + START_VARIABLE_ID = 2097194`. */
         const val START_ARRAY: Int = (2 shl 20) + START_ID
-
-        /** Upstream `NanMap.START_VAR = (1 << 20) + START_VARIABLE_ID = 1048618`. */
-        const val START_VAR: Int = (1 shl 20) + START_ID
     }
 }

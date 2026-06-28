@@ -142,17 +142,15 @@ class RcExpressionTest {
 
     @Test
     fun floatExpression_isIdBearing_onPlainPool() {
-        // W#3: ANIMATED_FLOAT pulls region-0 plain. Not region-1, not region-2.
+        // W#3: ANIMATED_FLOAT pulls region-0 plain. Not region-2 (array).
         document(width = 100, height = 100, contentDescription = "Clock") {
             assertEquals(43, ids.peek())
             assertEquals(IdAllocator.START_ARRAY, ids.peekArray())
-            assertEquals(IdAllocator.START_VAR, ids.peekVariable())
 
             floatExpression(1f, 2f, RcExpression.ADD) // pulls 43
 
             assertEquals(44, ids.peek())
             assertEquals(IdAllocator.START_ARRAY, ids.peekArray(), "array counter unchanged")
-            assertEquals(IdAllocator.START_VAR, ids.peekVariable(), "variable counter unchanged")
         }
     }
 }

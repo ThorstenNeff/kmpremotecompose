@@ -128,29 +128,78 @@ class ColorExpressionHelpersTest {
     }
 
     @Test
-    fun addNamedVariable_allocatesRegion1Id_andReturns1048618First() {
+    fun addNamedVariable_allocatesPlainRegionId_perUpstreamColorTableOracle() {
+        // Byte-blocker fix verification (PO + assist 2026-06-28): upstream allocates ALL
+        // NAMED_VARIABLE varIds from the plain pool via createNextAvailableId() — NOT from
+        // a region-1 (TYPE_VARIABLE) counter. The `NanMap.TYPE_VARIABLE` region is creation-
+        // vestigial. Verified against `color_table.rc`: NAMED_VARIABLE id=50 is region-0.
         var firstId = -1
         var secondId = -1
         val bytes = document(width = 100, height = 100) {
-            firstId = addNamedVariable("system_accent1_500", varType = 0)
-            secondId = addNamedVariable("system_accent2_500", varType = 0)
+            firstId = addNamedVariable("system_accent1_500", varType = NAMED_COLOR_TYPE)
+            secondId = addNamedVariable("system_accent2_500", varType = NAMED_COLOR_TYPE)
         }
-        assertEquals(1048618, firstId, "first NamedVariable id = (1 shl 20) + 42 = 1048618")
-        assertEquals(1048619, secondId)
+        assertEquals(42, firstId, "first NamedVariable id = plain START_ID = 42 (region-0)")
+        assertEquals(43, secondId, "second NamedVariable id = 43 (plain monotonic +1)")
         val ops = DocumentReader.inflate(bytes).operations.filterIsInstance<NamedVariable>()
         assertEquals(2, ops.size)
-        assertEquals(1048618, ops[0].varId)
+        assertEquals(42, ops[0].varId)
+        assertEquals(NAMED_COLOR_TYPE, ops[0].varType)
         assertEquals("system_accent1_500", ops[0].name)
-        assertEquals(1048619, ops[1].varId)
+        assertEquals(43, ops[1].varId)
     }
 
     @Test
-    fun addNamedVariable_doesNotAdvancePlainOrArrayCounter() {
+    fun addNamedVariable_advancesPlainCounter_butNotArrayCounter() {
         document(width = 100, height = 100, contentDescription = "Clock") {
             assertEquals(43, ids.peek())
-            addNamedVariable("v", 0)
-            assertEquals(43, ids.peek(), "plain counter unchanged after named variable")
+            assertEquals(IdAllocator.START_ARRAY, ids.peekArray())
+            addNamedVariable("v", NAMED_FLOAT_TYPE)
+            assertEquals(44, ids.peek(), "plain counter advanced — NamedVariable pulls from region-0")
             assertEquals(IdAllocator.START_ARRAY, ids.peekArray(), "array counter unchanged")
         }
+    }
+
+    @Test
+    fun setNamedVariable_bindsExistingId_withoutAllocating() {
+        // Mirrors color_table.rc's pattern: a previously-allocated id (here, an addText) gets a
+        // NAMED_VARIABLE binding without pulling a new plain id. Upstream's
+        // `RemoteComposeWriter.setNamedVariable(id, name, type)` does exactly this.
+        var textId = -1
+        val bytes = document(width = 100, height = 100, contentDescription = "Clock") {
+            textId = addText("hello") // pulls 43
+            assertEquals(44, ids.peek())
+            setNamedVariable(textId, "greeting", NAMED_STRING_TYPE)
+            assertEquals(44, ids.peek(), "setNamedVariable must not allocate")
+        }
+        val ops = DocumentReader.inflate(bytes).operations.filterIsInstance<NamedVariable>()
+        assertEquals(1, ops.size)
+        assertEquals(textId, ops[0].varId)
+        assertEquals(NAMED_STRING_TYPE, ops[0].varType)
+        assertEquals("greeting", ops[0].name)
+    }
+
+    @Test
+    fun namedVariable_byteAnchor_matchesColorTableId50Pattern() {
+        // Color-table-style byte anchor (PO ask): a NAMED_VARIABLE op for id 50, type COLOR (2),
+        // name "color.system_accent1_0" must encode to the upstream wire (opcode + id + type +
+        // length-prefixed UTF-8). Anchors the helper at a specific point matching the decoded
+        // color_table.rc op (per assist's audit, NAMED_VARIABLE id=50 type=2 lives in there).
+        val expectedName = "color.system_accent1_0"
+        val ctx = RemoteComposeContext(
+            writer = com.tneff.kmpremotecompose.remote.core.document.RemoteComposeWriter(
+                width = 100, height = 100, apiLevel = 6,
+            ),
+            profile = Profile.Baseline,
+        )
+        // Drain the plain pool down to id 50 — color_table has earlier ops that consume 42..49.
+        ctx.ids.setNextId(50)
+        ctx.setNamedVariable(50, expectedName, NAMED_COLOR_TYPE)
+
+        val bytes = ctx.encodeToByteArray()
+        val op = DocumentReader.inflate(bytes).operations.first { it is NamedVariable } as NamedVariable
+        assertEquals(50, op.varId, "NAMED_VARIABLE id=50 (region-0 plain, NOT region-1)")
+        assertEquals(NAMED_COLOR_TYPE, op.varType, "varType = 2 (COLOR)")
+        assertEquals(expectedName, op.name)
     }
 }

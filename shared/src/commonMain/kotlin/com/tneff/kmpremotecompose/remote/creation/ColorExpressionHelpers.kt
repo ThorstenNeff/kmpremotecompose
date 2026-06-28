@@ -162,13 +162,45 @@ fun RemoteComposeContext.colorExpressionArgbById(
 }
 
 /**
- * `NAMED_VARIABLE` — register a named binding under a freshly allocated **region-1** id and return
- * it. Mirrors upstream `RemoteComposeWriter` named-variable helpers; the four E5-watchpoint
- * fixtures don't exercise this counter, so byte-anchoring relies on the `START_VAR` constant
- * (see [IdAllocator.START_VAR]).
+ * NamedVariable type constants (mirrors upstream `NamedVariable.STRING_TYPE` / `FLOAT_TYPE` /
+ * `COLOR_TYPE` / `IMAGE_TYPE` / `INT_TYPE` / `LONG_TYPE` / `FLOAT_ARRAY_TYPE`).
+ */
+const val NAMED_STRING_TYPE: Int = 0
+const val NAMED_FLOAT_TYPE: Int = 1
+const val NAMED_COLOR_TYPE: Int = 2
+const val NAMED_IMAGE_TYPE: Int = 3
+const val NAMED_INT_TYPE: Int = 4
+const val NAMED_LONG_TYPE: Int = 5
+const val NAMED_FLOAT_ARRAY_TYPE: Int = 6
+
+/**
+ * `NAMED_VARIABLE` (allocate-and-emit) — allocate a fresh **region-0** id and emit a name binding
+ * for it. Returns the allocated id. Mirrors upstream `RemoteComposeWriter.createNamedVariable`
+ * (which also pulls from the plain pool — verified against `color_table.rc` oracle:
+ * `NAMED_VARIABLE id=50` is region-0, not region-1).
+ *
+ * **Byte-blocker fix (REM-92 review).** An earlier version of this helper pulled from a separate
+ * region-1 counter at `(1 shl 20) + 42 = 1048618`; upstream never does — its `NanMap.TYPE_VARIABLE`
+ * region is creation-vestigial. Using region-1 would have produced byte-divergent documents and a
+ * name→id-registry mismatch (consumers reference the plain id; a region-1 key would never resolve).
+ *
+ * For the typical pattern "bind a name to a freshly-created colour", prefer the dedicated helper
+ * (e.g. an `addNamedColor(name, argb)` future helper) or use [setNamedVariable] on the result of
+ * a previously-allocated `addText` / `addInt` / `addColor` / etc.
  */
 fun RemoteComposeContext.addNamedVariable(name: String, varType: Int): Int {
-    val id = ids.nextVariableId()
+    val id = ids.nextId()
     add(com.tneff.kmpremotecompose.remote.core.operations.NamedVariable(varId = id, varType = varType, name = name))
     return id
+}
+
+/**
+ * `NAMED_VARIABLE` (bind-existing-id) — bind [name] of [varType] to an existing [id] without
+ * allocating a new one. Mirrors upstream `RemoteComposeWriter.setNamedVariable(id, name, type)`.
+ * This is the pattern used by `color_table.rc`: a `COLOR_CONSTANT id=50, …` op binds a colour to
+ * id 50, then `NAMED_VARIABLE id=50, type=COLOR, name="color.system_accent1_0"` attaches the name
+ * — no second allocation.
+ */
+fun RemoteComposeContext.setNamedVariable(id: Int, name: String, varType: Int) {
+    add(com.tneff.kmpremotecompose.remote.core.operations.NamedVariable(varId = id, varType = varType, name = name))
 }

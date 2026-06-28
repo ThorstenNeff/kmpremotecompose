@@ -81,39 +81,9 @@ class IdAllocatorRegionTest {
         assertEquals(2097250, ids.nextArrayId())
     }
 
-    @Test
-    fun variableCounter_startsAtUpstreamStartVar() {
-        // REM-92 W#4: NamedVariable id MUST start at NanMap.START_VAR = (1 shl 20) + 42 = 1048618.
-        // None of the four E5-watchpoint fixtures exercise region-1, so this is anchored against the
-        // upstream constant (see docs/TECHSPEC-E3-datamap-id-allocation.md §1).
-        assertEquals(1048618, IdAllocator.START_VAR)
-        assertEquals((1 shl 20) + 42, IdAllocator.START_VAR)
-
-        val ids = IdAllocator()
-        assertEquals(1048618, ids.peekVariable())
-        assertEquals(1048618, ids.nextVariableId())
-        assertEquals(1048619, ids.nextVariableId())
-        assertEquals(1048620, ids.peekVariable())
-    }
-
-    @Test
-    fun variableCounter_independentOfPlainAndArray() {
-        val ids = IdAllocator()
-        ids.nextId(); ids.nextArrayId() // pull plain + array
-        assertEquals(1048618, ids.peekVariable(), "variable counter must not move after plain/array pulls")
-        ids.nextVariableId(); ids.nextVariableId() // pull variable
-        assertEquals(43, ids.peek(), "plain counter must not move after variable pulls")
-        assertEquals(2097195, ids.peekArray(), "array counter must not move after variable pulls")
-    }
-
-    @Test
-    fun variableCounter_canBeReseeded_andAcceptsConstructorStart() {
-        val ids = IdAllocator()
-        ids.setNextVariableId(2_000_000)
-        assertEquals(2_000_000, ids.nextVariableId())
-        val ids2 = IdAllocator(start = 50, startArray = 2_500_000, startVariable = 1_500_000)
-        assertEquals(50, ids2.nextId())
-        assertEquals(2_500_000, ids2.nextArrayId())
-        assertEquals(1_500_000, ids2.nextVariableId())
-    }
+    // Region-1 (TYPE_VARIABLE) is intentionally NOT wired here — see the IdAllocator header
+    // comment. Upstream allocates NAMED_VARIABLE varIds from the plain pool (verified against
+    // `color_table.rc`: NAMED_VARIABLE id=50 is region-0). The earlier region-1 counter was a
+    // REM-92-review byte-blocker; the dedicated NamedVariable byte-anchor test lives in
+    // ColorExpressionHelpersTest.
 }

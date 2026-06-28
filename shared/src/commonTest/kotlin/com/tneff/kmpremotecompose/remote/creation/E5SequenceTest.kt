@@ -182,33 +182,32 @@ class E5SequenceTest {
 
     @Test
     fun e4_idAllocations_doNotInterfere_acrossRegions() {
-        // Cross-region sanity: a mixed sequence of region-0 (text/int/float-expr/measure/lookup),
-        // region-2 (id-map), and region-1 (named variable) preserves all three counters.
+        // Cross-region sanity: a mixed sequence of region-0 (text/int/float-expr/measure/lookup/
+        // named-variable — upstream allocates ALL these from the plain pool) and region-2
+        // (id-map) preserves both counters and yields the expected monotonic plain sequence.
         document(width = 100, height = 100, contentDescription = "Clock") {
             assertEquals(43, ids.peek())
             assertEquals(IdAllocator.START_ARRAY, ids.peekArray())
-            assertEquals(IdAllocator.START_VAR, ids.peekVariable())
 
             val t = addText("a")                                                  // plain 43
             val n = addInt(1)                                                     // plain 44
             val e = floatExpression(1f, 2f, RcExpression.ADD)                     // plain 45
-            val nv = addNamedVariable("accent", 0)                                // var 1048618
+            val nv = addNamedVariable("accent", NAMED_COLOR_TYPE)                 // plain 46 (was region-1 pre-fix)
             val m = addDataMapIds(listOf(dataMapEntry("k", t)))                   // array 2097194
-            val lookup = dataMapLookup(m, t)                                      // plain 46
-            val measure = textMeasure(t, 0)                                       // plain 47
+            val lookup = dataMapLookup(m, t)                                      // plain 47
+            val measure = textMeasure(t, 0)                                       // plain 48
 
-            assertEquals(48, ids.peek())
+            assertEquals(49, ids.peek())
             assertEquals(2097195, ids.peekArray())
-            assertEquals(1048619, ids.peekVariable())
 
             // Ensure all ids are stable (no aliasing between counters).
             assertEquals(43, t)
             assertEquals(44, n)
             assertEquals(45, com.tneff.kmpremotecompose.remote.wire.WireTypes.idFromNan(e))
-            assertEquals(1048618, nv)
+            assertEquals(46, nv, "addNamedVariable allocates from plain pool (region-0), NOT region-1")
             assertEquals(2097194, m)
-            assertEquals(46, lookup)
-            assertEquals(47, measure)
+            assertEquals(47, lookup)
+            assertEquals(48, measure)
         }
     }
 }
