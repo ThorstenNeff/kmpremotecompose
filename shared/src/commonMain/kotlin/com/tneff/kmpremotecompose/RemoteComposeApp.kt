@@ -32,6 +32,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.layout.layout
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.platform.LocalFontFamilyResolver
+import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.unit.Constraints
 import com.tneff.kmpremotecompose.remote.core.document.DocumentReader
@@ -46,6 +47,8 @@ import com.tneff.kmpremotecompose.remote.player.core.RemoteContext
 import com.tneff.kmpremotecompose.remote.player.core.SensorSource
 import com.tneff.kmpremotecompose.remote.player.core.systemAccentPalette
 import kmpremotecompose.shared.generated.resources.Res
+import kmpremotecompose.shared.generated.resources.rc_symbol_fallback
+import org.jetbrains.compose.resources.Font
 
 /**
  * REM-8 — the "touchable app" render vehicle. Loads one bundled `.rc`, decodes it through the Layer-1
@@ -150,6 +153,11 @@ fun RemoteComposeApp(
     // The CMP font resolver for the text half (REM-37 c_text / all text docs): without it the text
     // renderer is null and getTextBounds/drawTextRun no-op → text never renders. Supplied from composition.
     val fontResolver = LocalFontFamilyResolver.current
+    // REM-110: bundled symbol-fallback family (♥/❤/⚡/⬩/▲/↑/↓). The CMP default web font has Latin but
+    // not these Misc-Symbols/Dingbats/Geometric glyphs → tofu on wasm (Android/iOS fall back via the
+    // system font). Built here at composition scope (Font() is @Composable; the render lambda below is
+    // not) and handed to the text half; the renderer applies it per-run only to symbol-carrying text.
+    val symbolFallback = FontFamily(Font(Res.font.rc_symbol_fallback))
     // REM-68: the host system-accent / Material-You palette (name → ARGB), resolved once per composition
     // (Android reads real device colors; iOS/desktop mirror the baseline). Seeded into each render's
     // context below so a `NamedVariable`-bound theme color (e.g. color.system_accent1_100) overrides the
@@ -183,7 +191,11 @@ fun RemoteComposeApp(
                         // canvas. clearColor = white (the app bg behind the canvas). Surface-only; the doc
                         // render inside the block is unchanged.
                         renderOpaque(canvas, size.width.toInt(), size.height.toInt(), 0xFFFFFFFF.toInt()) { target ->
-                            val paintContext = ComposePaintContext(ctx, target, fontFamilyResolver = fontResolver)
+                            val paintContext = ComposePaintContext(
+                                ctx, target,
+                                fontFamilyResolver = fontResolver,
+                                symbolFallbackFamily = symbolFallback,
+                            )
                             // Geometry shares the context's one PlayerPaintState (REM-32) with the text half.
                             paintContext.geometry = GeometryPaintDelegate(ctx, target, paintContext.paintState)
                             RemoteComposePlayer(ctx).paint(

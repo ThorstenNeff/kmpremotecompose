@@ -60,6 +60,13 @@ import kotlin.math.roundToInt
 class ComposeTextRenderer(
     private val density: Float,
     fontFamilyResolver: FontFamily.Resolver,
+    /**
+     * REM-110: a bundled fallback [FontFamily] covering the symbol glyphs the CMP **default** font
+     * lacks on web (♥/❤/⚡/⬩/▲/↑/↓ — Misc-Symbols/Dingbats/Geometric/Arrows). Injected (built from a
+     * `composeResources/font` resource in the composition, like [fontFamilyResolver]). Null ⇒ no
+     * fallback (current behavior; headless tests). Applied **per run** via [needsSymbolFallback].
+     */
+    private val symbolFallbackFamily: FontFamily? = null,
 ) {
 
     private val measurer: TextMeasurer = TextMeasurer(
@@ -77,11 +84,26 @@ class ComposeTextRenderer(
      */
     var paintState: PlayerPaintState? = null
 
-    /** The effective style for this draw: derived from [paintState] if bound, else [textStyle]. */
-    private fun currentStyle(): TextStyle =
-        paintState?.let {
+    /**
+     * The effective style for this draw: derived from [paintState] if bound, else [textStyle]. When
+     * [run] carries a symbol glyph the default font lacks ([needsSymbolFallback]), the run's font family
+     * is switched to the bundled [symbolFallbackFamily] (REM-110). Every corpus run that triggers this
+     * is pure-symbol, so swapping the whole run's family renders the glyph directly without touching Latin.
+     */
+    private fun currentStyle(run: String? = null): TextStyle {
+        val base = paintState?.let {
             deriveTextStyle(it.paint.color, it.textSizePx, it.fontStyle, it.fontWeight, density, textStyle)
         } ?: textStyle
+        return if (run != null && symbolFallbackFamily != null && needsSymbolFallback(run)) {
+            base.copy(fontFamily = symbolFallbackFamily)
+        } else {
+            base
+        }
+    }
+
+    /** True if [text] holds a symbol codepoint the bundled fallback covers ([SYMBOL_FALLBACK_CODEPOINTS]). */
+    private fun needsSymbolFallback(text: String): Boolean =
+        text.any { it.code in SYMBOL_FALLBACK_CODEPOINTS }
 
     /** Substring [start,end) of [text]; end == -1 (or past the end) means "to the end". */
     private fun slice(text: String, start: Int, end: Int): String {
@@ -96,7 +118,7 @@ class ComposeTextRenderer(
         if (run.isEmpty()) return
         val result = measurer.measure(
             text = run,
-            style = currentStyle(),
+            style = currentStyle(run),
             layoutDirection = if (rtl) LayoutDirection.Rtl else LayoutDirection.Ltr,
         )
         // CMP paints from the top-left; shift so the run sits on the baseline at (x, y).
@@ -118,7 +140,7 @@ class ComposeTextRenderer(
             bounds[0] = 0f; bounds[1] = 0f; bounds[2] = 0f; bounds[3] = 0f
             return
         }
-        val result = measurer.measure(run, style = currentStyle())
+        val result = measurer.measure(run, style = currentStyle(run))
         val baseline = result.firstBaseline
         bounds[0] = 0f
         bounds[1] = -baseline
@@ -144,7 +166,7 @@ class ComposeTextRenderer(
     ): ComputedTextLayout? {
         if (text == null) return null
         val run = slice(text, start, end)
-        val style = currentStyle().copy(
+        val style = currentStyle(run).copy(
             textAlign = alignmentToTextAlign(alignment),
             letterSpacing = if (letterSpacing != 0f) letterSpacing.sp else textStyle.letterSpacing,
             lineHeight = if (lineHeightMultiplier > 0f) lineHeightMultiplier.em else textStyle.lineHeight,
@@ -266,6 +288,20 @@ class ComposeTextRenderer(
                 fontWeight = if (fontWeight > 0) FontWeight(fontWeight) else base.fontWeight,
             )
         }
+
+        /**
+         * REM-110: symbol codepoints that appear in genuine `DATA_TEXT` strings across the 173-doc
+         * corpus and that the CMP **default** web font lacks (→ tofu on wasm; Android/iOS fall back via
+         * the system font). Grounded by decoding every `DATA_TEXT` op in the corpus:
+         * ♥ U+2665 (heart_rate_timeline) · ❤ U+2764 (impulse_demo_hearts_demo, spline_demo) ·
+         * ⚡ U+26A1 (battery_radial_gauge) · ⬩ U+2B29 (hydration_wave) · ▲ U+25B2 (stock_sparkline) ·
+         * ↑ U+2191 / ↓ U+2193 (pressure_gauge, stock). The Latin-1 glyphs (° ² · U+00B0/B2/B7) and the
+         * bullet (• U+2022) are left to the default font (it has them); the bundled fallback still
+         * carries • as a safety net but does not trigger on it (its only run "BTC • 13:3" is mixed).
+         * Every run that DOES trigger is pure-symbol, so the per-run family swap never touches Latin.
+         */
+        val SYMBOL_FALLBACK_CODEPOINTS: Set<Int> =
+            setOf(0x2191, 0x2193, 0x25B2, 0x2665, 0x26A1, 0x2764, 0x2B29)
 
         // Upstream TextLayout alignment constants.
         const val TEXT_ALIGN_LEFT = 1

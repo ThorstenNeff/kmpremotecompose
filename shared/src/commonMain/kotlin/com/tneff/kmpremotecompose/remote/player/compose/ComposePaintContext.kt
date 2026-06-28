@@ -54,6 +54,11 @@ class ComposePaintContext(
      * resource loader / `Context`. Null ⇒ text draws are no-ops (geometry-only / scaffold usage).
      */
     val fontFamilyResolver: FontFamily.Resolver? = null,
+    /**
+     * REM-110: bundled symbol-fallback [FontFamily] (♥/❤/⚡/⬩/▲/↑/↓) for the text half — forwarded to
+     * [ComposeTextRenderer] so web text resolves these glyphs the default font lacks. Null ⇒ no fallback.
+     */
+    val symbolFallbackFamily: FontFamily? = null,
 ) : PaintContext(context) {
 
     /**
@@ -204,7 +209,9 @@ class ComposePaintContext(
      * the [canvas].
      */
     val textRenderer: ComposeTextRenderer? by lazy {
-        fontFamilyResolver?.let { ComposeTextRenderer(context.density, it).also { r -> r.paintState = paintState } }
+        fontFamilyResolver?.let {
+            ComposeTextRenderer(context.density, it, symbolFallbackFamily).also { r -> r.paintState = paintState }
+        }
     }
 
     override fun drawTextRun(
