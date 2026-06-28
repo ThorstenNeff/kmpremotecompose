@@ -386,6 +386,36 @@ class RemoteContext {
         const val ID_WINDOW_HEIGHT = 6
         /** Offset to UTC, in seconds (upstream `ID_OFFSET_TO_UTC`). */
         const val ID_OFFSET_TO_UTC = 10
+
+        // REM-101 (D5) — reserved SENSOR float ids (region 0), source-grounded against upstream
+        // `RemoteContext` (ID_ACCELERATION_X=17 … ID_LIGHT=26). A live doc reads these directly inside
+        // float expressions (no dedicated op); a host [SensorSource] seeds the current value each frame in
+        // LIVE mode only (static mode leaves them at the 0f default → deterministic golden). Runtime-only,
+        // never serialized → byte-irrelevant (§2 untouched).
+        /** Linear acceleration X, m/s² (upstream `ID_ACCELERATION_X`). */
+        const val ID_ACCELERATION_X = 17
+        /** Linear acceleration Y, m/s² (upstream `ID_ACCELERATION_Y`). */
+        const val ID_ACCELERATION_Y = 18
+        /** Linear acceleration Z, m/s² (upstream `ID_ACCELERATION_Z`). */
+        const val ID_ACCELERATION_Z = 19
+        /** Gyroscope rotation X, rad/s (upstream `ID_GYRO_ROT_X`). */
+        const val ID_GYRO_ROT_X = 20
+        /** Gyroscope rotation Y, rad/s (upstream `ID_GYRO_ROT_Y`). */
+        const val ID_GYRO_ROT_Y = 21
+        /** Gyroscope rotation Z, rad/s (upstream `ID_GYRO_ROT_Z`). */
+        const val ID_GYRO_ROT_Z = 22
+        /** Magnetic field X, µT (upstream `ID_MAGNETIC_X`). */
+        const val ID_MAGNETIC_X = 23
+        /** Magnetic field Y, µT (upstream `ID_MAGNETIC_Y`). */
+        const val ID_MAGNETIC_Y = 24
+        /** Magnetic field Z, µT (upstream `ID_MAGNETIC_Z`). */
+        const val ID_MAGNETIC_Z = 25
+        /** Ambient light, SI lux (upstream `ID_LIGHT`). */
+        const val ID_LIGHT = 26
+
+        /** The reserved sensor float-id range [17, 26] (accel XYZ, gyro XYZ, magnetic XYZ, light). */
+        val SENSOR_ID_RANGE: IntRange = ID_ACCELERATION_X..ID_LIGHT
+
         /** Player density (upstream `ID_DENSITY`). */
         const val ID_DENSITY = 27
         /** Default font size (upstream `ID_FONT_SIZE`). */

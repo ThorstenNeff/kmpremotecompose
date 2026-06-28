@@ -56,6 +56,7 @@ class RemoteComposePlayer(val context: RemoteContext = RemoteContext()) {
         surfaceWidth: Float = -1f,
         surfaceHeight: Float = -1f,
         staticTimeSeconds: Float = 0f,
+        sensorSource: SensorSource = NoOpSensorSource,
     ): Float {
         context.paintContext = paint
         context.resetPass(frameTimeSeconds)
@@ -80,6 +81,14 @@ class RemoteComposePlayer(val context: RemoteContext = RemoteContext()) {
         // density — the doc-px canvas (REM-51) is generation-density space, so FLOAT_DENSITY-referencing
         // coords must resolve against it for cross-target parity. Fallback 1f if a doc carries no header.
         context.seedSystemVariables(docW, docH, timeSeed, document.header?.density ?: 1f)
+        // REM-101 (D5): seed the sensor ids this doc reads (17–26) from the host [sensorSource] — LIVE
+        // mode ONLY, so static renders stay deterministic (goldens / REM-78 sweep / 173-conformance
+        // untouched). An axis the source can't provide (read==null) is left at its 0f default
+        // (capability-floor: static for that axis). Runtime-only; no serialized bytes (§2 safe). The S1
+        // default [NoOpSensorSource] returns null everywhere → behaviour-identical to pre-REM-101.
+        if (context.isAnimationEnabled()) {
+            for (id in sensorIdsUsed(document)) sensorSource.read(id)?.let { context.loadFloat(id, it) }
+        }
         // RootContentBehavior doc→surface scaling (REM-36): when a surface box is given, apply
         // translate(align) then scale(doc→surface) — upstream `CoreDocument` order — so doc-space
         // renders with correct proportions instead of 1:1 (a 600-doc stretched into a 924-surface).
@@ -123,7 +132,9 @@ class RemoteComposePlayer(val context: RemoteContext = RemoteContext()) {
         // cube3d spin) requests a continuous repaint so the host loop advances [frameTimeSeconds] and
         // re-renders. Gated by [RemoteContext.animationEnabled] (off ⇒ a single static frame, e.g. the
         // t=0 golden). The walk/eval re-run unchanged each pass (the S1 frame-time seam).
-        if (context.isAnimationEnabled() && isTimeDriven(document)) context.wakeIn(CONTINUOUS)
+        if (context.isAnimationEnabled() && (isTimeDriven(document) || isSensorDriven(document))) {
+            context.wakeIn(CONTINUOUS) // REM-101: a sensor-driven doc also needs continuous live repaint
+        }
         return context.wakeInSeconds
     }
 
@@ -223,6 +234,23 @@ class RemoteComposePlayer(val context: RemoteContext = RemoteContext()) {
             document.operations.any { op ->
                 op is FloatExpression && op.value.any { it.isNaN() && WireTypes.fromNaN(it) in 1..4 }
             }
+
+        /**
+         * The reserved sensor ids ([RemoteContext.SENSOR_ID_RANGE], 17–26) this document reads in its
+         * float expressions (REM-101). Drives both which sensors a [SensorSource] starts and which ids the
+         * player seeds per live frame. Empty ⇒ not a sensor doc.
+         */
+        fun sensorIdsUsed(document: RemoteComposeDocument): Set<Int> =
+            buildSet {
+                for (op in document.operations) if (op is FloatExpression) {
+                    for (v in op.value) {
+                        if (v.isNaN() && WireTypes.fromNaN(v) in RemoteContext.SENSOR_ID_RANGE) add(WireTypes.fromNaN(v))
+                    }
+                }
+            }
+
+        /** True if the document reads any sensor variable (17–26) → drives live sensor interactivity. */
+        fun isSensorDriven(document: RemoteComposeDocument): Boolean = sensorIdsUsed(document).isNotEmpty()
 
         /**
          * Opcodes of **container-opening** ops — those whose block is closed by a `CONTAINER_END`
