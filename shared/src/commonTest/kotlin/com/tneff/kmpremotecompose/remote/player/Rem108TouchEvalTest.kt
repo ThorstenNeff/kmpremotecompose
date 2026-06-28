@@ -22,6 +22,8 @@ import com.tneff.kmpremotecompose.remote.core.operations.Builtins
 import com.tneff.kmpremotecompose.remote.core.operations.layout.TouchExpression
 import com.tneff.kmpremotecompose.remote.player.core.RemoteComposePlayer
 import com.tneff.kmpremotecompose.remote.player.core.RemoteContext
+import com.tneff.kmpremotecompose.remote.player.core.TouchPhase
+import com.tneff.kmpremotecompose.remote.player.core.TouchState
 import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertNotEquals
@@ -110,5 +112,70 @@ class Rem108TouchEvalTest {
         // if state were nudged, a static re-paint reloads the default (touch inactive ⇒ apply ignores pos).
         player.paint(d, NoOpPaintContext(ctx), frameTimeSeconds = 0f)
         assertEquals(staticVal, ctx.getFloat(outId), "static render output is stable (touch never drives it)")
+    }
+
+    @Test fun touchState_phaseConsume_drivesGestureAcrossFrames() {
+        // S2b: the persistent TouchState drives exactly one transition per paint across the per-frame-fresh
+        // RemoteContext. DOWN→(consumed)DRAG→…→UP→(consumed)IDLE; a drag moves the output; release settles.
+        val ctx = RemoteContext().also { it.animationEnabled = true }
+        val d = doc("touch1.rc")
+        val player = RemoteComposePlayer(ctx)
+        val ts = TouchState()
+        player.paint(d, NoOpPaintContext(ctx), frameTimeSeconds = 1f, touchState = ts)
+        val outId = firstTouch(d).id
+        val atRest = ctx.getFloat(outId)
+
+        ts.down(40f, 40f)
+        player.paint(d, NoOpPaintContext(ctx), frameTimeSeconds = 1f, touchState = ts)
+        assertEquals(TouchPhase.DRAG, ts.phase, "DOWN is consumed in one frame → DRAG")
+
+        ts.move(260f, 260f)
+        player.paint(d, NoOpPaintContext(ctx), frameTimeSeconds = 1f, touchState = ts)
+        assertNotEquals(atRest, ctx.getFloat(outId), "a drag moves the touch output")
+
+        ts.up(260f, 260f)
+        player.paint(d, NoOpPaintContext(ctx), frameTimeSeconds = 1f, touchState = ts)
+        assertEquals(TouchPhase.IDLE, ts.phase, "UP is consumed in one frame → IDLE")
+    }
+
+    @Test fun staticMode_touchStateNotConsumed_determinismPin() {
+        // S2b determinism: in static mode the player must NOT consume the TouchState (no dispatch) → the
+        // phase stays DOWN and the output stays the default. Goldens / REM-78 sweep immune to touch.
+        val ctx = RemoteContext().also { it.animationEnabled = false }
+        val d = doc("touch1.rc")
+        val player = RemoteComposePlayer(ctx)
+        val ts = TouchState().also { it.down(40f, 40f) }
+        player.paint(d, NoOpPaintContext(ctx), frameTimeSeconds = 0f, touchState = ts)
+        val outId = firstTouch(d).id
+        val v1 = ctx.getFloat(outId)
+        assertEquals(TouchPhase.DOWN, ts.phase, "static mode does not consume the touch (phase stays DOWN)")
+        player.paint(d, NoOpPaintContext(ctx), frameTimeSeconds = 0f, touchState = ts)
+        assertEquals(v1, ctx.getFloat(outId), "static output stable — touch never drives it")
+    }
+
+    @Test fun pressAndDragCollapsedBeforeFirstPaint_stillMovesOutput() {
+        // S2b Fix#2 regression (the on-device order Fix#1 missed): a real gesture fires onDragStart+onDrag
+        // BOTH before the next frame, so the player sees down()+move() collapsed before any paint. The DOWN
+        // edge must NOT be lost — touchDown must still run, else touchDrag's `if (touchActive)` guard no-ops
+        // and the output stays frozen (the cross-platform 0% bug). With the fix, move() leaves the unconsumed
+        // DOWN intact and dispatchTouch consumes DOWN→touchDown first.
+        val ctx = RemoteContext().also { it.animationEnabled = true }
+        val d = doc("touch1.rc")
+        val player = RemoteComposePlayer(ctx)
+        val ts = TouchState()
+        player.paint(d, NoOpPaintContext(ctx), frameTimeSeconds = 1f, touchState = ts) // settle default
+        val outId = firstTouch(d).id
+        val atRest = ctx.getFloat(outId)
+        // Collapsed before the first paint: press, then an immediate drag — both in one frame gap.
+        ts.down(40f, 40f)
+        ts.move(120f, 120f)
+        player.paint(d, NoOpPaintContext(ctx), frameTimeSeconds = 1f, touchState = ts) // must run touchDown
+        // Keep dragging across the next frame so there's a cross-frame position delta to apply.
+        ts.move(300f, 300f)
+        player.paint(d, NoOpPaintContext(ctx), frameTimeSeconds = 1f, touchState = ts) // touchDrag → moves
+        assertNotEquals(
+            atRest, ctx.getFloat(outId),
+            "press+drag collapsed before the first paint must still dispatch touchDown → output moves",
+        )
     }
 }

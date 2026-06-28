@@ -58,6 +58,7 @@ class RemoteComposePlayer(val context: RemoteContext = RemoteContext()) {
         surfaceHeight: Float = -1f,
         staticTimeSeconds: Float = 0f,
         sensorSource: SensorSource = NoOpSensorSource,
+        touchState: TouchState? = null,
     ): Float {
         context.paintContext = paint
         context.resetPass(frameTimeSeconds)
@@ -90,6 +91,11 @@ class RemoteComposePlayer(val context: RemoteContext = RemoteContext()) {
         if (context.isAnimationEnabled()) {
             for (id in sensorIdsUsed(document)) sensorSource.read(id)?.let { context.loadFloat(id, it) }
         }
+        // REM-108 (Epic-F) S2b: consume one live pointer transition into the doc's TouchExpressions BEFORE
+        // Phase A (so their re-eval this frame sees the loaded TOUCH_POS). LIVE mode only → static renders
+        // never dispatch a touch → deterministic. The phase is advanced here (DOWN→DRAG, UP/CANCEL→IDLE)
+        // so the persistent [TouchState] drives exactly one step per frame.
+        if (context.isAnimationEnabled() && touchState != null) dispatchTouch(document, context, touchState)
         // RootContentBehavior doc→surface scaling (REM-36): when a surface box is given, apply
         // translate(align) then scale(doc→surface) — upstream `CoreDocument` order — so doc-space
         // renders with correct proportions instead of 1:1 (a 600-doc stretched into a 924-surface).
@@ -233,6 +239,17 @@ class RemoteComposePlayer(val context: RemoteContext = RemoteContext()) {
     private fun loadTouchPos(context: RemoteContext, x: Float, y: Float) {
         context.loadFloat(RemoteContext.ID_TOUCH_POS_X, x)
         context.loadFloat(RemoteContext.ID_TOUCH_POS_Y, y)
+    }
+
+    /** Consume exactly one [TouchState] transition this frame and advance the phase (REM-108 S2b). */
+    private fun dispatchTouch(document: RemoteComposeDocument, context: RemoteContext, ts: TouchState) {
+        when (ts.phase) {
+            TouchPhase.DOWN -> { touchDown(document, context, ts.x, ts.y); ts.phase = TouchPhase.DRAG }
+            TouchPhase.DRAG -> touchDrag(document, context, ts.x, ts.y)
+            TouchPhase.UP -> { touchUp(document, context, ts.x, ts.y); ts.phase = TouchPhase.IDLE }
+            TouchPhase.CANCEL -> { touchCancel(document); ts.phase = TouchPhase.IDLE }
+            TouchPhase.IDLE -> {}
+        }
     }
 
     /**
