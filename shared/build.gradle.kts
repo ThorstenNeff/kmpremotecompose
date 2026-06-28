@@ -44,11 +44,7 @@ kotlin {
     }
     
     jvm()
-    
-    js {
-        browser()
-    }
-    
+
     @OptIn(ExperimentalWasmDsl::class)
     wasmJs {
         browser()
@@ -91,9 +87,6 @@ kotlin {
             }
             // Generated absolute corpus-root constant (see generateCorpusRoot above).
             kotlin.srcDir(generateCorpusRoot)
-        }
-        jsMain.dependencies {
-            implementation(libs.wrappers.browser)
         }
     }
 }
