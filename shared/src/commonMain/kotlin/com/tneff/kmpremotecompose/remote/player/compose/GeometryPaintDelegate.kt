@@ -29,7 +29,9 @@ import androidx.compose.ui.graphics.PathMeasure
 import androidx.compose.ui.unit.IntOffset
 import androidx.compose.ui.unit.IntSize
 import com.tneff.kmpremotecompose.remote.core.operations.draw.PaintData
+import com.tneff.kmpremotecompose.remote.player.core.Offscreen
 import com.tneff.kmpremotecompose.remote.player.core.RemoteContext
+import com.tneff.kmpremotecompose.remote.player.core.createOffscreen
 import kotlin.math.PI
 import kotlin.math.atan2
 
@@ -327,31 +329,62 @@ internal class GeometryPaintDelegate(
     override fun endGraphicsLayer() { /* deferred (L2-D2) */ }
 
     // REM-40 render-to-bitmap: the main (screen) canvas, captured on the first redirect, and a per-id
-    // cache of offscreen canvases (mirrors upstream mMainCanvas / mCCache).
+    // cache of offscreen targets (mirrors upstream mMainCanvas / mCCache).
+    // REM-60: the offscreen is a platform [Offscreen] (iOS = Skia Surface), not a bare Canvas(ImageBitmap),
+    // so its writes can be flushed (via snapshot) before the tiled reads — fixes intermittent empty tiles on iOS.
     private var mainCanvas: Canvas? = null
-    private val offscreenCanvases = HashMap<Int, Canvas>()
+    private val offscreens = HashMap<Int, Offscreen>()
+    private var activeOffscreenId: Int = 0
 
     /**
-     * REM-40: redirect drawing to an offscreen bitmap. `bitmapId == 0` restores the main canvas;
-     * otherwise subsequent draws go into the bitmap registered under [bitmapId] (allocated by
-     * DATA_BITMAP). Cleared with [color] unless `mode & 1` (NO_INITIALIZE). Mirrors upstream
+     * REM-40/REM-60: redirect drawing to an offscreen target. `bitmapId == 0` flushes the active
+     * offscreen back into the bitmap store (so the subsequent reads see finished pixels) and restores
+     * the main canvas; otherwise subsequent draws go into the target sized to the bitmap registered
+     * under [bitmapId] (allocated by DATA_BITMAP). Cleared with [color] unless `mode & 1`
+     * (NO_INITIALIZE, which instead carries the existing content forward). Mirrors upstream
      * `AndroidPaintContext.drawToBitmap`. Fail-soft: an unknown bitmap id is a no-op (no crash).
      */
     override fun drawToBitmap(bitmapId: Int, mode: Int, color: Int) {
         if (mainCanvas == null) mainCanvas = canvas
         if (bitmapId == 0) {
+            flushActiveOffscreen()
             canvas = mainCanvas!!
             return
         }
-        val bitmap = context.getBitmap(bitmapId) ?: return
-        val target = offscreenCanvases.getOrPut(bitmapId) { Canvas(bitmap) }
-        canvas = target
+        val existing = context.getBitmap(bitmapId) ?: return
+        val w = existing.width
+        val h = existing.height
+        val off = offscreens.getOrPut(bitmapId) { createOffscreen(w, h) }
+        canvas = off.canvas
+        activeOffscreenId = bitmapId
         if (mode and 1 == 0) { // not NO_INITIALIZE → clear the target with the init colour
-            target.drawRect(
-                0f, 0f, bitmap.width.toFloat(), bitmap.height.toFloat(),
+            off.canvas.drawRect(
+                0f, 0f, w.toFloat(), h.toFloat(),
                 Paint().apply { this.color = Color(color); blendMode = BlendMode.Src },
             )
+        } else { // NO_INITIALIZE → seed the fresh target with the existing bitmap content
+            off.canvas.drawImageRect(
+                image = existing,
+                srcOffset = IntOffset.Zero,
+                srcSize = IntSize(w, h),
+                dstOffset = IntOffset.Zero,
+                dstSize = IntSize(w, h),
+                paint = Paint(),
+            )
         }
+    }
+
+    /**
+     * REM-60: snapshot the active offscreen back into the bitmap store so the subsequent reads
+     * (`DRAW_BITMAP_SCALED`) see finished pixels. On iOS the snapshot forces the Skia-surface flush that
+     * a bare `Canvas(ImageBitmap)` lacked (intermittently-empty tiled reads); on Android/jvm it returns
+     * the same raster bitmap, so behavior is unchanged.
+     */
+    private fun flushActiveOffscreen() {
+        val id = activeOffscreenId
+        if (id == 0) return
+        offscreens[id]?.let { context.putBitmap(id, it.snapshot()) }
+        activeOffscreenId = 0
     }
 
     private companion object {
