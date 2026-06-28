@@ -39,14 +39,26 @@ fun RemoteComposeContext.addInt(value: Int): Int {
 }
 
 /**
- * Entry type tags for [addDataMapIds] / [DataMapIds.Entry]. The 4 E5-watchpoint fixtures use
- * [DATA_MAP_TYPE_STRING] exclusively; the others are documented for future helpers.
+ * Entry type tags for [addDataMapIds] / [DataMapIds.Entry]. Values are the **wire bytes**
+ * written by [DataMapIds.write] (`buffer.writeByte(e.type)`), verified against upstream
+ * `androidx/compose/remote/remote-core/.../operations/DataMapIds.java:44-46`:
+ * ```
+ * public static final byte TYPE_STRING = 0;
+ * public static final byte TYPE_INT    = 1;
+ * public static final byte TYPE_FLOAT  = 2;
+ * ```
+ * Only those three are defined upstream — there is **no BITMAP or PATH type** on the wire.
+ * [DATA_MAP_TYPE_STRING] is the `look_up1`/E5-watchpoint default.
+ *
+ * REM-97 fix-history: the prior constants were `BITMAP=0, INT=1, STRING=2, FLOAT=3, PATH=4`,
+ * which silently emitted divergent wire bytes (STRING → byte 2 instead of 0). Caught by
+ * test-2's full E5 byte-closure (look_up1 was replicated with literal-type entries, hiding
+ * the default-bug). The fix pins to the upstream wire ordinals so the helper-default and
+ * the wire byte agree.
  */
-const val DATA_MAP_TYPE_BITMAP: Int = 0
+const val DATA_MAP_TYPE_STRING: Int = 0
 const val DATA_MAP_TYPE_INT: Int = 1
-const val DATA_MAP_TYPE_STRING: Int = 2
-const val DATA_MAP_TYPE_FLOAT: Int = 3
-const val DATA_MAP_TYPE_PATH: Int = 4
+const val DATA_MAP_TYPE_FLOAT: Int = 2
 
 /**
  * `ID_MAP` — register an id-map of [entries] under a freshly allocated **region-2** id (first call

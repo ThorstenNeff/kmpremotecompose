@@ -110,6 +110,57 @@ class DataHelpersTest {
     }
 
     @Test
+    fun dataMapEntry_defaultType_isWireByteZero_string() {
+        // 🔴 REM-97 byte-anchor — mirror of the REM-92 NamedVariable handcrafted oracle.
+        //
+        // Verified against `androidx/compose/remote/remote-core/.../operations/DataMapIds.java:44`:
+        //   `public static final byte TYPE_STRING = 0;`
+        // Before REM-97 the helper constant was `DATA_MAP_TYPE_STRING = 2`, so `dataMapEntry`
+        // with the default emitted wire byte `2` — silently diverging from upstream for every
+        // String-typed map entry. The look_up1 fixture (the only ID_MAP corpus) was replicated
+        // by test-2 with literal-type entries, hiding the default-bug. This test pins both
+        // (a) the constant value and (b) the round-tripped wire-byte to `0`, so any future
+        // regression at either point fails locally.
+        assertEquals(0, DATA_MAP_TYPE_STRING, "wire-byte constant for STRING must be 0 (upstream)")
+
+        val entry = dataMapEntry(name = "foo", valueId = 99)
+        assertEquals(0, entry.type, "dataMapEntry default type slot = STRING = 0")
+
+        val bytes = document(width = 100, height = 100) {
+            addDataMapIds(listOf(entry))
+        }
+        val op = DocumentReader.inflate(bytes).operations.first { it is DataMapIds } as DataMapIds
+        assertEquals(1, op.entries.size)
+        assertEquals("foo", op.entries[0].name)
+        assertEquals(99, op.entries[0].valueId)
+        assertEquals(
+            0, op.entries[0].type,
+            "wire byte for STRING entry must round-trip as 0 — guards against the pre-REM-97 default of 2",
+        )
+    }
+
+    @Test
+    fun dataMapEntry_intAndFloatTypes_matchUpstreamWireBytes() {
+        // Pins the two non-default types — upstream `DataMapIds.java:45-46`:
+        //   `TYPE_INT = 1, TYPE_FLOAT = 2`.
+        assertEquals(1, DATA_MAP_TYPE_INT)
+        assertEquals(2, DATA_MAP_TYPE_FLOAT)
+
+        val bytes = document(width = 100, height = 100) {
+            addDataMapIds(
+                listOf(
+                    dataMapEntry("i", 50, DATA_MAP_TYPE_INT),
+                    dataMapEntry("f", 51, DATA_MAP_TYPE_FLOAT),
+                ),
+            )
+        }
+        val op = DocumentReader.inflate(bytes).operations.first { it is DataMapIds } as DataMapIds
+        assertEquals(2, op.entries.size)
+        assertEquals(1, op.entries[0].type, "INT entry wire byte = 1")
+        assertEquals(2, op.entries[1].type, "FLOAT entry wire byte = 2")
+    }
+
+    @Test
     fun lookUp1PrefixSequence_matchesE5IdOrderReference() {
         // Replicates the look_up1 plain-pool-around-ID_MAP scenario from the E5 id-order reference,
         // without the ANIMATED_FLOAT (E4) ops. Verifies the SHARED interleaving rule:
