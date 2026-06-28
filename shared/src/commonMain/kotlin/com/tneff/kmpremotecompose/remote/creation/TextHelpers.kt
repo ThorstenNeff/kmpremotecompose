@@ -17,10 +17,13 @@ package com.tneff.kmpremotecompose.remote.creation
 
 import com.tneff.kmpremotecompose.remote.core.operations.TextData
 import com.tneff.kmpremotecompose.remote.core.operations.TextFromFloat
+import com.tneff.kmpremotecompose.remote.core.operations.TextLookup
 import com.tneff.kmpremotecompose.remote.core.operations.TextMeasure
+import com.tneff.kmpremotecompose.remote.core.operations.TextMerge
 import com.tneff.kmpremotecompose.remote.core.operations.draw.DrawText
 import com.tneff.kmpremotecompose.remote.core.operations.draw.DrawTextAnchored
 import com.tneff.kmpremotecompose.remote.core.operations.draw.DrawTextOnPath
+import com.tneff.kmpremotecompose.remote.wire.WireTypes
 
 /**
  * Text helpers (REM-87 / E3). Resource emitters return the allocated region-0 id; draw helpers are
@@ -135,5 +138,36 @@ fun RemoteComposeContext.createTextFromFloat(
 fun RemoteComposeContext.textMeasure(textId: Int, type: Int): Int {
     val id = ids.nextId()
     add(TextMeasure(id, textId, type))
+    return id
+}
+
+/**
+ * `TEXT_MERGE` (REM-119) — concatenate the texts at [srcId1] and [srcId2] into a freshly
+ * allocated region-0 id and return it. Mirrors upstream `RemoteComposeBuffer.textMerge(textId,
+ * id1, id2)` — wire shape: opcode + int textId + int srcId1 + int srcId2 = 13 bytes.
+ *
+ * **Render binding:** [TextMerge] implements `VariableSupport.apply` — Phase A reads the two
+ * source texts from the context store and writes their concatenation under [textId]. Missing
+ * source ⇒ empty string (fail-soft, mirror upstream).
+ */
+fun RemoteComposeContext.textMerge(srcId1: Int, srcId2: Int): Int {
+    val id = ids.nextId()
+    add(TextMerge(id, srcId1, srcId2))
+    return id
+}
+
+/**
+ * `TEXT_LOOKUP` (REM-119) — bind a freshly allocated text id to a lookup `dataSet[index]`
+ * against the id-list registered at [dataSet] (a NaN-encoded id-ref, mirror upstream
+ * `Utils.idFromNan(dataSet)`); [index] is either a literal float or a NaN-encoded variable ref.
+ *
+ * Returns the allocated text id. Wire shape: opcode + int textId + int dataSet + float index
+ * = 13 bytes.
+ *
+ * Used by chart-label demos (`good_pie_chart`, `pie_chart2`, `spread_sheet`, etc.).
+ */
+fun RemoteComposeContext.textLookup(dataSet: Float, index: Number): Int {
+    val id = ids.nextId()
+    add(TextLookup(textId = id, dataSet = WireTypes.idFromNan(dataSet), index = index.toFloat()))
     return id
 }
