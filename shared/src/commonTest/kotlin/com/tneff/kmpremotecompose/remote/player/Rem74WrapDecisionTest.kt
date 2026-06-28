@@ -29,10 +29,12 @@ import kotlin.test.assertTrue
 
 /**
  * REM-74 (FC-D1) — the **wrap decision** in [CoreText.paint] is the load-bearing seam of complex-text:
- * it routes to the multi-line `layoutComplexText`/`drawComplexText` path **only** when the text is wider
- * than its measured box and multi-line is allowed (upstream `forceComplex`: `width > maxWidth &&
- * maxLines != 1 && maxWidth > 0`); otherwise it keeps the exact single-line `drawTextRun` path so
- * non-wrapping component text stays pixel-identical (Bein-2). This is headless (no graphics backend) —
+ * it routes to the multi-line `layoutComplexText`/`drawComplexText` path when upstream would
+ * (`forceComplex || (width > maxWidth && maxLines > 1 && maxWidth > 0)`); `forceComplex` covers
+ * ellipsis (END/START/MIDDLE), letterSpacing, lineHeight, underline/strike, justification,
+ * breakStrategy, hyphenation and `\n`/`\t` — so e.g. a single-line END-ellipsis truncates with "…"
+ * instead of clipping. Otherwise it keeps the exact single-line `drawTextRun` path so non-wrapping
+ * component text stays pixel-identical (Bein-2). This is headless (no graphics backend) —
  * the real-Skiko multi-line render is proved in `Rem74ComplexTextIosTest` on the iOS gate.
  *
  * Plus a **corpus-reach guard**: D1 deliberately renders complex text through CMP-common text (not raw
@@ -107,10 +109,33 @@ class Rem74WrapDecisionTest {
     }
 
     @Test
+    fun endEllipsisSingleLine_routesToComplex_evenWhenTextFits() {
+        // text_refresh_bug.rc: overflow=END(3), maxLines=1, single-line "$109,846.26". The old wrap gate
+        // (`maxLines != 1`) mis-routed this to drawTextRun ⇒ no "…", text clips/overflows. The forceComplex
+        // fix must catch it. Use a FITTING width (measured<box) so ONLY forceComplex — not the width
+        // branch — can route it complex; that isolates exactly the REM-74 NO-GO regression.
+        val params = listOf(intParam(10, 3), intParam(11, 1)) // P_OVERFLOW=END(3), P_MAX_LINES=1
+        val (complex, run) = route(boxW = 300f, measuredWidth = 100f, params = params)
+        assertEquals(1, complex, "END-ellipsis ⇒ forceComplex ⇒ layoutComplexText (so '…' truncation runs)")
+        assertEquals(0, run, "must NOT fall back to single-line drawTextRun (the assist NO-GO regression)")
+    }
+
+    @Test
+    fun anyForceComplexPrecondition_routesComplex_evenSingleLineFitting() {
+        // A non-ellipsis forceComplex factor (here: underline, P_UNDERLINE=18 boolean=1) must also force the
+        // complex path at maxLines=1 + fitting width — mirroring upstream textLayout()'s precondition list.
+        val params = listOf(CoreText.Param(18, byteArrayOf(1)), intParam(11, 1))
+        val (complex, run) = route(boxW = 300f, measuredWidth = 100f, params = params)
+        assertEquals(1, complex, "underline ⇒ forceComplex ⇒ complex path")
+        assertEquals(0, run)
+    }
+
+    @Test
     fun maxLines1_neverWraps_evenWiderThanBox() {
-        // P_MAX_LINES = 11; value 1 ⇒ single line forced, no wrap regardless of width.
+        // P_MAX_LINES = 11; value 1 with NO forceComplex factor ⇒ the width branch needs maxLines>1, so
+        // even text wider than the box stays single-line (the width-wrap branch, unlike forceComplex).
         val (complex, run) = route(boxW = 100f, measuredWidth = 300f, params = listOf(intParam(11, 1)))
-        assertEquals(0, complex, "maxLines==1 ⇒ never the complex path (upstream forceComplex guard)")
+        assertEquals(0, complex, "maxLines==1 + no forceComplex ⇒ width branch can't fire ⇒ no wrap")
         assertEquals(1, run)
     }
 
@@ -164,6 +189,39 @@ class Rem74WrapDecisionTest {
             offenders.isEmpty(),
             "Corpus now exercises a CMP-limited complex-text param — the D1 CMP-Text limit is no longer " +
                 "cosmetic, escalate to PO (raw-Skiko Paragraph fallback): $offenders",
+        )
+    }
+
+    /**
+     * Closes the fixture-blindness that let the NO-GO slip: the wrap guard above flags only the
+     * CMP-*unsupported* ellipsis modes (START/MIDDLE) — it was blind to **END** ellipsis (overflow=3),
+     * which IS supported by CMP but MUST still route through the complex path to truncate. This pins that
+     * the corpus actually contains an END-ellipsis doc (`text_refresh_bug`), so the forceComplex routing
+     * is exercised by a real fixture, not hypothetical. If the corpus loses it, the routing test goes
+     * stale silently — this fails instead.
+     */
+    @Test
+    fun corpusExercisesEndEllipsis_soForceComplexRoutingIsReal() {
+        Builtins.register()
+        val endEllipsisDocs = mutableListOf<String>()
+        for (name in RcCorpus.corpusNames()) {
+            val ops = try {
+                DocumentReader.inflate(RcCorpus.readFixture("corpus/$name")).operations
+            } catch (t: Throwable) {
+                continue
+            }
+            for (ct in ops.filterIsInstance<CoreText>()) for (p in ct.params) {
+                if (p.id == 10 && p.value.size >= 4) {
+                    val v = (p.value[0].toInt() and 0xFF shl 24) or (p.value[1].toInt() and 0xFF shl 16) or
+                        (p.value[2].toInt() and 0xFF shl 8) or (p.value[3].toInt() and 0xFF)
+                    if (v == 3) endEllipsisDocs += name
+                }
+            }
+        }
+        assertTrue(
+            endEllipsisDocs.isNotEmpty(),
+            "expected ≥1 corpus doc with END-ellipsis (overflow=3) to exercise forceComplex routing " +
+                "(e.g. text_refresh_bug); found none — routing test is now unanchored",
         )
     }
 

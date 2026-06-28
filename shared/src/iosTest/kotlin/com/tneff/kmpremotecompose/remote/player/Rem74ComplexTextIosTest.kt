@@ -53,6 +53,7 @@ class Rem74ComplexTextIosTest {
     ) : NoOpPaintContext(context) {
         var captured: ComputedTextLayout? = null
         var complexCalls = 0
+        var drawComplexCalls = 0
         var textRunCalls = 0
 
         override fun getTextBounds(textId: Int, start: Int, end: Int, flags: Int, bounds: FloatArray) {
@@ -73,6 +74,7 @@ class Rem74ComplexTextIosTest {
         }
 
         override fun drawComplexText(computedTextLayout: ComputedTextLayout?) {
+            drawComplexCalls++
             renderer.drawComplexText(canvas, computedTextLayout)
         }
 
@@ -85,11 +87,15 @@ class Rem74ComplexTextIosTest {
         }
     }
 
-    private fun runCoreText(text: String, boxW: Float): RealTextPaintContext {
+    /** Big-endian 4-byte int param value (wire order), for synthesising a TextStyle param. */
+    private fun intParam(id: Int, value: Int): CoreText.Param =
+        CoreText.Param(id, byteArrayOf((value ushr 24).toByte(), (value ushr 16).toByte(), (value ushr 8).toByte(), value.toByte()))
+
+    private fun runCoreText(text: String, boxW: Float, params: List<CoreText.Param> = emptyList()): RealTextPaintContext {
         val ctx = RemoteContext()
         val textId = 7
         ctx.putText(textId, text)
-        val op = CoreText(textId, emptyList())
+        val op = CoreText(textId, params)
         op.setTextDraw(0f, 12f)
         op.setTextBox(0f, 0f, boxW, 200f)
         val paint = RealTextPaintContext(ctx, canvas(), ComposeTextRenderer(density = 2f, createFontFamilyResolver()))
@@ -99,12 +105,27 @@ class Rem74ComplexTextIosTest {
 
     @Test
     fun wideText_producesRealMultiLineSkiaLayout() {
+        // Bein-1 (the headline width-wrap branch): no maxLines param ⇒ unlimited wrap. Drives the FULL
+        // paint→layout→draw pipeline on the real Skiko backend and proves a genuine multi-line layout.
         val p = runCoreText("the quick brown fox jumps over the lazy dog again and again", boxW = 80f)
         assertEquals(1, p.complexCalls, "wide text ⇒ complex path")
+        assertEquals(1, p.drawComplexCalls, "and it actually draws the complex layout (not a no-op)")
         assertEquals(0, p.textRunCalls, "must not also single-line draw")
         val layout = assertNotNull(p.captured, "complex layout must be produced")
         assertTrue(layout.lineCount > 1, "real Skia Paragraph must wrap to >1 line (was ${layout.lineCount})")
         assertTrue(layout.width <= 80f + 0.5f, "wrapped width within box (was ${layout.width})")
+    }
+
+    @Test
+    fun cappedWrap_respectsMaxLines_andStillMultiLine() {
+        // Second real-wrap fixture: a long paragraph capped at maxLines=2 (P_MAX_LINES=11). The wrap path
+        // must still produce >1 line but honour the cap (≤2) — proving maxLines flows into the real layout.
+        val text = "the quick brown fox jumps over the lazy dog again and again and again and again"
+        val p = runCoreText(text, boxW = 80f, params = listOf(intParam(11, 2)))
+        assertEquals(1, p.complexCalls, "capped wide text ⇒ complex path (maxLines>1)")
+        assertEquals(1, p.drawComplexCalls)
+        val layout = assertNotNull(p.captured)
+        assertTrue(layout.lineCount in 2..2, "maxLines=2 ⇒ exactly the cap on this overflowing text (was ${layout.lineCount})")
     }
 
     @Test

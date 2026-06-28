@@ -68,29 +68,56 @@ class CoreText(
     }
 
     /**
-     * Emit the component text at its measured position. **REM-74 (FC-D1):** when the text is wider than
-     * its box and multi-line is allowed (upstream `forceComplex`: `width > maxWidth && maxLines > 1 &&
-     * maxWidth > 0`), lay it out + draw it **multi-line** via `layoutComplexText`/`drawComplexText`
-     * (wrap/align/ellipsis), positioned at the box top-left. Otherwise keep the **exact single-line**
-     * `drawTextRun` path (REM-37) so non-wrapping component text stays pixel-identical (Bein-2). The text
-     * must already be loaded (DATA_TEXT ran earlier in the walk / the measure pre-load).
+     * Emit the component text at its measured position. **REM-74 (FC-D1):** route to the **complex**
+     * (`layoutComplexText`/`drawComplexText`) path when upstream would — mirroring `CoreText.java`'s
+     * `textLayout()` precondition (lines 777-811):
+     *
+     *   `forceComplex || (width > maxWidth && maxLines > 1 && maxWidth > 0)`
+     *
+     * where `forceComplex` is true for any of: an ellipsis overflow (END/START/MIDDLE), `letterSpacing≠0`,
+     * `lineHeightMultiplier≠1` (upstream field default is **1f**, not 0), `lineHeightAdd>0`, underline,
+     * strikethrough, `justification>0`, `breakStrategy>0`, `hyphenation>0`, or a `\n`/`\t` in the string.
+     * This is what makes single-line **END-ellipsis** text (e.g. `text_refresh_bug.rc`: overflow=3,
+     * maxLines=1) truncate with "…" instead of overflowing/clipping. Otherwise keep the **exact
+     * single-line** `drawTextRun` path (REM-37) so non-wrapping component text stays pixel-identical
+     * (Bein-2). The text must already be loaded (DATA_TEXT ran earlier in the walk / the measure pre-load).
      */
     override fun paint(context: RemoteContext, paint: PaintContext) {
-        if (!positioned || context.getText(textId) == null) return
+        val text = context.getText(textId)
+        if (!positioned || text == null) return
         paint.savePaint()
         applyStyle(context, paint)
         val maxLines = paramInt(P_MAX_LINES) ?: Int.MAX_VALUE // upstream default = unlimited (wrap)
-        val wraps = boxW > 0f && maxLines != 1 && singleLineWidth(paint) > boxW
+        val overflow = paramInt(P_OVERFLOW) ?: 0
+        // Upstream's forceComplex preconditions (CoreText.java:782-805). NOTE the lineHeightMultiplier
+        // default: upstream's mLineHeightMultiplier is 1f, so the "is-set" test is `!= 1f` (a 0f default
+        // here would force-complex EVERY text). This default differs from the renderer's layout-call
+        // convention below (0f ⇒ "use default lineHeight"), so the two are computed separately on purpose.
+        val lineHeightMult = paramFloat(P_LINE_HEIGHT_MULT) ?: 1f
+        val forceComplex =
+            overflow == OVERFLOW_ELLIPSIS ||
+                overflow == OVERFLOW_START_ELLIPSIS ||
+                overflow == OVERFLOW_MIDDLE_ELLIPSIS ||
+                (paramFloat(P_LETTER_SPACING) ?: 0f) != 0f ||
+                lineHeightMult != 1f ||
+                (paramFloat(P_LINE_HEIGHT_ADD) ?: 0f) > 0f ||
+                paramBool(P_UNDERLINE) ||
+                paramBool(P_STRIKETHROUGH) ||
+                (paramInt(P_JUSTIFICATION) ?: 0) > 0 ||
+                (paramInt(P_BREAK_STRATEGY) ?: 0) > 0 ||
+                (paramInt(P_HYPHENATION) ?: 0) > 0 ||
+                text.contains('\n') || text.contains('\t')
+        val wraps = forceComplex || (boxW > 0f && maxLines > 1 && singleLineWidth(paint) > boxW)
         if (wraps) {
             val layout = paint.layoutComplexText(
                 textId, 0, -1,
                 alignment = paramInt(P_TEXT_ALIGN) ?: 0,
-                overflow = paramInt(P_OVERFLOW) ?: 0,
+                overflow = overflow,
                 maxLines = maxLines,
                 maxWidth = boxW, maxHeight = boxH,
                 letterSpacing = paramFloat(P_LETTER_SPACING) ?: 0f,
                 lineHeightAdd = paramFloat(P_LINE_HEIGHT_ADD) ?: 0f,
-                lineHeightMultiplier = paramFloat(P_LINE_HEIGHT_MULT) ?: 0f,
+                lineHeightMultiplier = paramFloat(P_LINE_HEIGHT_MULT) ?: 0f, // renderer: 0f ⇒ default lineHeight
                 lineBreakStrategy = paramInt(P_BREAK_STRATEGY) ?: 0,
                 hyphenationFrequency = paramInt(P_HYPHENATION) ?: 0,
                 justificationMode = paramInt(P_JUSTIFICATION) ?: 0,
@@ -207,6 +234,11 @@ class CoreText(
         private const val P_UNDERLINE = 18
         private const val P_STRIKETHROUGH = 19
         private const val P_TEXT_FLAGS = 23
+
+        // Overflow modes (upstream CoreText OVERFLOW_*). The three ellipsis modes force the complex path.
+        private const val OVERFLOW_ELLIPSIS = 3        // END ellipsis
+        private const val OVERFLOW_START_ELLIPSIS = 4
+        private const val OVERFLOW_MIDDLE_ELLIPSIS = 5
 
         // Upstream TextStyle defaults — params at these values mean "renderer default" (skip applying).
         private const val DEFAULT_COLOR = 0xFF000000.toInt()
