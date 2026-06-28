@@ -84,6 +84,12 @@ internal class GeometryPaintDelegate(
     }
 
     override fun drawCircle(centerX: Float, centerY: Float, radius: Float) {
+        // REM-65: android.graphics.drawCircle has an explicit r<=0 skip that CMP-Canvas forwards; Skiko
+        // would otherwise paint abs(r) (e.g. flow_control r=-240). The ONLY real rect-vs-circle divergence:
+        // CMP normalizes+draws inverted rects on both platforms (so rect-family is NOT guarded), but a
+        // non-positive-radius circle must be skipped to match android.graphics/CMP-Android. Guard before
+        // incrementDrawCount: a skipped shape emits no pixels.
+        if (radius <= 0f) return
         context.incrementDrawCount()
         canvas.drawCircle(Offset(centerX, centerY), radius, paint)
     }
