@@ -26,7 +26,11 @@ import com.tneff.kmpremotecompose.remote.wire.WireTypes
  */
 class DataMapIds(val id: Int, val entries: List<Entry>) : Operation {
 
-    /** One id-map entry: a [name], a [type] tag (default 2 upstream) and the referenced [valueId]. */
+    /**
+     * One id-map entry: a [name], a [type] tag (`STRING=0, INT=1, FLOAT=2` — verified against
+     * upstream `DataMapIds.java:44-46`) and the referenced [valueId]. [type] is written as a
+     * single wire byte.
+     */
     data class Entry(val name: String, val type: Int, val valueId: Int)
 
     override val opcode: Int get() = Operations.ID_MAP
