@@ -15,7 +15,6 @@
  */
 package com.tneff.kmpremotecompose.remote.creation
 
-import com.tneff.kmpremotecompose.remote.core.operations.Operation
 import com.tneff.kmpremotecompose.remote.core.operations.layout.AlignByModifier
 import com.tneff.kmpremotecompose.remote.core.operations.layout.BackgroundModifier
 import com.tneff.kmpremotecompose.remote.core.operations.layout.BorderModifier
@@ -40,10 +39,12 @@ import com.tneff.kmpremotecompose.remote.core.operations.layout.RoundedClipRectM
 import com.tneff.kmpremotecompose.remote.core.operations.layout.RowLayout
 import com.tneff.kmpremotecompose.remote.core.operations.layout.ScrollModifier
 import com.tneff.kmpremotecompose.remote.core.operations.layout.StateLayout
+import com.tneff.kmpremotecompose.remote.core.operations.layout.TouchExpression
 import com.tneff.kmpremotecompose.remote.core.operations.layout.VisibilityModifier
 import com.tneff.kmpremotecompose.remote.core.operations.layout.WidthInModifier
 import com.tneff.kmpremotecompose.remote.core.operations.layout.WidthModifier
 import com.tneff.kmpremotecompose.remote.core.operations.layout.ZIndexModifier
+import com.tneff.kmpremotecompose.remote.wire.WireTypes
 
 /**
  * REM-96 (FC-Layout-Container) — positioning constants for container open ops.
@@ -66,24 +67,34 @@ const val POS_BOTTOM: Int = 5
 
 /**
  * Modifier-list builder for container helpers — mirrors upstream `RecordingModifier`
- * (`remote-creation-core/.../modifiers/RecordingModifier.java`). Each modifier method appends an
- * `Operation` to [ops]; container helpers emit those ops in insertion order between the container
- * open op and the trailing `LayoutContent` marker, matching upstream's modifier-then-content
- * sequence (`RemoteComposeWriter.java:3275-3283`).
+ * (`remote-creation-core/.../modifiers/RecordingModifier.java`). Each modifier method appends a
+ * **deferred emit lambda** to [emitters]; the container's open helper runs each lambda in
+ * insertion order between the container open op and the trailing `LayoutContent` marker,
+ * matching upstream's modifier-then-content sequence (`RemoteComposeWriter.java:3275-3283`).
+ *
+ * **Why lambdas instead of plain `Operation`s.** Most modifiers (`width`, `padding`,
+ * `background`, ...) emit a single op with no allocator interaction. `scroll()` is special:
+ * upstream's `addModifierScroll` allocates **two** ids via `reserveFloatVariable()` and emits a
+ * three-op group (`MODIFIER_SCROLL` + `TOUCH_EXPRESSION` + `CONTAINER_END`); the allocation has
+ * to happen at emit-time, against the active [RemoteComposeContext.ids]. Storing emitters as
+ * lambdas lets a multi-op, allocator-touching modifier compose alongside the single-op ones in
+ * one ordered list.
  *
  * `explicitComponentId` defaults to `-1` (sentinel) — caller can pin a stable id via
  * [componentId]. [spacedBy] is read by `column`/`row`/`flow`/collapsible variants.
- *
- * The full set of modifier methods (width/height/padding/background/border/clipRect/
- * roundedClipRect/visibility/zIndex/scroll/alignBy/click + widthIn/heightIn) lands with the
- * companion modifier-helpers file in the next REM-96 sub-commit.
  */
 @RemoteComposeCreationDsl
 class LayoutModifier {
 
     @PublishedApi internal var explicitComponentId: Int = -1
     @PublishedApi internal var spacedBy: Float = 0f
-    @PublishedApi internal val ops: MutableList<Operation> = mutableListOf()
+
+    /**
+     * Deferred emit pipeline. Each lambda runs against the active [RemoteComposeContext] inside
+     * the container helper's modifier loop. Single-op modifiers wrap a one-line `add(...)`;
+     * multi-op modifiers (`scroll`) interact with `ctx.ids` and `ctx.add` directly.
+     */
+    @PublishedApi internal val emitters: MutableList<(RemoteComposeContext) -> Unit> = mutableListOf()
 
     /** Pin a stable [id] for the container's `componentId` slot. Default is `-1` sentinel. */
     fun componentId(id: Int): LayoutModifier {
@@ -98,44 +109,50 @@ class LayoutModifier {
     }
 
     // ── 14 core modifiers (REM-96) ───────────────────────────────────────────
-    // Each method appends an `Operation` to [ops]; the container's open helper writes them in
+    // Each method appends an emit-time lambda; the container's open helper runs them in
     // insertion order between Container-Open and LayoutContent. Mirror upstream RecordingModifier
     // method names + signatures (`RecordingModifier.java` + `RemoteComposeBuffer.addModifier*`).
 
     /** `MODIFIER_WIDTH` — dimension width. [value] is in dp for EXACT/EXACT_DP; ignored for FILL/WRAP/etc. */
     fun width(type: DimensionType, value: Number = 0f): LayoutModifier {
-        ops.add(WidthModifier(type, value.toFloat()))
+        val v = value.toFloat()
+        emitters.add { ctx -> ctx.add(WidthModifier(type, v)) }
         return this
     }
 
     /** `MODIFIER_HEIGHT` — dimension height. */
     fun height(type: DimensionType, value: Number = 0f): LayoutModifier {
-        ops.add(HeightModifier(type, value.toFloat()))
+        val v = value.toFloat()
+        emitters.add { ctx -> ctx.add(HeightModifier(type, v)) }
         return this
     }
 
     /** `MODIFIER_WIDTH_IN` — bracketed horizontal constraint. `-1f` = unconstrained. */
     fun widthIn(min: Number, max: Number): LayoutModifier {
-        ops.add(WidthInModifier(min.toFloat(), max.toFloat()))
+        val mn = min.toFloat(); val mx = max.toFloat()
+        emitters.add { ctx -> ctx.add(WidthInModifier(mn, mx)) }
         return this
     }
 
     /** `MODIFIER_HEIGHT_IN` — bracketed vertical constraint. */
     fun heightIn(min: Number, max: Number): LayoutModifier {
-        ops.add(HeightInModifier(min.toFloat(), max.toFloat()))
+        val mn = min.toFloat(); val mx = max.toFloat()
+        emitters.add { ctx -> ctx.add(HeightInModifier(mn, mx)) }
         return this
     }
 
     /** `MODIFIER_PADDING` — uniform padding on all four sides. */
     fun padding(all: Number): LayoutModifier {
         val v = all.toFloat()
-        ops.add(PaddingModifier(v, v, v, v))
+        emitters.add { ctx -> ctx.add(PaddingModifier(v, v, v, v)) }
         return this
     }
 
     /** `MODIFIER_PADDING` — per-side. Mirrors upstream `padding(start, top, end, bottom)`. */
     fun padding(start: Number, top: Number, end: Number, bottom: Number): LayoutModifier {
-        ops.add(PaddingModifier(start.toFloat(), top.toFloat(), end.toFloat(), bottom.toFloat()))
+        val s = start.toFloat(); val t = top.toFloat()
+        val e = end.toFloat(); val b = bottom.toFloat()
+        emitters.add { ctx -> ctx.add(PaddingModifier(s, t, e, b)) }
         return this
     }
 
@@ -149,7 +166,7 @@ class LayoutModifier {
         val r = (color ushr 16 and 0xff) / 255f
         val g = (color ushr 8 and 0xff) / 255f
         val b = (color and 0xff) / 255f
-        ops.add(BackgroundModifier(0, 0, 0, 0, r, g, b, a, shape))
+        emitters.add { ctx -> ctx.add(BackgroundModifier(0, 0, 0, 0, r, g, b, a, shape)) }
         return this
     }
 
@@ -159,12 +176,10 @@ class LayoutModifier {
      * `r/g/b/a` may carry NaN-encoded id refs (raw float bits preserved).
      */
     fun background(r: Number, g: Number, b: Number, a: Number, shape: Int = 0): LayoutModifier {
-        ops.add(
-            BackgroundModifier(
-                0, 0, 0, 0,
-                r.toFloat(), g.toFloat(), b.toFloat(), a.toFloat(), shape,
-            ),
-        )
+        val rf = r.toFloat(); val gf = g.toFloat(); val bf = b.toFloat(); val af = a.toFloat()
+        emitters.add { ctx ->
+            ctx.add(BackgroundModifier(0, 0, 0, 0, rf, gf, bf, af, shape))
+        }
         return this
     }
 
@@ -185,22 +200,17 @@ class LayoutModifier {
         val r = (color ushr 16 and 0xff) / 255f
         val g = (color ushr 8 and 0xff) / 255f
         val b = (color and 0xff) / 255f
-        ops.add(
-            BorderModifier(
-                0, 0,
-                if (useLegacy) 0 else 1,
-                0,
-                borderWidth.toFloat(), roundedCorner.toFloat(),
-                r, g, b, a,
-                shape,
-            ),
-        )
+        val bw = borderWidth.toFloat(); val rc = roundedCorner.toFloat()
+        val res1 = if (useLegacy) 0 else 1
+        emitters.add { ctx ->
+            ctx.add(BorderModifier(0, 0, res1, 0, bw, rc, r, g, b, a, shape))
+        }
         return this
     }
 
     /** `MODIFIER_CLIP_RECT` — clip to the component's rectangular bounds (no operands). */
     fun clipRect(): LayoutModifier {
-        ops.add(ClipRectModifier())
+        emitters.add { ctx -> ctx.add(ClipRectModifier()) }
         return this
     }
 
@@ -214,12 +224,9 @@ class LayoutModifier {
         bottomStart: Number,
         bottomEnd: Number,
     ): LayoutModifier {
-        ops.add(
-            RoundedClipRectModifier(
-                topStart.toFloat(), topEnd.toFloat(),
-                bottomStart.toFloat(), bottomEnd.toFloat(),
-            ),
-        )
+        val ts = topStart.toFloat(); val te = topEnd.toFloat()
+        val bs = bottomStart.toFloat(); val be = bottomEnd.toFloat()
+        emitters.add { ctx -> ctx.add(RoundedClipRectModifier(ts, te, bs, be)) }
         return this
     }
 
@@ -228,42 +235,84 @@ class LayoutModifier {
      * plain id). The component is invisible when the referenced int evaluates to zero.
      */
     fun visibility(valueId: Int): LayoutModifier {
-        ops.add(VisibilityModifier(valueId))
+        emitters.add { ctx -> ctx.add(VisibilityModifier(valueId)) }
         return this
     }
 
     /** `MODIFIER_ZINDEX` — float z-order; higher draws on top. [value] may be NaN-encoded id ref. */
     fun zIndex(value: Number): LayoutModifier {
-        ops.add(ZIndexModifier(value.toFloat()))
+        val v = value.toFloat()
+        emitters.add { ctx -> ctx.add(ZIndexModifier(v)) }
         return this
     }
 
     /** `MODIFIER_CLICK` — mark component clickable (no operands; action wiring is out of scope). */
     fun click(): LayoutModifier {
-        ops.add(ClickModifier())
+        emitters.add { ctx -> ctx.add(ClickModifier()) }
         return this
     }
 
     /**
-     * `MODIFIER_SCROLL` — scroll wrapper. [direction] is `ScrollModifier.HORIZONTAL`/`VERTICAL`
-     * upstream-int. Defaults match upstream `addModifierScroll(direction, 0f)` (zero position,
-     * zero max, zero notchMax). Pass [position]/[max]/[notchMax] for richer states.
+     * `MODIFIER_SCROLL` — scroll wrapper. Emits the **full upstream op group** (verified against
+     * `c_modifier_vertical_scroll.rc` + `c_modifier_horizontal_scroll.rc` corpus fixtures —
+     * NOT just MODIFIER_SCROLL).
      *
-     * **Wire note:** upstream emits a trailing `ContainerEnd` after the `ScrollModifier` op
-     * (`RemoteComposeBuffer.java:addModifierScroll`). REM-96 does NOT replicate that trailing
-     * `ContainerEnd` here — corpus c_*.rc fixtures don't exercise scroll, so the wire shape is
-     * pinned to the single-op form. The wrapped-container semantics ship with a dedicated scroll
-     * story when needed.
+     * **Wire group, mirror `RemoteComposeWriter.addModifierScroll(direction, positionId)`
+     * (`RemoteComposeWriter.java:3670-3691`):**
+     * 1. Reserve 3 region-0 plain ids via `ids.nextId()` (mirror `reserveFloatVariable()` at
+     *    `RemoteComposeWriter.java:1953-1956` — pure id allocation, **no op emitted**):
+     *    `positionId`, `maxId`, `notchMaxId`.
+     * 2. `ScrollModifier(direction, asNan(positionId), asNan(maxId), asNan(notchMaxId))` — all
+     *    three slots are NaN-encoded id-refs into the reserved plain pool.
+     * 3. `TouchExpression(positionId, value=0f, min=0f, max=asNan(maxId), velocityId=0f,
+     *    touchEffects=3, exp=[touchDirection, -1f, MUL], stopLogic=STOP_GENTLY<<16, stops=[],
+     *    easing=[])`. `touchDirection` is `asNan(ID_TOUCH_POS_X=13)` for horizontal,
+     *    `asNan(ID_TOUCH_POS_Y=14)` for vertical (mirror `RemoteContext.FLOAT_TOUCH_POS_X/Y`
+     *    at `RemoteContext.java:840-841,922-925`). `MUL` is the RPN multiply marker
+     *    (`asNan(0x310003)` per [RcExpression.OFFSET]).
+     * 4. **`ContainerEnd`** — closes the `ListActionsOperation` scope opened by `MODIFIER_SCROLL`
+     *    (`ScrollModifierOperation extends ListActionsOperation` — without the trailing End
+     *    the following modifier / `LayoutContent` ops would be sucked into the scroll-action
+     *    list, corrupting the doc tree).
+     *
+     * [direction] is [SCROLL_VERTICAL] (0) or [SCROLL_HORIZONTAL] (1) — verified against
+     * `ScrollModifierOperation.java:245,257,276`. **Scope:** REM-96 emits the byte-faithful op
+     * group only; live touch handling at render time is Epic-F.
      */
-    fun scroll(
-        direction: Int,
-        position: Number = 0f,
-        max: Number = 0f,
-        notchMax: Number = 0f,
-    ): LayoutModifier {
-        ops.add(
-            ScrollModifier(direction, position.toFloat(), max.toFloat(), notchMax.toFloat()),
-        )
+    fun scroll(direction: Int): LayoutModifier {
+        emitters.add { ctx ->
+            val positionId = ctx.ids.nextId()
+            val maxId = ctx.ids.nextId()
+            val notchMaxId = ctx.ids.nextId()
+            ctx.add(
+                ScrollModifier(
+                    direction,
+                    WireTypes.asNan(positionId),
+                    WireTypes.asNan(maxId),
+                    WireTypes.asNan(notchMaxId),
+                ),
+            )
+            val touchDirection = if (direction != SCROLL_VERTICAL) {
+                WireTypes.asNan(ID_TOUCH_POS_X)
+            } else {
+                WireTypes.asNan(ID_TOUCH_POS_Y)
+            }
+            ctx.add(
+                TouchExpression(
+                    id = positionId,
+                    value = 0f,
+                    min = 0f,
+                    max = WireTypes.asNan(maxId),
+                    velocityId = 0f,
+                    touchEffects = 3,
+                    exp = floatArrayOf(touchDirection, -1f, RcExpression.MUL),
+                    stopLogic = TOUCH_STOP_GENTLY shl 16,
+                    stops = floatArrayOf(),
+                    easing = floatArrayOf(),
+                ),
+            )
+            ctx.add(ContainerEnd())
+        }
         return this
     }
 
@@ -279,7 +328,8 @@ class LayoutModifier {
      * `PROFILE_ANDROIDX | PROFILE_EXPERIMENTAL` (see `LayoutModifierByteTest.alignBy_*`).
      */
     fun alignBy(line: Number, flags: Int = 0): LayoutModifier {
-        ops.add(AlignByModifier(line.toFloat(), flags))
+        val l = line.toFloat()
+        emitters.add { ctx -> ctx.add(AlignByModifier(l, flags)) }
         return this
     }
 
@@ -294,6 +344,21 @@ class LayoutModifier {
          */
         const val SCROLL_VERTICAL: Int = 0
         const val SCROLL_HORIZONTAL: Int = 1
+
+        /**
+         * System-variable ids for touch position. Mirror upstream
+         * `RemoteContext.ID_TOUCH_POS_X/Y` (`RemoteContext.java:840-841`). Used in the
+         * `scroll()` group as `asNan(ID_TOUCH_POS_*)` operands of the trailing TouchExpression.
+         */
+        const val ID_TOUCH_POS_X: Int = 13
+        const val ID_TOUCH_POS_Y: Int = 14
+
+        /**
+         * `TouchExpression.STOP_GENTLY` — `TouchExpression.java:92` (`public static final int
+         * STOP_GENTLY = 0;`). Packed into the high 16 bits of TouchExpression's `stopLogic`
+         * wire int.
+         */
+        const val TOUCH_STOP_GENTLY: Int = 0
     }
 }
 
@@ -314,7 +379,7 @@ internal inline fun RemoteComposeContext.standardContainer(
 ) {
     val componentId = resolveComponentId(modifier.explicitComponentId)
     emitOpen(componentId)
-    for (op in modifier.ops) add(op)
+    for (e in modifier.emitters) e(this)
     add(LayoutContent(resolveComponentId(-1)))
     try {
         block()
@@ -456,7 +521,7 @@ inline fun RemoteComposeContext.canvas(
 ) {
     val componentId = resolveComponentId(modifier.explicitComponentId)
     add(CanvasLayout(componentId, -1))
-    for (op in modifier.ops) add(op)
+    for (e in modifier.emitters) e(this)
     add(LayoutContent(resolveComponentId(-1)))
     val emitCanvasContent = writer.apiLevel <= 7
     if (emitCanvasContent) add(CanvasContent(resolveComponentId(-1)))

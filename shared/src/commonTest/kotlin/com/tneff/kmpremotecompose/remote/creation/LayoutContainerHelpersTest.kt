@@ -222,21 +222,20 @@ class LayoutContainerHelpersTest {
 
     @Test
     fun column_modifierOps_emittedBetweenOpen_andLayoutContent() {
-        // Per upstream startColumn (RemoteComposeWriter.java:3275-3283): the modifier-ops loop
-        // runs AFTER `addColumnStart` and BEFORE `addContentStart`. Stage a fake modifier-op via
-        // direct ModifierList manipulation (the 14 typed modifier methods land in the next sub-
-        // commit; this test asserts the SEQUENCING invariant regardless of which ops).
-        val markerOp = ContainerEnd() // arbitrary op as a sequencing marker — we just need ANY op
-        val modifier = LayoutModifier()
-        modifier.ops.add(markerOp)
+        // Per upstream startColumn (RemoteComposeWriter.java:3275-3283): the modifier-emit loop
+        // runs AFTER `addColumnStart` and BEFORE `addContentStart`. Use the typed clipRect()
+        // modifier (single-op, opcode-only ClipRectModifier) as a sequencing marker
+        // distinguishable from the surrounding Container ops.
         val bytes = document(width = 100, height = 100) {
-            column(modifier = modifier) {}
+            column(modifier = LayoutModifier().clipRect()) {}
         }
         val ops = DocumentReader.inflate(bytes).operations
         val openIdx = ops.indexOfFirst { it is ColumnLayout }
         val contentIdx = ops.indexOfFirst { it is LayoutContent }
-        // Find the marker between them.
-        val markerIdx = ops.subList(openIdx + 1, contentIdx).indexOfFirst { it is ContainerEnd }
+        val markerIdx = ops.subList(openIdx + 1, contentIdx)
+            .indexOfFirst {
+                it is com.tneff.kmpremotecompose.remote.core.operations.layout.ClipRectModifier
+            }
         assertTrue(
             openIdx >= 0 && contentIdx > openIdx && markerIdx >= 0,
             "modifier ops must be emitted strictly between Column open and LayoutContent",

@@ -33,6 +33,7 @@ import com.tneff.kmpremotecompose.remote.core.operations.layout.WidthModifier
 import com.tneff.kmpremotecompose.remote.core.operations.layout.ZIndexModifier
 import kotlin.test.Test
 import kotlin.test.assertEquals
+import kotlin.test.assertTrue
 
 /**
  * REM-96 (FC-Layout-Container) — 14 modifier byte-anchors.
@@ -190,11 +191,167 @@ class LayoutModifierByteTest {
         // "0=VERTICAL, 1=HORIZONTAL". DO NOT swap these.
         assertEquals(0, LayoutModifier.SCROLL_VERTICAL)
         assertEquals(1, LayoutModifier.SCROLL_HORIZONTAL)
+    }
 
-        val mod = emit { scroll(direction = LayoutModifier.SCROLL_HORIZONTAL, position = 0f, max = 500f) }
-        val s = mod.first { it is ScrollModifier } as ScrollModifier
-        assertEquals(1, s.direction); assertEquals(0f, s.position)
-        assertEquals(500f, s.max); assertEquals(0f, s.notchMax)
+    @Test
+    fun scroll_emits_fullUpstreamGroup_ScrollModifier_TouchExpression_ContainerEnd() {
+        // 🔴 REM-96 scroll() fix anchor — REM-92/97-class fixture-blindness avoided.
+        //
+        // Pre-fix: scroll() emitted only ScrollModifier(direction, 0f, 0f, 0f) → corrupts the
+        // container stack (ScrollModifierOperation extends ListActionsOperation → opens a scope
+        // that requires a trailing ContainerEnd). Following ops would be sucked into the scroll-
+        // action list.
+        //
+        // Verified group, mirror RemoteComposeWriter.addModifierScroll(direction, positionId)
+        // (RemoteComposeWriter.java:3670-3691):
+        //   1. reserveFloatVariable() × 2 (positionId/max/notchMax — pure id alloc, no op)
+        //   2. ScrollModifierOperation.apply(buf, direction, asNan(posId), asNan(maxId), asNan(notchMaxId))
+        //   3. addTouchExpression(posId, 0f, 0f, asNan(maxId), 0f, 3, [touchDir, -1, MUL],
+        //      STOP_GENTLY, null, null)
+        //   4. addContainerEnd()
+        //
+        // Anchored against the c_modifier_vertical_scroll.rc / c_modifier_horizontal_scroll.rc
+        // corpus fixtures (assist NO-GO 2026-06-28 — both decoded to this group).
+        val bytes = document(width = 200, height = 200) {
+            box(modifier = LayoutModifier().scroll(direction = LayoutModifier.SCROLL_VERTICAL)) {}
+        }
+        val ops = DocumentReader.inflate(bytes).operations
+
+        val boxIdx = ops.indexOfFirst {
+            it is com.tneff.kmpremotecompose.remote.core.operations.layout.BoxLayout
+        }
+        assertTrue(boxIdx >= 0)
+        val opcodes = ops.drop(boxIdx).map { it.opcode }
+        assertEquals(
+            listOf(
+                com.tneff.kmpremotecompose.remote.core.operations.Operations.LAYOUT_BOX,
+                com.tneff.kmpremotecompose.remote.core.operations.Operations.MODIFIER_SCROLL,
+                com.tneff.kmpremotecompose.remote.core.operations.Operations.TOUCH_EXPRESSION,
+                com.tneff.kmpremotecompose.remote.core.operations.Operations.CONTAINER_END,
+                com.tneff.kmpremotecompose.remote.core.operations.Operations.LAYOUT_CONTENT,
+                com.tneff.kmpremotecompose.remote.core.operations.Operations.CONTAINER_END,
+                com.tneff.kmpremotecompose.remote.core.operations.Operations.CONTAINER_END,
+            ),
+            opcodes,
+            "scroll() = ScrollModifier + TouchExpression + ContainerEnd (closing scroll scope) " +
+                "BEFORE LayoutContent + 2 × ContainerEnd (closing the box)",
+        )
+    }
+
+    @Test
+    fun scroll_allocatesThreePlainIds_positionMaxNotchMax_andNaNEncodesIntoScrollModifier() {
+        // Mirror reserveFloatVariable() × 3 → asNan() wrapping. Verifies the wire-shape pin:
+        //   ScrollModifier.position/max/notchMax all = asNan(reserved-id).
+        val bytes = document(width = 100, height = 100, contentDescription = "Clock") {
+            // content-desc claimed id 42; scroll's first reserved id is the next available = 43.
+            box(modifier = LayoutModifier().scroll(direction = LayoutModifier.SCROLL_HORIZONTAL)) {}
+        }
+        val s = DocumentReader.inflate(bytes).operations
+            .first { it is ScrollModifier } as ScrollModifier
+        assertEquals(1, s.direction, "horizontal direction = 1")
+        // The 3 reserved ids in order: 43 (position), 44 (max), 45 (notchMax).
+        assertEquals(
+            com.tneff.kmpremotecompose.remote.wire.WireTypes.asNan(43).toRawBits(),
+            s.position.toRawBits(),
+            "position slot = asNan(positionId=43)",
+        )
+        assertEquals(
+            com.tneff.kmpremotecompose.remote.wire.WireTypes.asNan(44).toRawBits(),
+            s.max.toRawBits(),
+            "max slot = asNan(maxId=44)",
+        )
+        assertEquals(
+            com.tneff.kmpremotecompose.remote.wire.WireTypes.asNan(45).toRawBits(),
+            s.notchMax.toRawBits(),
+            "notchMax slot = asNan(notchMaxId=45)",
+        )
+    }
+
+    @Test
+    fun scroll_touchExpression_carriesUpstreamRpnGroup_andPositionIdReference() {
+        // Mirror addTouchExpression call at RemoteComposeWriter.java:3677-3689:
+        //   id = idFromNan(positionId) = bare id
+        //   value=0f, min=0f, max=asNan(maxId), velocityId=0f
+        //   touchEffects=3
+        //   exp = [touchExpressionDirection, -1f, MUL]
+        //   stopLogic = STOP_GENTLY (=0) shl 16 = 0
+        //   stops = [], easing = []
+        // touchExpressionDirection = FLOAT_TOUCH_POS_X (=asNan(13)) for horizontal,
+        //                          = FLOAT_TOUCH_POS_Y (=asNan(14)) for vertical
+        val bytes = document(width = 200, height = 200) {
+            box(modifier = LayoutModifier().scroll(direction = LayoutModifier.SCROLL_VERTICAL)) {}
+        }
+        val te = DocumentReader.inflate(bytes).operations
+            .first {
+                it is com.tneff.kmpremotecompose.remote.core.operations.layout.TouchExpression
+            } as com.tneff.kmpremotecompose.remote.core.operations.layout.TouchExpression
+        // positionId = first reserved = 42 (no contentDescription in this doc).
+        assertEquals(42, te.id, "TouchExpression.id = bare positionId (reserveFloatVariable's id)")
+        assertEquals(0f, te.value); assertEquals(0f, te.min)
+        assertEquals(
+            com.tneff.kmpremotecompose.remote.wire.WireTypes.asNan(43).toRawBits(),
+            te.max.toRawBits(),
+            "TouchExpression.max = asNan(maxId=43)",
+        )
+        assertEquals(0f, te.velocityId); assertEquals(3, te.touchEffects)
+        assertEquals(3, te.exp.size, "exp = [touchDir, -1, MUL]")
+        assertEquals(
+            com.tneff.kmpremotecompose.remote.wire.WireTypes.asNan(LayoutModifier.ID_TOUCH_POS_Y).toRawBits(),
+            te.exp[0].toRawBits(),
+            "vertical scroll → exp[0] = FLOAT_TOUCH_POS_Y = asNan(14)",
+        )
+        assertEquals((-1f).toRawBits(), te.exp[1].toRawBits())
+        assertEquals(
+            RcExpression.MUL.toRawBits(), te.exp[2].toRawBits(),
+            "exp[2] = MUL RPN marker = asNan(OFFSET + 3)",
+        )
+        assertEquals(0, te.stopLogic, "STOP_GENTLY(=0) shl 16 | stops.length(=0) = 0")
+        assertEquals(0, te.stops.size)
+        assertEquals(0, te.easing.size)
+    }
+
+    @Test
+    fun scroll_horizontal_useFloatTouchPosX_asExpDirection() {
+        // Direction-conditional touchDirection: != 0 → FLOAT_TOUCH_POS_X. Mirror upstream
+        // RemoteComposeWriter.java:3673-3674 ternary.
+        val bytes = document(width = 200, height = 200) {
+            box(modifier = LayoutModifier().scroll(direction = LayoutModifier.SCROLL_HORIZONTAL)) {}
+        }
+        val te = DocumentReader.inflate(bytes).operations
+            .first {
+                it is com.tneff.kmpremotecompose.remote.core.operations.layout.TouchExpression
+            } as com.tneff.kmpremotecompose.remote.core.operations.layout.TouchExpression
+        assertEquals(
+            com.tneff.kmpremotecompose.remote.wire.WireTypes.asNan(LayoutModifier.ID_TOUCH_POS_X).toRawBits(),
+            te.exp[0].toRawBits(),
+            "horizontal scroll → exp[0] = FLOAT_TOUCH_POS_X = asNan(13)",
+        )
+    }
+
+    @Test
+    fun scroll_doesNotCorruptFollowingModifiers_postFix() {
+        // Pre-fix regression: scroll left ListActionsOperation open → following BACKGROUND ops
+        // got sucked into the scroll action list. After the fix the trailing ContainerEnd closes
+        // the scope so the next modifier emits cleanly at top-level.
+        val bytes = document(width = 200, height = 200) {
+            box(
+                modifier = LayoutModifier()
+                    .scroll(direction = LayoutModifier.SCROLL_VERTICAL)
+                    .background(0xFF112233.toInt()),
+            ) {}
+        }
+        val ops = DocumentReader.inflate(bytes).operations
+        val containerEnd = com.tneff.kmpremotecompose.remote.core.operations.Operations.CONTAINER_END
+        val bgIdx = ops.indexOfFirst {
+            it is com.tneff.kmpremotecompose.remote.core.operations.layout.BackgroundModifier
+        }
+        // Background must appear AFTER the trailing ContainerEnd that closes scroll's scope.
+        val scrollEndIdx = ops.indexOfFirst { it.opcode == containerEnd }
+        assertTrue(
+            scrollEndIdx >= 0 && bgIdx > scrollEndIdx,
+            "BackgroundModifier must follow the scroll-scope-closing ContainerEnd " +
+                "(pre-fix it would have been swallowed into the scroll action list)",
+        )
     }
 
     @Test
