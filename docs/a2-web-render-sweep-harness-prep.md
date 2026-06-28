@@ -31,6 +31,29 @@
 
 ---
 
+## 0.1 🟢 STAND 2026-06-28 (post-compact, EMPIRISCH gegen den realen wasmJs-dist verifiziert — chromium)
+
+PO-Auftrag „pre-arm REM-80": (a) chromium-Smoke re-confirmen, (b) Harness gegen Default-Render stagen.
+**Methode:** `./gradlew :webApp:wasmJsBrowserDistribution` (Build **grün**, exit 0) → `python3 -m http.server 8080`
+auf dem dist → Maestro `run` device_id=`chromium` gegen die echten DOM-Marker. **Befunde (hart, non-optional asserts):**
+
+| Gate | Vorher angenommen | **Verifizierte Realität (2026-06-28)** |
+|---|---|---|
+| **W2** DOM-Marker | offen (dev) | ✅ **GEMERGT (REM-83, develop `494a6d8`).** `RenderMarkerMirror.wasmJs.kt` schreibt `data-rc-canvas/-rendered/-draw-count/-doc/-error` auf das `<canvas>`. honest-render-Gate (`committed && drawCount>0`) erhalten. **chromium-`assertTrue`+page-JS liest sie** (verifiziert). → Flow jetzt darauf gated. |
+| **W3** Player-Entry | (nicht erkannt) | 🔴 **NEU/BLOCKER:** `webApp/main.kt → ComposeViewport { App() }` = CMP-Template („Click me!"), **NICHT `RemoteComposeApp`** (androidApp: `setContent { RemoteComposeApp(...) }`). → **0 data-rc-Marker im DOM**, kein Doc rendert. Smoke-Screenshot = Placeholder-Button, nicht procedure_simple1. FIX (DEV): web-Entry auf RemoteComposeApp umstellen. |
+| Korpus-Bytes | (angenommen verfügbar) | 🔴 **0 `.rc` im web-dist** (`composeResources` hat nur 1 drawable). Ohne C5-HTTP-fetch (oder Resource-Bundling) keine Doc-Bytes auf Web — selbst mit gefixtem W3. |
+| **C5** Browser-Loading | „gemergt" (FALSCH notiert) | 🔴 **nur TechSpec gemergt** (REM-82 `fbd4dd3`); **C5+W1-IMPL ist WIP/ungemergt** (`feature/REM-82-c5-browser-loading` `63fbc34`). |
+| **W1** URL-Router | offen | 🔴 weiter offen (Teil der C5-WIP-Branch). |
+
+**→ REM-80/C7 ist NICHT armbar** (W3 + Korpus-Bytes/C5 + W1 offen; W2 erledigt). **Pre-arm geliefert:**
+- `docs/flows/web_render_sweep.yaml` **auf die echten W2-`data-rc-*`-Marker umverdrahtet** (assertTrue+page-JS, FAIL-CLOSED honest-render + stale-doc-Guard + error-Guard).
+- `docs/flows/web_default_smoke.yaml` (NEU) — die kleinste Liveness („rendert der Entry den Default?"), flippt grün sobald W3 + Doc-Bytes da sind, **unabhängig von W1**.
+- `screenshots/parity/web_sweep_driver.sh` (NEU) — 173-Doc-Treiber, Image-Bucket zuerst, REM-62-Frame-Pin (t=36630) für die Uhren, → `parity_sweep.py <web> <mobile-baseline>` (derselbe Verdikt-Stack). Name-Listing + Bucket (14/14) gegen den realen Korpus validiert; bash-Syntax ok.
+
+**Offen an PO/dev:** W3 (web-Entry→RemoteComposeApp) ist der neue Top-Blocker VOR C5 — ohne ihn rendert Web gar nichts. Reihenfolge-Empfehlung: **W3 → web_default_smoke grün (Liveness) → C5+W1 → voller C7-Sweep.**
+
+---
+
 ## 1. Was A2 von C6 braucht (Dependency-Contract an dev-2, via PO zu routen)
 
 Der Web-Sweep kann erst laufen, wenn der wasmJs-webApp diese Hooks bereitstellt. **Identisch zum

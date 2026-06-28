@@ -1,0 +1,47 @@
+# RC Web-Default-Smoke — die kleinste Web-Liveness (REM-79 / A2, gate für REM-80/C7)
+# Owner: test-2. Analog zu render_smoke.yaml (mobil), aber für wasmJs-Chromium.
+#
+# Zweck: beantwortet die EINE Vorfrage vor jedem Sweep — "rendert der webApp-Entry den Default-Doc
+# überhaupt?". Kein ?rc= nötig (RcRouter.DEFAULT_DOC=procedure_simple1) → unabhängig von W1.
+#
+# STAND (test-2 empirisch verifiziert 2026-06-28, chromium gegen den realen wasmJs-dist):
+#   ❌ ROT — der webApp-Entry rendert `App()` (CMP-Template "Click me!"), NICHT `RemoteComposeApp`.
+#      0 data-rc-Marker im DOM (querySelectorAll('[data-rc-rendered],…').length === 0, non-optional bestätigt).
+#   → Dieser Flow flippt grün, sobald (a) W3: webApp/main.kt RemoteComposeApp aufruft UND
+#      (b) die Default-Doc-Bytes auf Web verfügbar sind (Korpus-Bundle ODER C5-HTTP-fetch; aktuell 0 .rc im dist).
+#
+# Lauf: maestro test --device chromium --env BASE=http://localhost:8080 web_default_smoke.yaml
+#   (Server: ./gradlew :webApp:wasmJsBrowserDistribution && python3 -m http.server 8080 -d
+#    webApp/build/dist/wasmJs/productionExecutable)
+
+url: ${BASE}
+name: "RC Web Default Smoke"
+tags:
+  - web
+  - smoke
+env:
+  BASE: "http://localhost:8080"
+
+---
+- openLink:
+    link: "${BASE}/"
+
+- waitForAnimationToEnd:
+    timeout: 15000
+    label: "wasm boot + first frame commit"
+
+# Player ist verdrahtet + ein Frame gepaintet (honest-render-Gate, REM-83).
+- assertTrue:
+    condition: "document.querySelector('canvas') && document.querySelector('canvas').getAttribute('data-rc-rendered') === 'true'"
+    label: "data-rc-rendered==true (Player gerendert)"
+
+# Default-Doc ist procedure_simple1 (RcRouter.DEFAULT_DOC).
+- assertTrue:
+    condition: "document.querySelector('canvas') && document.querySelector('canvas').getAttribute('data-rc-doc') === 'procedure_simple1'"
+    label: "data-rc-doc==procedure_simple1 (Default-Doc)"
+
+- assertTrue:
+    condition: "document.querySelector('canvas') && !document.querySelector('canvas').hasAttribute('data-rc-error')"
+    label: "kein data-rc-error"
+
+- takeScreenshot: "web/_default_smoke"
