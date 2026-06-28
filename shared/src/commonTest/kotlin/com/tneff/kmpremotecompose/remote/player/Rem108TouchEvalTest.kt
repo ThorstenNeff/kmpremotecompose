@@ -22,6 +22,8 @@ import com.tneff.kmpremotecompose.remote.core.operations.Builtins
 import com.tneff.kmpremotecompose.remote.core.operations.layout.TouchExpression
 import com.tneff.kmpremotecompose.remote.player.core.RemoteComposePlayer
 import com.tneff.kmpremotecompose.remote.player.core.RemoteContext
+import com.tneff.kmpremotecompose.remote.player.core.TouchPhase
+import com.tneff.kmpremotecompose.remote.player.core.TouchState
 import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertNotEquals
@@ -110,5 +112,44 @@ class Rem108TouchEvalTest {
         // if state were nudged, a static re-paint reloads the default (touch inactive ⇒ apply ignores pos).
         player.paint(d, NoOpPaintContext(ctx), frameTimeSeconds = 0f)
         assertEquals(staticVal, ctx.getFloat(outId), "static render output is stable (touch never drives it)")
+    }
+
+    @Test fun touchState_phaseConsume_drivesGestureAcrossFrames() {
+        // S2b: the persistent TouchState drives exactly one transition per paint across the per-frame-fresh
+        // RemoteContext. DOWN→(consumed)DRAG→…→UP→(consumed)IDLE; a drag moves the output; release settles.
+        val ctx = RemoteContext().also { it.animationEnabled = true }
+        val d = doc("touch1.rc")
+        val player = RemoteComposePlayer(ctx)
+        val ts = TouchState()
+        player.paint(d, NoOpPaintContext(ctx), frameTimeSeconds = 1f, touchState = ts)
+        val outId = firstTouch(d).id
+        val atRest = ctx.getFloat(outId)
+
+        ts.down(40f, 40f)
+        player.paint(d, NoOpPaintContext(ctx), frameTimeSeconds = 1f, touchState = ts)
+        assertEquals(TouchPhase.DRAG, ts.phase, "DOWN is consumed in one frame → DRAG")
+
+        ts.move(260f, 260f)
+        player.paint(d, NoOpPaintContext(ctx), frameTimeSeconds = 1f, touchState = ts)
+        assertNotEquals(atRest, ctx.getFloat(outId), "a drag moves the touch output")
+
+        ts.up(260f, 260f)
+        player.paint(d, NoOpPaintContext(ctx), frameTimeSeconds = 1f, touchState = ts)
+        assertEquals(TouchPhase.IDLE, ts.phase, "UP is consumed in one frame → IDLE")
+    }
+
+    @Test fun staticMode_touchStateNotConsumed_determinismPin() {
+        // S2b determinism: in static mode the player must NOT consume the TouchState (no dispatch) → the
+        // phase stays DOWN and the output stays the default. Goldens / REM-78 sweep immune to touch.
+        val ctx = RemoteContext().also { it.animationEnabled = false }
+        val d = doc("touch1.rc")
+        val player = RemoteComposePlayer(ctx)
+        val ts = TouchState().also { it.down(40f, 40f) }
+        player.paint(d, NoOpPaintContext(ctx), frameTimeSeconds = 0f, touchState = ts)
+        val outId = firstTouch(d).id
+        val v1 = ctx.getFloat(outId)
+        assertEquals(TouchPhase.DOWN, ts.phase, "static mode does not consume the touch (phase stays DOWN)")
+        player.paint(d, NoOpPaintContext(ctx), frameTimeSeconds = 0f, touchState = ts)
+        assertEquals(v1, ctx.getFloat(outId), "static output stable — touch never drives it")
     }
 }
