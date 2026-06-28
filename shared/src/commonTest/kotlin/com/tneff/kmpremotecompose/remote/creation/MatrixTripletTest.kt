@@ -355,6 +355,50 @@ class MatrixTripletTest {
         )
     }
 
+    @Test
+    fun matrixVectorMath_matchesCorpusFixtureRegion_tripleAnchor() {
+        // REM-113-followup-redo (REM-115 leg, assist 2026-06-28): assist's full-inflate scan
+        // found MATRIX_VECTOR_MATH(188) corpus-present in cube3d.rc. Real triple-pin against
+        // the corpus operand-set. Wire: opcode(1) + short type(2) + int matrixId(4) +
+        // int outCount(4) + outCount×int(4) + int inCount(4) + inCount×float(4).
+        runCorpusFixtureMatch(
+            opcode = Operations.MATRIX_VECTOR_MATH,
+            minOpSize = 19, // opcode + short + 3 ints + 1 int + 1 float — single in/out lower bound
+            decodeAndRebuild = { _, fullBytes ->
+                val type = fullBytes.readShortBE(1)
+                val matrixId = fullBytes.readIntBE(3)
+                val outCount = fullBytes.readIntBE(7)
+                if (outCount !in 1..4) return@runCorpusFixtureMatch null
+                val outputs = IntArray(outCount) { i -> fullBytes.readIntBE(11 + i * 4) }
+                val inCountOff = 11 + outCount * 4
+                if (inCountOff + 4 > fullBytes.size) return@runCorpusFixtureMatch null
+                val inCount = fullBytes.readIntBE(inCountOff)
+                if (inCount !in 1..4) return@runCorpusFixtureMatch null
+                val inputsOff = inCountOff + 4
+                val opByteSize = inputsOff + inCount * 4
+                if (opByteSize > fullBytes.size) return@runCorpusFixtureMatch null
+                val inputs = FloatArray(inCount) { i -> fullBytes.readFloatBE(inputsOff + i * 4) }
+                val region = fullBytes.copyOfRange(0, opByteSize)
+                // Rebuild via DSL: pin matrix id-pool, allocate the matrix, then pin the
+                // output ids to the corpus values (region-0 plain allocator, sequential).
+                val ctx = nonBaselineContext()
+                ctx.ids.setNextId(matrixId)
+                val matrixRef = ctx.matrixConstant(FloatArray(16))
+                ctx.ids.setNextId(outputs[0])
+                val emittedOutputs = ctx.matrixVectorMath(matrixRef, inputs, outputCount = outCount, type = type)
+                // If id-pool drift means the outputs don't match, this is a real divergence —
+                // fall through with null so runCorpusFixtureMatch tries the next match.
+                for (i in outputs.indices) {
+                    if (emittedOutputs[i] != outputs[i]) return@runCorpusFixtureMatch null
+                }
+                val dslBytes = ctx.encodeToByteArray()
+                val dslOff = findOpcode(dslBytes, Operations.MATRIX_VECTOR_MATH)
+                val dslRegion = dslBytes.copyOfRange(dslOff, dslOff + opByteSize)
+                region to dslRegion
+            },
+        )
+    }
+
     /**
      * Scan all corpus fixtures for one containing a DocumentReader-validated instance of [opcode];
      * call [decodeAndRebuild] with the matching fixture-region (sized via fixture's own length
