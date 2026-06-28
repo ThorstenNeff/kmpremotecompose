@@ -207,17 +207,28 @@ class RemoteComposePlayer(val context: RemoteContext = RemoteContext()) {
     // render-invariant. S2 makes TouchExpression evaluate against these + adds the down/drag/up state
     // machine (delta/easing/stop-modes). Never called in static mode → determinism preserved.
 
-    /** Touch began at doc-space ([x], [y]) — load the touch position (REM-108 S1). */
-    fun touchDown(context: RemoteContext, x: Float, y: Float) = loadTouchPos(context, x, y)
+    /** Touch began at doc-space ([x], [y]) — load the position + notify the doc's TouchExpressions (S2). */
+    fun touchDown(document: RemoteComposeDocument, context: RemoteContext, x: Float, y: Float) {
+        loadTouchPos(context, x, y)
+        for (te in document.operations) if (te is TouchExpression) te.touchDown(context)
+    }
 
-    /** Touch moved to doc-space ([x], [y]) — load the touch position (REM-108 S1). */
-    fun touchDrag(context: RemoteContext, x: Float, y: Float) = loadTouchPos(context, x, y)
+    /** Touch moved to doc-space ([x], [y]) — load the position + re-evaluate the TouchExpressions (S2). */
+    fun touchDrag(document: RemoteComposeDocument, context: RemoteContext, x: Float, y: Float) {
+        loadTouchPos(context, x, y)
+        for (te in document.operations) if (te is TouchExpression) te.touchDrag(context)
+    }
 
-    /** Touch ended at doc-space ([x], [y]) — load the final touch position (REM-108 S1). */
-    fun touchUp(context: RemoteContext, x: Float, y: Float) = loadTouchPos(context, x, y)
+    /** Touch ended — load the final position + settle the TouchExpressions to their stop value (S2). */
+    fun touchUp(document: RemoteComposeDocument, context: RemoteContext, x: Float, y: Float) {
+        loadTouchPos(context, x, y)
+        for (te in document.operations) if (te is TouchExpression) te.touchUp()
+    }
 
-    /** Touch cancelled at doc-space ([x], [y]) — load the last touch position (REM-108 S1). */
-    fun touchCancel(context: RemoteContext, x: Float, y: Float) = loadTouchPos(context, x, y)
+    /** Touch cancelled — abandon the active drag on the TouchExpressions, keep their value (S2). */
+    fun touchCancel(document: RemoteComposeDocument) {
+        for (te in document.operations) if (te is TouchExpression) te.touchCancel()
+    }
 
     private fun loadTouchPos(context: RemoteContext, x: Float, y: Float) {
         context.loadFloat(RemoteContext.ID_TOUCH_POS_X, x)

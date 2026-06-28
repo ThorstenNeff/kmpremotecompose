@@ -94,13 +94,14 @@ class Rem108TouchSeamTest {
 
     @Test fun touchDispatch_loadsPosition() {
         val ctx = RemoteContext()
+        val d = doc("touch1.rc")
         val player = RemoteComposePlayer(ctx)
-        player.touchDown(ctx, 120f, 240f)
+        player.touchDown(d, ctx, 120f, 240f)
         assertEquals(120f, ctx.getFloat(RemoteContext.ID_TOUCH_POS_X))
         assertEquals(240f, ctx.getFloat(RemoteContext.ID_TOUCH_POS_Y))
-        player.touchDrag(ctx, 121f, 241f)
+        player.touchDrag(d, ctx, 121f, 241f)
         assertEquals(121f, ctx.getFloat(RemoteContext.ID_TOUCH_POS_X))
-        player.touchUp(ctx, 122f, 242f)
+        player.touchUp(d, ctx, 122f, 242f)
         assertEquals(242f, ctx.getFloat(RemoteContext.ID_TOUCH_POS_Y))
     }
 
