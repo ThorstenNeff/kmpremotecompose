@@ -87,3 +87,26 @@ UNCHANGED → §2 intact):
 
 Decode-grounded: `c_modifier_vertical_scroll` = ScrollModifier×1 + TouchExpression×1 + ClipRectModifier×1.
 `thumb_wheel1`/`demo_flick` = pure TouchExpression (no ScrollModifier) → S3a/S2-Core territory.
+
+## 9. Decode grounding — (a) & (b) ANSWERED (c_modifier_vertical_scroll)
+
+Decoded the actual ops:
+```
+SCROLLMOD  dir=0(VERTICAL)  position=var(id=42)  max=var(id=43)  notchMax=var(id=44)
+TOUCHEXPR  id=42  stopMode=0(GENTLY)  min=0.0  max=var(id=43)  exp=[ TOUCH_POS_Y(14), -1.0, MUL ]
+```
+
+- **(a) CONFIRMED — binding via `position` id-ref.** `idFromNan(position)=42` == `TouchExpression.id=42`.
+  So `getFloat(idFromNan(position))` IS the TE's output → no container/positional TE ownership needed for the
+  value path. Bonus: `max=id43`/`notchMax=id44` are **shared ids** between ScrollModifier and the TE
+  (`TouchExpression.max=id43`), so the layout-side `loadFloat(id43, maxScroll)` / `loadFloat(id44, content)`
+  feed the TE's own clamp — clean id-based coupling, exactly upstream.
+- **(b) ANSWERED — raw coords suffice for MVP.** The TE expression is `-TOUCH_POS_Y` with `stopMode=0`
+  (delta mode: `value = valueAtDown + (raw_now − raw_down)`). A constant coord offset cancels in the delta,
+  so our global raw doc-space dispatch (S2b) drives the scroll correctly for the corpus doc. The upstream
+  `touchDrag(y + mScrollY)` content-space adjustment only matters when `mScrollY` changes *during* the drag
+  (continuous/over-scroll precision) → **refinement, not an MVP blocker.**
+
+**Net:** S3b dev-1 work shrinks to: `ScrollModifier.scrollOffset(ctx) = -clamp(getFloat(idFromNan(position)),
+getFloat(idFromNan(max)))` per direction, + layout `loadFloat(max, maxScroll)`/`loadFloat(notchMax, content)`
+fed by dev-2's content dimension. dev-2 applies the offset (translate+clip). Only open item → (c) content-dim hook.
