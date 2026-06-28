@@ -24,6 +24,7 @@ import com.tneff.kmpremotecompose.remote.player.core.RpnFloatEvaluator
 import com.tneff.kmpremotecompose.remote.wire.WireTypes
 import kotlin.test.Test
 import kotlin.test.assertEquals
+import kotlin.test.assertTrue
 
 /**
  * REM-37 Eval-Engine E2 — the RPN float evaluator (MVP operator subset) + `FLOAT_EXPRESSION` apply.
@@ -92,6 +93,15 @@ class EvalE2Test {
         assertEquals(0f, eval(1f, op(22)), 1e-6f, "ACOS(1)")
         assertEquals(1.5707964f, eval(0f, op(22)), 1e-5f, "ACOS(0)=π/2")
         assertEquals(0.7853982f, eval(1f, 1f, op(24)), 1e-5f, "ATAN2(1,1)=π/4")
+    }
+
+    @Test
+    fun rem109_randSeed_isDeterministicAndInRange() {
+        // REM-109: RAND_SEED [seed] reseeds, RAND pushes [0,1). A fixed seed → reproducible.
+        val a = eval(42f, op(40), op(39))
+        val b = eval(42f, op(40), op(39))
+        assertTrue(a in 0f..1f, "RAND in [0,1), was $a")
+        assertEquals(a, b, "same seed → same random value (reproducible)")
     }
 
     @Test

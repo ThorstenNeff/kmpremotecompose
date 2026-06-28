@@ -32,6 +32,7 @@ import kotlin.math.sign
 import kotlin.math.sin
 import kotlin.math.sqrt
 import kotlin.math.tan
+import kotlin.random.Random
 
 /**
  * The RPN float-expression evaluator (REM-37, Eval-Engine E2) — port of upstream
@@ -87,6 +88,12 @@ object RpnFloatEvaluator {
     private const val OP_TAN = OFFSET + 20
     private const val OP_ACOS = OFFSET + 22
     private const val OP_ATAN2 = OFFSET + 24 // [y, x] → atan2(y, x)
+    private const val OP_RAND = OFFSET + 39 // push a random float in [0,1)
+    private const val OP_RAND_SEED = OFFSET + 40 // [seed] → reseed the RNG (0 = fresh), pops seed
+
+    // REM-109: shared RNG for RAND/RAND_SEED (mirrors upstream's static `sRandom`). Reseeded by RAND_SEED
+    // so a doc that seeds gets reproducible randomness; default otherwise.
+    private var rng: Random = Random.Default
 
     // REM-104: stack/geometry ops (upstream AnimatedFloatExpression). HYPOT computes a radial-gradient
     // radius = hypot(w/2, h/2) in countdown/demo_use_of_global; the unimplemented operator previously threw,
@@ -197,6 +204,13 @@ object RpnFloatEvaluator {
         OP_TAN -> { stack[sp] = tan(stack[sp]); sp }
         OP_ACOS -> { stack[sp] = acos(stack[sp]); sp }
         OP_ATAN2 -> { stack[sp - 1] = atan2(stack[sp - 1], stack[sp]); sp - 1 }
+        // REM-109: RAND pushes a random [0,1); RAND_SEED reseeds (seed 0 = fresh, else deterministic).
+        OP_RAND -> { stack[sp + 1] = rng.nextFloat(); sp + 1 }
+        OP_RAND_SEED -> {
+            val seed = stack[sp]
+            rng = if (seed == 0f) Random.Default else Random(seed.toRawBits())
+            sp - 1
+        }
         // REM-104: HYPOT and its sibling stack/geometry ops (upstream AnimatedFloatExpression).
         OP_HYPOT -> { stack[sp - 1] = hypot(stack[sp - 1], stack[sp]); sp - 1 }
         OP_SQUARE_SUM -> { stack[sp - 1] = stack[sp - 1] * stack[sp - 1] + stack[sp] * stack[sp]; sp - 1 }
