@@ -20,8 +20,11 @@ import com.tneff.kmpremotecompose.remote.core.operations.ConditionalOperations
 import com.tneff.kmpremotecompose.remote.core.operations.FloatExpression
 import com.tneff.kmpremotecompose.remote.core.operations.Operation
 import com.tneff.kmpremotecompose.remote.core.operations.Operations
+import com.tneff.kmpremotecompose.remote.core.operations.layout.CanvasContent
+import com.tneff.kmpremotecompose.remote.core.operations.layout.LayoutContent
 import com.tneff.kmpremotecompose.remote.core.operations.layout.LoopStart
 import com.tneff.kmpremotecompose.remote.core.operations.layout.RootContentBehavior
+import com.tneff.kmpremotecompose.remote.core.operations.layout.ScrollModifier
 import com.tneff.kmpremotecompose.remote.core.operations.layout.TouchExpression
 import com.tneff.kmpremotecompose.remote.wire.WireTypes
 
@@ -115,7 +118,8 @@ class RemoteComposePlayer(val context: RemoteContext = RemoteContext()) {
         // Layout-measure pass (REM-37 E-Layout, dev-2) — AFTER scale-setup, BEFORE the eval phase, so a
         // `ComponentValue`'s measured dimension (e.g. server_clock #43/44) is in the store when the
         // FloatExpressions that reference it evaluate. Measures in doc-space; safe no-op without a tree.
-        LayoutMeasure.measure(document, surfaceWidth, surfaceHeight, context)
+        // REM-108 S3b: measure returns the scroll brackets (content holders to clip+translate in paint).
+        val scrollBrackets = LayoutMeasure.measure(document, surfaceWidth, surfaceHeight, context)
         // Phase A (REM-36 Eval-Engine E1): resolve + evaluate variables BEFORE painting, so draw ops
         // read already-resolved values (the long-flagged "deferred apply-phase"). MVP evaluates every
         // VariableSupport op each frame (no dirty tracking). updateVariables (resolve NaN refs) then
@@ -130,7 +134,7 @@ class RemoteComposePlayer(val context: RemoteContext = RemoteContext()) {
                 op.apply(context)
             }
         }
-        walkGated(ops, 0, ops.size, paintPhase = true, paint) { op ->
+        walkGated(ops, 0, ops.size, paintPhase = true, paint, scrollBrackets) { op ->
             if (op is PaintOperation) {
                 op.paint(context, paint)
             }
@@ -161,10 +165,16 @@ class RemoteComposePlayer(val context: RemoteContext = RemoteContext()) {
         end: Int,
         paintPhase: Boolean,
         paint: PaintContext,
+        scrollBrackets: Map<Int, LayoutMeasure.ScrollBracket>? = null,
         action: (Operation) -> Unit,
     ) {
+        // REM-108 S3b: op-indices where a scroll bracket's matrixRestore must fire (the content holder's
+        // matching CONTAINER_END). Local to this walk call → only the top-level paint pass opens brackets.
+        val scrollRestoreAt = if (scrollBrackets.isNullOrEmpty()) null else HashSet<Int>()
         var i = start
         while (i < end) {
+            // Close any scroll bracket whose content holder ends at this op (before processing the END).
+            if (scrollRestoreAt != null && i in scrollRestoreAt) { paint.matrixRestore(); scrollRestoreAt.remove(i) }
             val op = ops[i]
             when {
                 op is LoopStart -> { // isolated loop interception — non-loop path below is untouched
@@ -173,9 +183,41 @@ class RemoteComposePlayer(val context: RemoteContext = RemoteContext()) {
                     i = afterEnd
                 }
                 op is ConditionalOperations && !op.conditionHolds(context) -> i = skipConditionalBlock(ops, i)
-                else -> { action(op); i++ }
+                else -> {
+                    // REM-108 S3b: open a scroll bracket when entering a scrollable component's content holder
+                    // — clip to its viewport (if it carries a ClipRectModifier) and translate by the live
+                    // offset (read post-eval from the store), restoring at the holder's matching CONTAINER_END.
+                    if (scrollRestoreAt != null) openScrollBracket(ops, i, op, scrollBrackets!!, paint, scrollRestoreAt)
+                    action(op); i++
+                }
             }
         }
+    }
+
+    /** Open the scroll bracket for [op] if it is a bracketed content holder (REM-108 S3b). */
+    private fun openScrollBracket(
+        ops: List<Operation>,
+        index: Int,
+        op: Operation,
+        brackets: Map<Int, LayoutMeasure.ScrollBracket>,
+        paint: PaintContext,
+        restoreAt: MutableSet<Int>,
+    ) {
+        val holderId = contentHolderId(op) ?: return
+        val b = brackets[holderId] ?: return
+        val matchEnd = skipConditionalBlock(ops, index) - 1 // index of the holder's matching CONTAINER_END
+        paint.matrixSave()
+        if (b.clip) paint.clipRect(b.clipL, b.clipT, b.clipR, b.clipB)
+        val offset = b.scroll.scrollOffset(context)
+        if (b.scroll.direction == ScrollModifier.HORIZONTAL) paint.translate(offset, 0f) else paint.translate(0f, offset)
+        restoreAt.add(matchEnd)
+    }
+
+    /** The component id of a content-holder op ([LayoutContent] / [CanvasContent]); null otherwise. */
+    private fun contentHolderId(op: Operation): Int? = when (op) {
+        is LayoutContent -> op.componentId
+        is CanvasContent -> op.componentId
+        else -> null
     }
 
     /**
