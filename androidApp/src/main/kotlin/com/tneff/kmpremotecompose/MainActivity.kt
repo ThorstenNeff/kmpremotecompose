@@ -16,6 +16,11 @@ class MainActivity : ComponentActivity() {
         enableEdgeToEdge()
         super.onCreate(savedInstanceState)
 
+        // REM-62 hardening: reset transient deep-link state on a FRESH launch so a process-singleton
+        // `live`/pin left by a prior capture (Maestro `clearState` may not kill the process) can't leak
+        // into this launch → a fresh start is unconditionally static t=0. selectFromIntent re-applies any
+        // params the launch intent actually carries.
+        RcRouter.resetForLaunch()
         // REM-34: pick the doc from the launch deep-link (kmprc://render?rc=<name>); else the default.
         selectFromIntent(intent)
 

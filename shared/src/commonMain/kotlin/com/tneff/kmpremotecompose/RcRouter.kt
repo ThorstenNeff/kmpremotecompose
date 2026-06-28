@@ -74,6 +74,19 @@ object RcRouter {
     }
 
     /**
+     * Reset transient deep-link state to the **static default** (REM-62 hardening) — call on a *fresh app
+     * launch*. [RcRouter] is a process-level singleton, so a `live`/pin set by an earlier capture can
+     * survive into a new launch if the harness (Maestro `clearState`) does not force-stop the process →
+     * a time-driven doc would then render a non-deterministic *live* frame even without `&live`. Resetting
+     * at launch makes a fresh start unconditionally static (t=0); the launch intent re-applies any params
+     * it actually carries. Does NOT touch [docName] (the default-launch render is preserved, contract §2A).
+     */
+    fun resetForLaunch() {
+        live = false
+        setStaticTime(null) // → staticTimeSeconds = 0f
+    }
+
+    /**
      * Select a bundled doc by name from a deep-link. **Deterministic** unknown-handling (test-2 fix):
      * - `null` (no `rc` query param — a normal launch, or a param-less deep-link) → keep the current
      *   selection, so the default-launch render (contract §2A) is preserved.

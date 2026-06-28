@@ -78,4 +78,15 @@ class RcRouterTest {
 
         RcRouter.setStaticTime(null) // reset shared state for other tests
     }
+
+    @Test
+    fun resetForLaunch_clearsTransientLiveAndPin() {
+        // REM-62 hardening: a fresh launch must start static (t=0, not live), even if a prior capture
+        // left the process-singleton in a live/pinned state.
+        RcRouter.live = true
+        RcRouter.setStaticTime("7")
+        RcRouter.resetForLaunch()
+        assertEquals(false, RcRouter.live, "resetForLaunch → live=false (no leaked animation)")
+        assertEquals(0f, RcRouter.staticTimeSeconds, "resetForLaunch → static pin back to t=0")
+    }
 }
