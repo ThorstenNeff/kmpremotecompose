@@ -46,6 +46,29 @@ class RemoteComposeContext(
 ) {
 
     /**
+     * Negative component-id counter (REM-96 / FC-Layout-Container). Mirrors upstream
+     * `RemoteComposeBuffer.mGeneratedComponentId` (`remote-core/.../RemoteComposeBuffer.java:212`):
+     * init `-1`, post-decrement → first call returns `-2`, then `-3`, `-4`, ... .
+     *
+     * **Separate pool from [ids] / [IdAllocator].** Container open ops (`BoxLayout` /
+     * `ColumnLayout` / ...) and `LayoutContent` ops use this negative counter for their
+     * auto-generated `componentId` slot. User-provided ids pass through via `getComponentId(id)`
+     * pass-through (only `id == -1` triggers a decrement).
+     */
+    private var generatedComponentId: Int = -1
+
+    /**
+     * Upstream `getComponentId(int)` equivalent — pass [id] through unless it's `-1`, in which case
+     * advance the negative counter and return the new value. See [RemoteComposeBuffer.java:1687-1696].
+     * Byte-anchor: see `LayoutContainerHelpersTest.nestedContainers_advanceNegativeCounter`.
+     */
+    fun resolveComponentId(id: Int): Int {
+        if (id != -1) return id
+        generatedComponentId -= 1
+        return generatedComponentId
+    }
+
+    /**
      * Append [operation] to the document. Delegates to [RemoteComposeWriter.add], which fail-closes
      * on opcodes invalid for [Profile.operationsProfiles] (REM-3 gate).
      */
