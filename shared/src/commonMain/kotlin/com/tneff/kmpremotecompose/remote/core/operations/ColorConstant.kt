@@ -15,16 +15,29 @@
  */
 package com.tneff.kmpremotecompose.remote.core.operations
 
+import com.tneff.kmpremotecompose.remote.player.core.RemoteContext
+import com.tneff.kmpremotecompose.remote.player.core.VariableSupport
 import com.tneff.kmpremotecompose.remote.wire.WireBuffer
 
 /**
  * A color constant (`COLOR_CONSTANT`): binds the ARGB [color] to [colorId].
  *
  * Wire layout: opcode, `int colorId`, `int color` (0xAARRGGBB).
+ *
+ * **Binding (REM-61):** a producer — Phase A loads the declared ARGB into the color store
+ * ([RemoteContext.loadColor]) so consumers (`BackgroundModifier`/`BorderModifier`/`CoreText` and the
+ * blend refs in `ColorExpression`) resolve `getColor(colorId)` to the document's color instead of the
+ * fail-soft transparent default. Mirrors upstream `ColorConstant.apply` (implements `VariableProvider`).
+ * These are the theme *fallback* values; a host theme override by name (`NamedVariable`) is deferred
+ * (no name-registry consumer yet), so the constant is what renders.
  */
-class ColorConstant(val colorId: Int, val color: Int) : Operation {
+class ColorConstant(val colorId: Int, val color: Int) : Operation, VariableSupport {
 
     override val opcode: Int get() = Operations.COLOR_CONSTANT
+
+    override fun apply(context: RemoteContext) {
+        context.loadColor(colorId, color)
+    }
 
     override fun write(buffer: WireBuffer) {
         buffer.writeByte(opcode)
