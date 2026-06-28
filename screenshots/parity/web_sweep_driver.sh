@@ -58,6 +58,39 @@ names() {  # Bucket zuerst, dann der Rest alphabetisch — beide aus dem realen 
 echo "WEBSWEEP-BEGIN corpus=$(ls "$CORPUS"/*.rc | wc -l | tr -d ' ') base=$BASE baseline=$BASELINE"
 while read -r d; do [ -n "$d" ] && run_one "$d"; done < <(names)
 
+# ── Crop-Kalibrierung (test-2 empirisch verifiziert 2026-06-28, chromium gg. realen Render):
+#    Web rendert das Doc bei SCALE=1.0, top-left-anchored (das Doc-Pixelmaß == Mobile-Golden-Maß).
+#    Der ComposeViewport-<canvas>-Capture ist der ganze Browser-Viewport (z.B. 1200x780) mit dem Doc
+#    oben-links + Debug-testTags unten-links. → je Capture auf (0,0, golden_w, golden_h) croppen (das
+#    schneidet Doc-nativ aus + schließt die Debug-Text-Band-Pixel aus). Validiert: simple1 (600x600)
+#    + simple2 (300x300) → PASS vs Android+iOS. KEIN Resize nötig (Web-Doc-nativ == Golden-Maß).
+# Browser-Viewport-Größe des Maestro-chromium-Captures (empirisch 1200x780). Docs, deren Golden
+# GRÖSSER ist, werden vom Viewport GECLIPPT → Crop wäre ein schwarz-gepaddetes Artefakt, KEIN
+# Render-Defekt. Solche Docs werden ausgesondert (→ $OUT/_oversized/) + geloggt, NICHT false-FAILt.
+# (test-2-Befund 2026-06-28: digital_clock1 500x1500, shader_calendar 1000x2400 > 780h-Viewport.)
+VIEWPORT_W=1200; VIEWPORT_H=780
+echo "WEBSWEEP-CROP auf Doc-nativ (0,0,golden_w,golden_h); oversize→_oversized ──────"
+mkdir -p "$OUT/_oversized"
+python3 - "$OUT" "$BASELINE" "$VIEWPORT_W" "$VIEWPORT_H" <<'PY'
+import sys, os, glob, shutil
+from PIL import Image
+out, baseline, vw, vh = sys.argv[1], sys.argv[2], int(sys.argv[3]), int(sys.argv[4])
+for p in glob.glob(os.path.join(out, "*.png")):
+    name = os.path.basename(p)
+    ref = os.path.join(baseline, name)
+    if not os.path.exists(ref):
+        continue  # kein Golden → parity_sweep überspringt es ohnehin
+    gw, gh = Image.open(ref).size
+    if gw > vw or gh > vh:  # Doc größer als Capture-Viewport → Clip-Artefakt, aussondern
+        shutil.move(p, os.path.join(out, "_oversized", name))
+        print(f"  OVERSIZE {name}: golden ({gw},{gh}) > viewport ({vw},{vh}) → ausgesondert (braucht höheren Viewport)")
+        continue
+    im = Image.open(p).convert("RGB")
+    if im.size != (gw, gh):
+        im.crop((0, 0, gw, gh)).save(p)
+        print(f"  crop {name}: {im.size} -> ({gw},{gh})")
+PY
+
 echo "WEBSWEEP-VERDICT (Web vs Mobile-Baseline) ──────────────"
 python3 "$ROOT/screenshots/parity/parity_sweep.py" "$OUT" "$BASELINE" \
   --diff-out "$ROOT/screenshots/web_diff"

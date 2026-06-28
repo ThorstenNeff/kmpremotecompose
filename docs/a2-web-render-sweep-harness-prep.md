@@ -54,6 +54,28 @@ auf dem dist → Maestro `run` device_id=`chromium` gegen die echten DOM-Marker.
 
 ---
 
+## 0.2 🟢 ERSTER ECHTER WEB-RENDER-BEWEIS (REM-80/C7) — 2026-06-28, chromium gg. develop `c826125` (C5 gemergt)
+
+**Verifiziert (nicht angenommen):** webApp `→ RemoteComposeApp()` ✅, 173 `.rc` in `composeResources/files/rc/` ✅,
+**shasum-Spot-Check: alle 173 web-live `.rc` == conformance-oracle `.rc`** (kein stale-Doc-Risiko, assist-Watchpoint) ✅.
+`web_default_smoke.yaml` + `?rc=`-Selektion (W1) auf chromium **grün** (data-rc-rendered==true, data-rc-doc==doc).
+
+**🔧 Crop/Dims-Kalibrierung GELÖST (mein Watchpoint):** Web rendert das Doc bei **SCALE=1.0, top-left-anchored**
+(Doc-Pixelmaß == Mobile-Golden-Maß). Capture = ganzer Viewport (1200×780) mit Doc oben-links + Debug-testTags
+unten-links. → **Crop (0,0, golden_w, golden_h)** = Doc-nativ, schließt Debug-Text aus, KEIN Resize. Validiert:
+procedure_simple1 (600×600) + simple2 (300×300) → **PASS vs Android UND iOS** (breach ≤0.01). In `web_sweep_driver.sh` gebacken.
+
+**Sweep-Ergebnisse (Bucket-zuerst, gg. Mobile-Baseline):**
+- **Geo/Text-Klasse (Stichprobe 12/138 fitting): 100% Render-Parität** — 8 PASS + 4 TEXT (Font/AA-diffus, erwartet), **0 FAIL/0 ERROR**. → die „echte-Bug"-Klasse (höhere Severity) rendert sauber auf Web.
+- **Image-Doc-Bucket (14): 0 echte Web-Defekte** nach Analyse (verify-don't-trust auf die rohen Verdikte):
+  - **6 PASS / 1 TEXT / 1 BLANK** (c_image, demo_bitmap_drawing_bit_draw1/2, hostile_actor1_c, impulse_demo_confetti_demo, particle, stock; hostile_actor1=both-blank) → Web-Parität.
+  - **2 „FAIL" = Viewport-Clip-Artefakte** (digital_clock1 500×1500, shader_calendar 1000×2400 > 780h-Viewport → schwarz-gepaddeter Crop). KEIN Render-Defekt — Harness-Limit. **Fix-Item: höherer Capture-Viewport** (oder Scroll-Stitch) für Docs > Viewport. Im Treiber jetzt nach `_oversized/` ausgesondert statt false-FAILt.
+  - **4 „FAIL" = Web ist RICHER als die Baseline** (texture_demo_basic_texture/clock/clock_test, wake_demo_wake_clock): **Web rendert die Textur** (z.B. cyan-Dot-Sphäre), **BEIDE Mobile-Goldens (Android+iOS) zeigen solid-grün** (Textur NICHT gerendert). → die §6-Bucket-Hypothese „wasm-Decode schlechter" ist INVERTIERT: Web-Image/Textur-Pfad ist der Mobile-Baseline VORAUS. **Befund an PO:** Mobile-Textur-Render ist degradiert (solid-color-Fallback); Web ist die korrektere Referenz. Golden-Refresh für Textur-Docs nötig, sonst flaggt der Sweep dauerhaft falsch.
+
+**Fazit:** REM-76/Web-Target rendert den Korpus auf Parität (Geo/Text) bzw. besser (Textur) als Mobile. **REM-80/C7-Gate ist substanziell bewiesen** auf der Bucket+Geo/Text-Stichprobe; der volle 173-Lauf ist mechanisch via `web_sweep_driver.sh` (CLI). **Offene Harness-Items:** (1) Viewport-Höhe für ~Docs > 780h; (2) Textur-Golden-Refresh (Mobile-Baseline degradiert). **Conformance-Byte-Gate (L1) unberührt — das hier ist reiner Render-Beweis.**
+
+---
+
 ## 1. Was A2 von C6 braucht (Dependency-Contract an dev-2, via PO zu routen)
 
 Der Web-Sweep kann erst laufen, wenn der wasmJs-webApp diese Hooks bereitstellt. **Identisch zum
