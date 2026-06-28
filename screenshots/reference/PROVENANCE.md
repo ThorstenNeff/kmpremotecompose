@@ -133,3 +133,36 @@ fixed values) — no longer wall-clock-flaky, so freezable. Captured on develop 
   despite timeSeed=0 proven via the 12:00 clock = a real conditional-render gap, NOT a capture-mode issue) +
   12 complex clocks (clock, digital_clock1, fancy_clocks_*, spline_demo = headless-resolve but no visible glyphs).
 - iOS parity of the 16: pending the Maestro iOS driver (port 22087 down).
+
+================================================================================
+## REM-69 — durable QA cross-platform golden baseline (develop 36f9d18, 2026-06-28)
+================================================================================
+Authoritative baseline superseding all prior ad-hoc goldens. Branch: feature/REM-69-golden-baseline
+off develop 36f9d18 (REM-64 full-corpus-bundle + REM-60 offscreen-flush + REM-61/REM-67 color-id-resolve, all merged).
+
+FROZEN: 151 docs x2 platforms (screenshots/reference/{android,ios}/), = 142 REM-67-UNCHANGED faithful docs
+(re-validated 153-pixel-identical to round-11 baseline on 36f9d18, minus 10 blank fancy-clocks + flow_control held)
++ 9 REM-67 color-id wins.
+- 9 wins: clock, stock, text_refresh_bug, simple_java_anim, themed_plot1 (blank->visible flips) + good_pie_chart,
+  pie_chart2, battery_radial_gauge, plot_wave (chart/gauge color-id). A<->iOS parity mean 94.07% / median 97.51%
+  (plot_wave 74.8% / battery 86.9% = Android-Canvas vs iOS-Skiko font/line-AA on detail-dense docs; content matches).
+- The 142 unchanged include the by-design correct-blank layout docs (c_modifier_fill_max_size,
+  c_modifier_fill_parent_max_size, c_state_layout, attribute_string, path_demo_path_tween_demo) — faithful blank.
+- Provenance: captures from the 36f9d18-render full sweep; REM-60 is 0-delta (re-verified — the 9 wins matched the
+  e69c284 combined-branch capture at 100%), so render == committed 36f9d18. Reproducible-from-git.
+
+HELD / PENDING (22 docs — NOT frozen; goldens land as follow-up updates):
+- via REM-65 (1): flow_control_checks_test_conditional. ROOT-CAUSED: iOS painted a spurious NEGATIVE-RADIUS circle;
+  Android (=text) is CORRECT per the upstream oracle. Faithful golden @&t=0 = TEXT on BOTH, frozen AFTER the REM-65 fix.
+  (Discovered via deterministic &t-pin: at the same pinned t=0 Android=text/iOS=circle — a real divergence, not jitter.)
+- via REM-68 theme-palette (12): digital_clock1 (solid-cyan over-fill, no digits), calendar_heatmap_grid (solid-green
+  over-fill) + 10 blank fancy/analog clocks (clock_demo1_clock1, clock_demo2_jancy_clock2, clock_demo2_jclock2,
+  experimental_fancy_clock, experimental_sweep_clock1, fancy_clock2, fancy_clocks_fancy_clock1/2/3,
+  spline_demo_spline_demo1) — need the host system_accent theme palette to render a visible dark face. NOTE: clock pin
+  at &t=36630 is cross-platform-SAFE (probe: server_clock/procedure_simple_clock_fast A<->iOS 99%+, no TIME_IN_SEC
+  offset) — freeze clocks at &t=36630 once visible.
+- REM-67-changed, pending oracle/theme review (9): color, color_list, color_table, count_down, demo_text_transform,
+  experimental_gmt, experimental_solar_gmt, procedure_simple6, weather_forecast_bars (fallback-color changes, not yet
+  confirmed final-correct).
+KNOWN-GAP docs that ARE frozen (tracked, faithful-current): c_modifier_wrap_content_size (REM-66 iOS white-on-white
+gap), c_modifier_background_id (deferred color-seed) — carried from round-11 with these notes.
