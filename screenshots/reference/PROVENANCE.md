@@ -179,3 +179,15 @@ FROZEN (was held under REM-65): flow_control_checks_test_conditional, both platf
 Baseline now: 152 frozen + 21 held (was 151 frozen + 22 held). REMAINING HELD (21): REM-68 theme-palette (12:
 digital_clock1, calendar_heatmap_grid + 10 blank fancy/analog clocks) + fallback-color pending-oracle (9: color, color_list,
 color_table, count_down, demo_text_transform, experimental_gmt, experimental_solar_gmt, procedure_simple6, weather_forecast_bars).
+
+## REM-69 update — REM-68 accent goldens + re-freeze (develop 0fd62c9, post-REM-68 host-theme-palette, 2026-06-28)
+REM-68 (system_accent palette wiring) merged → develop 0fd62c9. QA verdict: GO (Leg-2/138→69 clean — only color/theme docs
+changed, 0 layout/geometry; accent fixes correct).
+RE-FROZE (REM-68 changed these REM-67-win goldens, all improvements): stock (now real Watchlist UI vs prior dark-green blob),
+text_refresh_bug + themed_plot1 (accent bg-tint). From bl_*_68 (= 0fd62c9 render; js-rebase is pixel-neutral).
+RE-FROZEN (clock was already a REM-69 win-golden, now updated for accent): clock (hand → accent2_50 blue). NEWLY FROZEN
+(unfrozen from held): digital_clock1 (cyan over-fill GONE → dark accent face). Both platforms.
+color_table = EXEMPT/held (non-visualizable stacked-swatch doc; ~195 swatches overlap, topmost _1000-black hides the
+correctly-resolved near-white accent1_100; dev-2 confirmed commonMain resolve CORRECT, pre-existing layout overlap = REM-88).
+Baseline now: 153 frozen (152 + digital_clock1; clock/stock/text_refresh_bug/themed_plot1 updated-in-place) + 20 held
+(21 - digital_clock1; color_table stays held-exempt under REM-88).
