@@ -28,3 +28,18 @@ fun composePaintContextWithGeometry(
     pc.geometry = GeometryPaintDelegate(context, canvas, pc.paintState)
     return pc
 }
+
+/**
+ * REM-78 follow-up — Op-level deferred/unsupported-feature tags collected during the paint pass
+ * (`SHADER_UNSUPPORTED`, `SHADER_NO_SOURCE`, `STYLE_FILL_AND_STROKE`, `TEXTURE`, `FONT_AXIS`,
+ * `PATH_EFFECT`, `GRADIENT_DEGENERATE`, `INVERSE_WINDING`, …). The third dispatch≠render
+ * dimension after drawCount + pixel-diff: dispatch counted the op AND the pixel may even look OK
+ * for fallback paths, but the op itself was deferred — surfaces feature-gap docs (shader, var-font,
+ * texture) WITHOUT needing a pixel oracle.
+ *
+ * Lives in :shared because [GeometryPaintDelegate]'s `deferredPaintTags` is `internal` to its file.
+ * Returns an empty set if the context has no geometry attached or the attached delegate is not a
+ * [GeometryPaintDelegate] (e.g. a future stub geometry).
+ */
+fun deferredPaintTagsOf(pc: ComposePaintContext): Set<String> =
+    (pc.geometry as? GeometryPaintDelegate)?.deferredPaintTags?.toSet().orEmpty()

@@ -15,7 +15,9 @@ import androidx.compose.ui.unit.Density
 import com.tneff.kmpremotecompose.remote.core.document.DocumentReader
 import com.tneff.kmpremotecompose.remote.core.document.RemoteComposeDocument
 import com.tneff.kmpremotecompose.remote.core.operations.Builtins
+import com.tneff.kmpremotecompose.remote.player.compose.ComposePaintContext
 import com.tneff.kmpremotecompose.remote.player.compose.composePaintContextWithGeometry
+import com.tneff.kmpremotecompose.remote.player.compose.deferredPaintTagsOf
 import com.tneff.kmpremotecompose.remote.player.core.RemoteComposePlayer
 import com.tneff.kmpremotecompose.remote.player.core.RemoteContext
 import com.tneff.kmpremotecompose.remote.player.core.renderOpaque
@@ -60,7 +62,10 @@ fun main(args: Array<String>) {
 
     Builtins.register()
     val rows = mutableListOf<String>()
-    rows += "doc,surfaceW,surfaceH,drawCount,status,note"
+    // REM-78 follow-up: deferredTags column = 3. dispatch≠render-Dimension
+    // (op-level deferred/unsupported tags from GeometryPaintDelegate.deferredPaintTags,
+    // surfaced via :shared compose/ComposeRenderHarness.deferredPaintTagsOf).
+    rows += "doc,surfaceW,surfaceH,drawCount,status,deferredTags,note"
     var ok = 0
     var blank = 0
     var error = 0
@@ -68,7 +73,7 @@ fun main(args: Array<String>) {
         val rcFile = File(cfg.rcDir, "$name.rc")
         if (!rcFile.exists()) {
             println("[%3d/%3d] %-44s  MISSING".format(i + 1, docs.size, name))
-            rows += "$name,,,,MISSING,not in corpus dir"
+            rows += "$name,,,,MISSING,,not in corpus dir"
             error++
             continue
         }
@@ -79,18 +84,19 @@ fun main(args: Array<String>) {
             else                    -> "RENDERS"
         }
         val note = result.throwMsg ?: ""
+        val tagsCell = result.deferredTags.sorted().joinToString(";")
         if (result.pngBytes != null) {
             File(cfg.outDir, "$name.png").writeBytes(result.pngBytes)
         }
         println(
-            "[%3d/%3d] %-44s  %-8s  %4d x %-4d  draws=%-6d  %s".format(
+            "[%3d/%3d] %-44s  %-8s  %4d x %-4d  draws=%-6d  defer=%-30s  %s".format(
                 i + 1, docs.size, name, status, result.width, result.height, result.drawCount,
-                note.take(60),
+                tagsCell.take(30), note.take(40),
             ),
         )
         rows += listOf(
             name, result.width.toString(), result.height.toString(),
-            result.drawCount.toString(), status, csvEscape(note),
+            result.drawCount.toString(), status, csvEscape(tagsCell), csvEscape(note),
         ).joinToString(",")
         when (status) {
             "RENDERS" -> ok++
@@ -106,6 +112,7 @@ private data class RenderResult(
     val width: Int,
     val height: Int,
     val drawCount: Int,
+    val deferredTags: Set<String>,
     val pngBytes: ByteArray?,
     val throwMsg: String?,
 )
@@ -114,7 +121,7 @@ private fun renderOne(rcBytes: ByteArray, staticTime: Float): RenderResult {
     val doc: RemoteComposeDocument = try {
         DocumentReader.inflate(rcBytes)
     } catch (t: Throwable) {
-        return RenderResult(0, 0, 0, null, "decode: ${t.message ?: t::class.simpleName}")
+        return RenderResult(0, 0, 0, emptySet(), null, "decode: ${t.message ?: t::class.simpleName}")
     }
     val w = if (doc.width > 0) doc.width else 500
     val h = if (doc.height > 0) doc.height else 500
@@ -123,15 +130,18 @@ private fun renderOne(rcBytes: ByteArray, staticTime: Float): RenderResult {
         animationEnabled = false
     }
     var thrown: String? = null
+    var paintContextRef: ComposePaintContext? = null
     val scene = ImageComposeScene(width = w, height = h, density = Density(1f)) {
-        RenderDocCanvas(doc, ctx, w, h, staticTime) { thrown = it }
+        RenderDocCanvas(doc, ctx, w, h, staticTime, { pc -> paintContextRef = pc }) { thrown = it }
     }
     return try {
         val skiaImage = scene.render(nanoTime = 0L)
         val png = skiaImage.encodeToData(EncodedImageFormat.PNG)?.bytes
-        RenderResult(w, h, ctx.drawCount, png, thrown)
+        val tags = paintContextRef?.let(::deferredPaintTagsOf).orEmpty()
+        RenderResult(w, h, ctx.drawCount, tags, png, thrown)
     } catch (t: Throwable) {
-        RenderResult(w, h, ctx.drawCount, null, "render: ${t.message ?: t::class.simpleName}")
+        val tags = paintContextRef?.let(::deferredPaintTagsOf).orEmpty()
+        RenderResult(w, h, ctx.drawCount, tags, null, "render: ${t.message ?: t::class.simpleName}")
     } finally {
         scene.close()
     }
@@ -144,6 +154,7 @@ private fun RenderDocCanvas(
     pxW: Int,
     pxH: Int,
     staticTime: Float,
+    onPaintContext: (ComposePaintContext) -> Unit,
     onThrow: (String) -> Unit,
 ) {
     val fontResolver = LocalFontFamilyResolver.current
@@ -152,6 +163,8 @@ private fun RenderDocCanvas(
         try {
             renderOpaque(canvas, size.width.toInt(), size.height.toInt(), 0xFFFFFFFF.toInt()) { target ->
                 val pc = composePaintContextWithGeometry(ctx, target, fontResolver)
+                // Hand the harness a ref so it can read deferredPaintTags from pc.geometry after paint.
+                onPaintContext(pc)
                 RemoteComposePlayer(ctx).paint(
                     doc, pc,
                     frameTimeSeconds = 0f,
