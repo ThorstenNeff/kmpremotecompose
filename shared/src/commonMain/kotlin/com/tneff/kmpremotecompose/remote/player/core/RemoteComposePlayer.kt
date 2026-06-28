@@ -22,6 +22,7 @@ import com.tneff.kmpremotecompose.remote.core.operations.Operation
 import com.tneff.kmpremotecompose.remote.core.operations.Operations
 import com.tneff.kmpremotecompose.remote.core.operations.layout.LoopStart
 import com.tneff.kmpremotecompose.remote.core.operations.layout.RootContentBehavior
+import com.tneff.kmpremotecompose.remote.core.operations.layout.TouchExpression
 import com.tneff.kmpremotecompose.remote.wire.WireTypes
 
 /**
@@ -198,6 +199,31 @@ class RemoteComposePlayer(val context: RemoteContext = RemoteContext()) {
 
     private fun resolveFloat(f: Float): Float = if (f.isNaN()) context.getFloat(WireTypes.idFromNan(f)) else f
 
+    // ---- REM-108 (Epic-F) S1: touch dispatch seam ----
+    // The pointer→document entry points (upstream `CoreDocument.touchDown/Drag/Up/Cancel`). The CMP
+    // `pointerInput` in RemoteComposeApp calls these in LIVE mode with doc-space coords; they load
+    // [RemoteContext.ID_TOUCH_POS_X]/Y so a touch-reading expression can see the live position. **S1 only
+    // loads the position** — no op consumes it yet (TouchExpression stays a byte carrier), so this is
+    // render-invariant. S2 makes TouchExpression evaluate against these + adds the down/drag/up state
+    // machine (delta/easing/stop-modes). Never called in static mode → determinism preserved.
+
+    /** Touch began at doc-space ([x], [y]) — load the touch position (REM-108 S1). */
+    fun touchDown(context: RemoteContext, x: Float, y: Float) = loadTouchPos(context, x, y)
+
+    /** Touch moved to doc-space ([x], [y]) — load the touch position (REM-108 S1). */
+    fun touchDrag(context: RemoteContext, x: Float, y: Float) = loadTouchPos(context, x, y)
+
+    /** Touch ended at doc-space ([x], [y]) — load the final touch position (REM-108 S1). */
+    fun touchUp(context: RemoteContext, x: Float, y: Float) = loadTouchPos(context, x, y)
+
+    /** Touch cancelled at doc-space ([x], [y]) — load the last touch position (REM-108 S1). */
+    fun touchCancel(context: RemoteContext, x: Float, y: Float) = loadTouchPos(context, x, y)
+
+    private fun loadTouchPos(context: RemoteContext, x: Float, y: Float) {
+        context.loadFloat(RemoteContext.ID_TOUCH_POS_X, x)
+        context.loadFloat(RemoteContext.ID_TOUCH_POS_Y, y)
+    }
+
     /**
      * The index **just past** a container-opener's matching `CONTAINER_END` (original REM-41 verbatim).
      * Nesting-aware: every container-opening op ([opensContainer], incl. nested conditionals/loops)
@@ -251,6 +277,40 @@ class RemoteComposePlayer(val context: RemoteContext = RemoteContext()) {
 
         /** True if the document reads any sensor variable (17–26) → drives live sensor interactivity. */
         fun isSensorDriven(document: RemoteComposeDocument): Boolean = sensorIdsUsed(document).isNotEmpty()
+
+        /**
+         * The reserved touch ids ([RemoteContext.TOUCH_ID_RANGE] 13–16 + EVENT_TIME 29) this document reads
+         * — scanned in both `FloatExpression`s and `TouchExpression.exp` (REM-108). Corpus uses only 13/14.
+         */
+        fun touchIdsUsed(document: RemoteComposeDocument): Set<Int> =
+            buildSet {
+                fun scan(arr: FloatArray) {
+                    for (v in arr) if (v.isNaN()) {
+                        val id = WireTypes.fromNaN(v)
+                        if (id in RemoteContext.TOUCH_ID_RANGE || id == RemoteContext.ID_TOUCH_EVENT_TIME) add(id)
+                    }
+                }
+                for (op in document.operations) when (op) {
+                    is FloatExpression -> scan(op.value)
+                    is TouchExpression -> scan(op.exp)
+                    else -> {}
+                }
+            }
+
+        /**
+         * True if the document is touch-interactive — has any [TouchExpression] (incl. the one a
+         * `ScrollModifier` wraps). Drives whether RemoteComposeApp attaches the live pointer seam (REM-108).
+         */
+        fun isTouchDriven(document: RemoteComposeDocument): Boolean =
+            document.operations.any { it is TouchExpression }
+
+        /**
+         * The set of `TouchExpression` stop-modes (`stopLogic ushr 16`) used by the document (REM-108).
+         * Corpus-grounded scope: modes 0–6 are supported; **mode 7 (SINGLE_EVEN) is corpus-absent** and the
+         * S1 reach-guard test fails loudly if a doc ever uses it (no silent gap — D1/D5 discipline).
+         */
+        fun touchStopModesUsed(document: RemoteComposeDocument): Set<Int> =
+            document.operations.filterIsInstance<TouchExpression>().mapTo(mutableSetOf()) { it.stopLogic ushr 16 }
 
         /**
          * Opcodes of **container-opening** ops — those whose block is closed by a `CONTAINER_END`

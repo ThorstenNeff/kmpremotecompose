@@ -387,6 +387,26 @@ class RemoteContext {
         /** Offset to UTC, in seconds (upstream `ID_OFFSET_TO_UTC`). */
         const val ID_OFFSET_TO_UTC = 10
 
+        // REM-108 (Epic-F) — reserved TOUCH float ids (region 0), source-grounded against upstream
+        // `RemoteContext` (ID_TOUCH_POS_X=13 … ID_TOUCH_VEL_Y=16, ID_TOUCH_EVENT_TIME=29). A live doc
+        // reads these inside a TouchExpression's expression; the player loads them on pointer dispatch in
+        // LIVE mode only (static mode leaves them at 0f → deterministic golden). Runtime-only → §2-safe.
+        // The corpus reads only POS_X/Y (13/14); VEL (15/16) + EVENT_TIME (29) are reserved/decode-present
+        // but corpus-unexercised (not fed in the current slices).
+        /** Touch position X, doc-space px (upstream `ID_TOUCH_POS_X`). */
+        const val ID_TOUCH_POS_X = 13
+        /** Touch position Y, doc-space px (upstream `ID_TOUCH_POS_Y`). */
+        const val ID_TOUCH_POS_Y = 14
+        /** Touch velocity X, px/s (upstream `ID_TOUCH_VEL_X`). */
+        const val ID_TOUCH_VEL_X = 15
+        /** Touch velocity Y, px/s (upstream `ID_TOUCH_VEL_Y`). */
+        const val ID_TOUCH_VEL_Y = 16
+        /** Touch event time, seconds (upstream `ID_TOUCH_EVENT_TIME`). */
+        const val ID_TOUCH_EVENT_TIME = 29
+
+        /** The reserved touch position+velocity float-id range [13, 16]. */
+        val TOUCH_ID_RANGE: IntRange = ID_TOUCH_POS_X..ID_TOUCH_VEL_Y
+
         // REM-101 (D5) — reserved SENSOR float ids (region 0), source-grounded against upstream
         // `RemoteContext` (ID_ACCELERATION_X=17 … ID_LIGHT=26). A live doc reads these directly inside
         // float expressions (no dedicated op); a host [SensorSource] seeds the current value each frame in
