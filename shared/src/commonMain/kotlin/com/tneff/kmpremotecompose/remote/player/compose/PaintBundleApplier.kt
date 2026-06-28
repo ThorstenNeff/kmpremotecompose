@@ -20,6 +20,7 @@ import androidx.compose.ui.graphics.BlendMode
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.ColorFilter
 import androidx.compose.ui.graphics.FilterQuality
+import androidx.compose.ui.graphics.ImageShader
 import androidx.compose.ui.graphics.LinearGradientShader
 import androidx.compose.ui.graphics.Shader
 import androidx.compose.ui.graphics.Paint
@@ -154,7 +155,10 @@ internal object PaintBundleApplier {
                 SHADER -> applyShader(context, paint, values[i++], deferred)
                 SHADER_MATRIX -> { i++; deferred?.add("SHADER_MATRIX") }
                 FONT_AXIS -> { i += 2 * (cmd shr 16); deferred?.add("FONT_AXIS") }
-                TEXTURE -> { i += 3; deferred?.add("TEXTURE") }
+                // REM-98: the TEXTURE tag carries a bitmapId + tile/filter packing → resolve the decoded
+                // bitmap and set a tiled ImageShader. Fail-soft: a missing bitmap leaves the paint unshaded
+                // and is recorded in [deferred] — never throws the render path.
+                TEXTURE -> i = applyTexture(context, paint, values, i, deferred)
                 PATH_EFFECT -> { i += (cmd shr 16); deferred?.add("PATH_EFFECT") }
 
                 else -> {
@@ -298,6 +302,42 @@ internal object PaintBundleApplier {
         val shader = createRuntimeShader(source, floats, data.intUniforms)
         if (shader == null) { deferred?.add("SHADER_UNSUPPORTED"); return }
         paint.shader = shader
+    }
+
+    /**
+     * REM-98: resolve the TEXTURE bundle entry → a tiled bitmap [ImageShader] and set it on [paint].
+     *
+     * **Cursor + packing match upstream `PaintBundle.setTextureShader` EXACTLY** (3 ints, the paint
+     * analogue of L1 byte-sync): `[bitmapId][tileX | tileY<<16][filterMode | maxAnisotropy<<16]`. The
+     * bitmap is the same decoded [androidx.compose.ui.graphics.ImageBitmap] the draw path uses
+     * ([RemoteContext.getBitmap], populated by `DATA_BITMAP`/`ImageDecode`). Tile modes map through the
+     * same `Shader.TileMode.values()` order as gradients ([tileMode]: 0=Clamp/1=Repeat/2=Mirror/3=Decal).
+     *
+     * `filterMode > 0` requests bilinear sampling — CMP's [ImageShader] has no per-shader filter setter,
+     * so it is approximated via `paint.filterQuality` (the closest knob); `maxAnisotropy` has no CMP
+     * equivalent and is intentionally a no-op (recorded so the gap is visible, not silent). Fail-soft: a
+     * missing bitmap (or a shader-build throw) leaves the paint unshaded and is recorded in [deferred] —
+     * never throws the render path. Returns the new cursor.
+     */
+    private fun applyTexture(context: RemoteContext, paint: Paint, a: IntArray, start: Int, deferred: MutableSet<String>?): Int {
+        var ret = start
+        fun rd(): Int = if (ret < a.size) a[ret++] else { ret++; 0 }
+        val bitmapId = rd()
+        val tileModes = rd()
+        val filter = rd()
+        val tileX = tileMode(tileModes and 0xF)
+        val tileY = tileMode((tileModes shr 16) and 0xF)
+        val image = context.getBitmap(bitmapId)
+        if (image == null) { deferred?.add("TEXTURE_NO_BITMAP"); return ret }
+        try {
+            paint.shader = ImageShader(image, tileX, tileY)
+            // filterMode>0 ⇒ smooth sampling; maxAnisotropy (filter>>16) has no CMP knob → not applied.
+            if ((filter and 0xF) > 0) paint.filterQuality = FilterQuality.Low
+            if ((filter shr 16) > 0) deferred?.add("TEXTURE_ANISOTROPY")
+        } catch (t: Throwable) {
+            deferred?.add("TEXTURE_INVALID")
+        }
+        return ret
     }
 
     /** Upstream `Paint.Style` order: 0=FILL, 1=STROKE, 2=FILL_AND_STROKE (no exact CMP equivalent). */
