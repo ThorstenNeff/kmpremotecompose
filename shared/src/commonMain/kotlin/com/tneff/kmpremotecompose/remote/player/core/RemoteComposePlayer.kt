@@ -76,7 +76,10 @@ class RemoteComposePlayer(val context: RemoteContext = RemoteContext()) {
         // frame with spread analog-clock hands. `&t` absent / 0 → 0f → identical to the pre-REM-62 render.
         // Read ONLY in the static branch → the live loop is untouched.
         val timeSeed = if (context.isAnimationEnabled()) frameTimeSeconds else staticTimeSeconds
-        context.seedSystemVariables(docW, docH, timeSeed)
+        // REM-93: seed ID_DENSITY with the doc's GENERATION density (header.density), not the device
+        // density — the doc-px canvas (REM-51) is generation-density space, so FLOAT_DENSITY-referencing
+        // coords must resolve against it for cross-target parity. Fallback 1f if a doc carries no header.
+        context.seedSystemVariables(docW, docH, timeSeed, document.header?.density ?: 1f)
         // RootContentBehavior doc→surface scaling (REM-36): when a surface box is given, apply
         // translate(align) then scale(doc→surface) — upstream `CoreDocument` order — so doc-space
         // renders with correct proportions instead of 1:1 (a 600-doc stretched into a 924-surface).
