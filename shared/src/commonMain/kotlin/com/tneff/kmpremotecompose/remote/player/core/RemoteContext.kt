@@ -228,10 +228,24 @@ class RemoteContext {
      * frame) is **E-D1**. Components mirror upstream units (continuous seconds; wall-clock sec/min/hr);
      * `OFFSET_TO_UTC = 0` for the static frame. This opens the ~70 clock docs at their static frame.
      */
-    fun seedSystemVariables(windowWidth: Float, windowHeight: Float, timeSeconds: Float = 0f) {
+    fun seedSystemVariables(
+        windowWidth: Float,
+        windowHeight: Float,
+        timeSeconds: Float = 0f,
+        genDensity: Float = density,
+    ) {
         loadFloat(ID_WINDOW_WIDTH, windowWidth)
         loadFloat(ID_WINDOW_HEIGHT, windowHeight)
-        loadFloat(ID_DENSITY, density)
+        // REM-93 (density-posture): seed the doc's GENERATION density (Header.density), NOT the device
+        // density. Our render canvas is doc-px (REM-51 `Constraints.fixed` on the header w/h = the
+        // generation-density pixel space); pairing that canvas with the *device* density over-scales any
+        // FLOAT_DENSITY-referencing coord (e.g. moon_phases radius 150→450 @3x → fills the canvas →
+        // "rectangles without circle-clip"). The density variable must match the canvas space → the
+        // generation density. This makes the render cross-target-uniform (parity), a deliberate,
+        // PROJECT_CONTEXT §5-sanctioned divergence from upstream's device-density single-platform default.
+        // (Corpus: all 173 docs are gen-density 1.0 / LEGACY behavior / 0 DP, so genDensity is 1.0 here;
+        // via Header.density it is future-proof for a gen-density≠1 document.)
+        loadFloat(ID_DENSITY, genDensity)
         // Time/clock vars from the frame-time seam (static MVP frame; E-D1 advances per frame).
         // Derive h:m:s from [timeSeconds] (elapsed), then mirror upstream `RemoteClock` exactly:
         // TIME_IN_SEC = sec-within-hour (min*60+sec), TIME_IN_MIN = min-within-day (hr*60+min),
