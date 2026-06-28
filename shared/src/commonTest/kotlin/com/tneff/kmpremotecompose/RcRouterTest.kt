@@ -47,4 +47,46 @@ class RcRouterTest {
         RcRouter.select(null)
         assertEquals(before, RcRouter.docName, "null (no rc param) → unchanged (default-launch preserved)")
     }
+
+    @Test
+    fun setStaticTime_failsSafeToZero() {
+        // REM-62: only a valid non-negative number changes the static frame; everything else → 0f (the
+        // pre-REM-62 t=0 path), so a malformed `&t` can never produce a non-deterministic capture.
+        RcRouter.setStaticTime("20")
+        assertEquals(20f, RcRouter.staticTimeSeconds, "valid number parsed")
+
+        RcRouter.setStaticTime("2.5")
+        assertEquals(2.5f, RcRouter.staticTimeSeconds, "valid fractional parsed")
+
+        RcRouter.setStaticTime("0")
+        assertEquals(0f, RcRouter.staticTimeSeconds, "&t=0 → 0f (original t=0 path)")
+
+        RcRouter.setStaticTime(null)
+        assertEquals(0f, RcRouter.staticTimeSeconds, "absent → 0f (original t=0 path)")
+
+        RcRouter.setStaticTime("20"); RcRouter.setStaticTime("  ")
+        assertEquals(0f, RcRouter.staticTimeSeconds, "blank → 0f")
+
+        RcRouter.setStaticTime("20"); RcRouter.setStaticTime("abc")
+        assertEquals(0f, RcRouter.staticTimeSeconds, "non-numeric → 0f")
+
+        RcRouter.setStaticTime("20"); RcRouter.setStaticTime("-5")
+        assertEquals(0f, RcRouter.staticTimeSeconds, "negative → 0f (no nonsensical seed)")
+
+        RcRouter.setStaticTime("20"); RcRouter.setStaticTime("NaN")
+        assertEquals(0f, RcRouter.staticTimeSeconds, "non-finite → 0f")
+
+        RcRouter.setStaticTime(null) // reset shared state for other tests
+    }
+
+    @Test
+    fun resetForLaunch_clearsTransientLiveAndPin() {
+        // REM-62 hardening: a fresh launch must start static (t=0, not live), even if a prior capture
+        // left the process-singleton in a live/pinned state.
+        RcRouter.live = true
+        RcRouter.setStaticTime("7")
+        RcRouter.resetForLaunch()
+        assertEquals(false, RcRouter.live, "resetForLaunch → live=false (no leaked animation)")
+        assertEquals(0f, RcRouter.staticTimeSeconds, "resetForLaunch → static pin back to t=0")
+    }
 }

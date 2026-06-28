@@ -52,6 +52,41 @@ object RcRouter {
     var live: Boolean by mutableStateOf(false)
 
     /**
+     * Static-mode frame pin (REM-62): in static (non-live) capture the player seeds the wall-clock time
+     * vars from this value (seconds) instead of `t=0`, so an analog clock renders a deterministic frame
+     * with **spread** hands instead of the degenerate 12:00:00 collapse (all hands on one angle). Set from
+     * a deep-link `&t=<sec>`. **Default `0f`, and `&t` absent / `&t=0` / invalid → `0f` = the exact
+     * pre-REM-62 `t=0` path.** Static-only: the live loop never reads this (it advances `frameTimeSeconds`),
+     * so the animation path is untouched. Parsed/clamped via [setStaticTime].
+     */
+    var staticTimeSeconds: Float by mutableStateOf(0f)
+        private set
+
+    /**
+     * Parse a deep-link `&t=<sec>` value into [staticTimeSeconds]. **Fail-safe to `0f`** (the pre-REM-62
+     * path): `null` / blank / non-numeric / negative / non-finite all map to `0f`, so only a valid
+     * non-negative number ever changes the static frame. Centralized here so both platform deep-link
+     * parsers and the tests share the one rule.
+     */
+    fun setStaticTime(value: String?) {
+        val parsed = value?.trim()?.toFloatOrNull()
+        staticTimeSeconds = if (parsed != null && parsed.isFinite() && parsed >= 0f) parsed else 0f
+    }
+
+    /**
+     * Reset transient deep-link state to the **static default** (REM-62 hardening) — call on a *fresh app
+     * launch*. [RcRouter] is a process-level singleton, so a `live`/pin set by an earlier capture can
+     * survive into a new launch if the harness (Maestro `clearState`) does not force-stop the process →
+     * a time-driven doc would then render a non-deterministic *live* frame even without `&live`. Resetting
+     * at launch makes a fresh start unconditionally static (t=0); the launch intent re-applies any params
+     * it actually carries. Does NOT touch [docName] (the default-launch render is preserved, contract §2A).
+     */
+    fun resetForLaunch() {
+        live = false
+        setStaticTime(null) // → staticTimeSeconds = 0f
+    }
+
+    /**
      * Select a bundled doc by name from a deep-link. **Deterministic** unknown-handling (test-2 fix):
      * - `null` (no `rc` query param — a normal launch, or a param-less deep-link) → keep the current
      *   selection, so the default-launch render (contract §2A) is preserved.

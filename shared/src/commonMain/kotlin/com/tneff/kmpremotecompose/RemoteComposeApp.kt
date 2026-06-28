@@ -66,6 +66,9 @@ fun RemoteComposeApp(loadRc: (String) -> ByteArray, modifier: Modifier = Modifie
     val docName = RcRouter.docName
     // REM-37 E-D1: live-animation flag (deep-link `&live=1`). Default false ⇒ static t=0 (deterministic golden).
     val live = RcRouter.live
+    // REM-62: static-mode frame pin (deep-link `&t=N`). Read at composition level so a change recomposes →
+    // the Canvas redraws at the new pinned frame. Only consulted in static mode; 0f ⇒ original t=0 path.
+    val staticTimeSeconds = RcRouter.staticTimeSeconds
     var frameTime by remember { mutableStateOf(0f) }
     var doc by remember { mutableStateOf<RemoteComposeDocument?>(null) }
     var decodeError by remember { mutableStateOf<String?>(null) }
@@ -141,7 +144,13 @@ fun RemoteComposeApp(loadRc: (String) -> ByteArray, modifier: Modifier = Modifie
                             val paintContext = ComposePaintContext(ctx, target, fontFamilyResolver = fontResolver)
                             // Geometry shares the context's one PlayerPaintState (REM-32) with the text half.
                             paintContext.geometry = GeometryPaintDelegate(ctx, target, paintContext.paintState)
-                            RemoteComposePlayer(ctx).paint(d, paintContext, frameTimeSeconds = renderTime)
+                            RemoteComposePlayer(ctx).paint(
+                                d, paintContext,
+                                frameTimeSeconds = renderTime,
+                                // REM-62: static-mode frame pin (deep-link `&t=N`); the player reads it
+                                // only when animation is off, so the live loop is untouched. 0f ⇒ t=0 path.
+                                staticTimeSeconds = staticTimeSeconds,
+                            )
                         }
                         // Draw-phase writes: read only outside this lambda → one settling recompose.
                         if (drawCount != ctx.drawCount) drawCount = ctx.drawCount

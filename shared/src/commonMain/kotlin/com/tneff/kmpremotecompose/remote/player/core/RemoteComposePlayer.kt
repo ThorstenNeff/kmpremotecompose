@@ -55,6 +55,7 @@ class RemoteComposePlayer(val context: RemoteContext = RemoteContext()) {
         frameTimeSeconds: Float = 0f,
         surfaceWidth: Float = -1f,
         surfaceHeight: Float = -1f,
+        staticTimeSeconds: Float = 0f,
     ): Float {
         context.paintContext = paint
         context.resetPass(frameTimeSeconds)
@@ -67,10 +68,14 @@ class RemoteComposePlayer(val context: RemoteContext = RemoteContext()) {
         // Seed system variables (REM-36 E-Seed) BEFORE Phase A — window = DOC dims (revised for the
         // doc→surface scale below), density, and the static time/clock vars.
         // Static-mode time-pin (REM-57): in static mode (animation off) seed the wall-clock time vars
-        // from t=0 — NOT from whatever `frameTimeSeconds` the host passes — so time-driven docs
+        // from a FIXED seed — NOT from whatever `frameTimeSeconds` the host passes — so time-driven docs
         // (clocks → 12:00:00, countdown, flow_control's `(TIME_IN_SEC%3)-1`) are deterministic and their
         // goldens freezable. Live mode (animation on) advances from the real `frameTimeSeconds` (clocks tick).
-        val timeSeed = if (context.isAnimationEnabled()) frameTimeSeconds else 0f
+        // REM-62: that static seed defaults to 0f (== the original t=0 path, byte-for-byte) but a host may
+        // pin it to a fixed [staticTimeSeconds] (deep-link `&t=N`) to capture a deterministic non-zero
+        // frame with spread analog-clock hands. `&t` absent / 0 → 0f → identical to the pre-REM-62 render.
+        // Read ONLY in the static branch → the live loop is untouched.
+        val timeSeed = if (context.isAnimationEnabled()) frameTimeSeconds else staticTimeSeconds
         context.seedSystemVariables(docW, docH, timeSeed)
         // RootContentBehavior doc→surface scaling (REM-36): when a surface box is given, apply
         // translate(align) then scale(doc→surface) — upstream `CoreDocument` order — so doc-space
