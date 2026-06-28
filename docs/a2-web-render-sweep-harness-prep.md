@@ -65,7 +65,20 @@ auf dem dist → Maestro `run` device_id=`chromium` gegen die echten DOM-Marker.
 unten-links. → **Crop (0,0, golden_w, golden_h)** = Doc-nativ, schließt Debug-Text aus, KEIN Resize. Validiert:
 procedure_simple1 (600×600) + simple2 (300×300) → **PASS vs Android UND iOS** (breach ≤0.01). In `web_sweep_driver.sh` gebacken.
 
-**Sweep-Ergebnisse (Bucket-zuerst, gg. Mobile-Baseline):**
+### VOLLER 150-DOC-LAUF auf matched-state develop `e2ff7b6` (REM-105 Mobile-Golden-Refresh) — same-code-state-Disziplin
+Nach REM-105 (Textur-Goldens refreshed) **rebase + dist-REBUILD auf `e2ff7b6`**, dann re-capture+re-sweep — damit
+Web-Render UND Golden vom **selben Code-State** sind (sonst REM-77-Cross-State-Falle). 150 fitting Docs vs Android:
+**PASS=101 · TEXT=29 · BLANK=11 · FAIL=9 · ERROR=0 → 130/139 = 93.5% Render-Parität (BLANK ausgeschlossen).**
+Die 4 Textur-Docs (REM-105) **flippten FAIL→PASS/TEXT** wie vom PO vorhergesagt = stale-Baseline-Diagnose bestätigt.
+
+**Die 9 STRUKTURELL-„FAIL" klassifiziert (verify-don't-trust, jedes Web|Golden-Bild angesehen) — 0 bestätigte Web-Render-Defekte:**
+- **5 = Diskriminator-Artefakt (Web visuell ≈ Golden, dünne-Linien/Text-Position):** `demo_graphs0`, `graph_graph2`, `moon_phase_dial`, `pressure_gauge`, `stock_sparkline`. Gleiche Heatmap-Limitation wie der Mobile-Sweep (thin-line-Versatz → 100% Linien-Pixel breachen, obwohl visuell gleich). **Kein Web-Defekt.**
+- **4 = animierte/interaktive Docs, Parität UNBEWIESEN (Frame-State):** `heart_rate_timeline`, `moon_phases`, `text_refresh_bug`, `thumb_wheel2` — alle ANIMATED_FLOAT-/daten-/interaktions-getrieben (Golden zeigt anderen Frame/Zustand als mein Capture; z.B. moon_phases = anderer Days-Offset, heart_rate = anderer Puls-Frame + evtl. ❤-Emoji-Font-Lücke). **Frame-Pin `&t=36630` getestet → matcht den Golden NICHT** (Golden-Capture-Frame unbekannt). → **NICHT als Web-Defekt belegbar, aber auch nicht als Parität bewiesen** — braucht den exakten Golden-Capture-Frame/Zustand (test-1-Koordination) ODER es sind kleine echte Web-Lücken (heart_rate-❤). **Ehrlich offen, nicht grün-gewaschen.**
+- **11 BLANK-both** (c_modifier_*-Layout, plot3/4, demo_graphs1, attribute_string …): beide blank = Web verhält sich wie Mobile (kein Render-Beweis, kein Regress).
+
+**3 Docs > Viewport (digital_clock1 1500h, shader_calendar 2400h, haptic_demo_demo_haptic1 1204h):** Viewport-Clip → `_oversized/`, brauchen höheren Capture-Viewport (offenes Harness-Item).
+
+### (Vorlauf) Bucket+Geo/Text-Stichprobe auf `c826125` (vor REM-105):
 - **Geo/Text-Klasse (Stichprobe 12/138 fitting): 100% Render-Parität** — 8 PASS + 4 TEXT (Font/AA-diffus, erwartet), **0 FAIL/0 ERROR**. → die „echte-Bug"-Klasse (höhere Severity) rendert sauber auf Web.
 - **Image-Doc-Bucket (14): 0 echte Web-Defekte** nach Analyse (verify-don't-trust auf die rohen Verdikte):
   - **6 PASS / 1 TEXT / 1 BLANK** (c_image, demo_bitmap_drawing_bit_draw1/2, hostile_actor1_c, impulse_demo_confetti_demo, particle, stock; hostile_actor1=both-blank) → Web-Parität.
