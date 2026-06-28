@@ -78,7 +78,19 @@ Ich habe `document(300,300,contentDescription="Clock"){}` ausgeführt + decoded 
 procedure_simple2s `DRAW_OVAL(0,0,r,b)` hat **r/b NICHT als Literal-Floats**, sondern **NaN-geboxte System-Var-ids**: roh decodiert `r=0xff800005`, `b=0xff800006` = Region-0-System-Variablen **id 5 (`ID_WINDOW_WIDTH`)** + **id 6 (`ID_WINDOW_HEIGHT`)**, NaN-encoded in die Float-Slots. **DSL-Idiom (E2):** `drawOval(0f, 0f, WireTypes.asNan(RemoteContext.ID_WINDOW_WIDTH), WireTypes.asNan(RemoteContext.ID_WINDOW_HEIGHT))`. **Byte-Risiko:** der NaN muss **bit-exakt** (`0xff80000N`, raw-bits, NICHT kanonisch `0x7fc00000`) durch den Writer → mein Harness-Test `simple2_bytesMatchOracle` ist grün, also reicht der E2-Pfad die rohen Bits durch. **Relevant für die E3/E4-Fixtures:** gleiche NaN-Box für jede koord/wert-Bindung an eine Variable (nicht nur window-dims) — beim Un-ignore der 4 darauf achten, dass koord-Bindungen als asNan(id) und nicht als Literal repliziert werden.
 
 ## 4. Gate-Stand + nächste Schritte
-- **AKTIV jetzt:** Stufe-1-Round-trip (grün) — beweist Harness-Mechanik + E1-Encode-Selbstkonsistenz.
-- **dev-3 (via PO):** (a) flat/map-API-Auto-Auswahl → E1-Prolog byte-treu (§3); (b) E2–E4-Ops → Body-Replikation der 4 Targets (§2).
-- **test-2 (ich), wenn das landet:** un-ignore die Stufe-3-Tests inkrementell, byte-gegen-Orakel; Stufe-2-decode-inspect je DSL-Methode ergänzen.
-- **Byte-Watchpoints für dev-3:** (1) contentDescription=Body-Op-id42-zuerst; (2) flat-API-6 wenn keine extra-props; (3) Collection-ids in NaN-Range 0x200000+42 (ID_MAP/DATA_MAP_LOOKUP), getrennt vom 42-Pool; (4) `PAINT_VALUES` verbraucht keine id.
+
+### ✅ STAND nach E3/E4 (REM-90/REM-92) — 2026-06-28, post-compact Voll-Byte-Closure
+**E5-Gate: 7 grün / 1 dokumentiert-skipped / 0 rot** (jvmTest; iOS-Parität folgt aus plattform-unabhängigem commonMain-Writer + byte-bewiesenem L1-Codec).
+- **grün:** round-trip · determinism · prolog-48B · **simple2 voll-byte** · **gradient1 voll-byte (267B)** · **center_text1 voll-byte (449B)** · **look_up1 voll-byte (514B)**.
+- **3 Watchpoint-Fixtures voll-byte geschlossen** (gegen echte Orakel-Bytes self-verifiziert, Decode-Probe → DSL-Replikation → `assertContentEquals`):
+  - **gradient1:** PAINT linearGradient((0,0)→(0,WIN_H),[0xff00ff00,0xff0022ff],tile=REPEAT)+textSize(64); id43=WIN_W*0.5, id44=WIN_H*0.5, id45=(CONTINUOUS_SEC%2)−1; MATRIX_SCALE(45,1,43,44)+OVAL+ANCHOR(46,43,44).
+  - **center_text1:** + id46=99−(TIME_IN_SEC%100), TEXT_FROM_FLOAT(46,before=3,after=0,flags=3), TEXT_MEASURE w/h, zentrierte Box (RECT stroke / TEXT fill).
+  - **look_up1:** ID_MAP@region-2 `2097194`, DATA_MAP_LOOKUP(key=text "First"), DATA_INT, gleiche Box-Mechanik.
+
+### 🔴 2 verifizierte Byte-Befunde (an PO für dev-3-Follow-up)
+1. **ID_MAP-Entry-`type`-Konstante falsch für Byte-Match:** look_up1s String-Entries (First/Last) tragen Wire-`type=0`, NICHT `DATA_MAP_TYPE_STRING(=2)`; das Int-Entry (DOB) ist `type=1` (= `DATA_MAP_TYPE_INT`, passt). → `dataMapEntry`-Default (STRING=2) + die Konstante `DATA_MAP_TYPE_STRING=2` würden byte-divergieren (sollte für Strings 0 sein). Im Test mit Literal-Types (0/0/1) repliziert. **dev-3: Konstanten/Defaults gegen echte Wire-Ordinals prüfen.**
+2. **`procedure_text_path_effects` NICHT voll-byte-replizierbar (kein Defekt, fehlende Write-Surface):** Orakel backt die Geometrie als **ein einziges DATA_PATH-Op (id=49, count=2141 Floats = 8573 B)**; die DSL hat **keinen DATA_PATH-Roh-Emitter** — `PathBuilder` baut Pfade inkrementell als `PATH_CREATE`+N×`PATH_ADD` (andere Op-Form) → Op-Shape-Mismatch, selbst mit den 2141 Floats. Zusätzlich COLOR_EXPRESSIONS + Path-Effect-PAINT-Slots unverifiziert. **Bleibt @Ignore bis DATA_PATH-Roh-Float-Helfer landet.**
+
+### Nächste Schritte
+- **test-2:** Stufe-2-decode-inspect optional je DSL-Methode; text_path_effects un-ignoren sobald DATA_PATH-Helfer da.
+- **Byte-Watchpoints (bestätigt):** (1) contentDescription=Body-Op-id42-zuerst; (2) flat-API-6 wenn keine extra-props; (3) Collection-ids in NaN-Range 0x200000+42 (ID_MAP/DATA_MAP_LOOKUP), getrennt vom 42-Pool; (4) `PAINT_VALUES` verbraucht keine id; (5) RCB-`mode` variiert je Fixture (simple2=SCALE_FIT(4), die 3 reicheren=SCALE_FILL_BOUNDS(6)) — nicht annehmen, decoden; (6) ID_MAP-Entry-type-Ordinals (Befund 1).
