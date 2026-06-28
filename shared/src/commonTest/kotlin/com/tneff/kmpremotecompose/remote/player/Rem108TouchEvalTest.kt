@@ -152,4 +152,30 @@ class Rem108TouchEvalTest {
         player.paint(d, NoOpPaintContext(ctx), frameTimeSeconds = 0f, touchState = ts)
         assertEquals(v1, ctx.getFloat(outId), "static output stable — touch never drives it")
     }
+
+    @Test fun pressAndDragCollapsedBeforeFirstPaint_stillMovesOutput() {
+        // S2b Fix#2 regression (the on-device order Fix#1 missed): a real gesture fires onDragStart+onDrag
+        // BOTH before the next frame, so the player sees down()+move() collapsed before any paint. The DOWN
+        // edge must NOT be lost — touchDown must still run, else touchDrag's `if (touchActive)` guard no-ops
+        // and the output stays frozen (the cross-platform 0% bug). With the fix, move() leaves the unconsumed
+        // DOWN intact and dispatchTouch consumes DOWN→touchDown first.
+        val ctx = RemoteContext().also { it.animationEnabled = true }
+        val d = doc("touch1.rc")
+        val player = RemoteComposePlayer(ctx)
+        val ts = TouchState()
+        player.paint(d, NoOpPaintContext(ctx), frameTimeSeconds = 1f, touchState = ts) // settle default
+        val outId = firstTouch(d).id
+        val atRest = ctx.getFloat(outId)
+        // Collapsed before the first paint: press, then an immediate drag — both in one frame gap.
+        ts.down(40f, 40f)
+        ts.move(120f, 120f)
+        player.paint(d, NoOpPaintContext(ctx), frameTimeSeconds = 1f, touchState = ts) // must run touchDown
+        // Keep dragging across the next frame so there's a cross-frame position delta to apply.
+        ts.move(300f, 300f)
+        player.paint(d, NoOpPaintContext(ctx), frameTimeSeconds = 1f, touchState = ts) // touchDrag → moves
+        assertNotEquals(
+            atRest, ctx.getFloat(outId),
+            "press+drag collapsed before the first paint must still dispatch touchDown → output moves",
+        )
+    }
 }

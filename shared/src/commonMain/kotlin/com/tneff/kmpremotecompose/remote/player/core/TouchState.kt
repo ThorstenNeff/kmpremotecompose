@@ -40,10 +40,19 @@ class TouchState {
     /** Pointer pressed at doc-space ([px], [py]). */
     fun down(px: Float, py: Float) { x = px; y = py; phase = TouchPhase.DOWN }
 
-    /** Pointer moved to doc-space ([px], [py]) while pressed (keeps an in-progress gesture in DRAG). */
+    /**
+     * Pointer moved to doc-space ([px], [py]) while pressed — updates the position only.
+     *
+     * **REM-108 S2b Fix#2 (on-device):** this must NOT collapse an unconsumed `DOWN` into `DRAG`. On a real
+     * device `onDragStart`→`onDrag` both fire before the next frame, so without this a press+drag would reach
+     * [RemoteComposePlayer] already in `DRAG` → `dispatchTouch` skips the DOWN branch → `touchDown` never
+     * runs → `TouchExpression.touchDrag`'s `if (touchActive)` guard no-ops → the output never moves (the 0%
+     * bug). The `DOWN→DRAG` transition is owned solely by `dispatchTouch` (DOWN → touchDown, then DRAG), so
+     * the press edge is always consumed first. While `IDLE`/`UP`/`CANCEL` (no active press) a move is ignored.
+     */
     fun move(px: Float, py: Float) {
+        if (phase == TouchPhase.IDLE || phase == TouchPhase.UP || phase == TouchPhase.CANCEL) return
         x = px; y = py
-        if (phase != TouchPhase.IDLE && phase != TouchPhase.CANCEL) phase = TouchPhase.DRAG
     }
 
     /** Pointer released at doc-space ([px], [py]). */
