@@ -21,6 +21,8 @@ import com.tneff.kmpremotecompose.remote.core.operations.Operations
 import com.tneff.kmpremotecompose.remote.player.core.PaintContext
 import com.tneff.kmpremotecompose.remote.player.core.PaintOperation
 import com.tneff.kmpremotecompose.remote.player.core.RemoteContext
+import com.tneff.kmpremotecompose.remote.player.core.VariableSupport
+import com.tneff.kmpremotecompose.remote.player.core.resolveCoord
 import com.tneff.kmpremotecompose.remote.wire.WireBuffer
 
 /**
@@ -35,9 +37,25 @@ class ClipRect(
     val y1: Float,
     val x2: Float,
     val y2: Float,
-) : PaintOperation {
+) : PaintOperation, VariableSupport {
 
     override val opcode: Int get() = Operations.CLIP_RECT
+
+    // REM-124: NaN-encoded var-ref bounds resolved at render time; raw fields untouched (byte-safe).
+    // Without this a computed clip (stock sparkline: x1..y2 = ANIMATED_FLOATs) reached `clipRect` as raw
+    // NaN → a degenerate clip that hides everything drawn after it (the sparkline DrawPaths). Mirrors
+    // DrawRect's coord resolution exactly.
+    var rX1: Float = x1
+    var rY1: Float = y1
+    var rX2: Float = x2
+    var rY2: Float = y2
+
+    override fun updateVariables(context: RemoteContext) {
+        rX1 = context.resolveCoord(x1)
+        rY1 = context.resolveCoord(y1)
+        rX2 = context.resolveCoord(x2)
+        rY2 = context.resolveCoord(y2)
+    }
 
     override fun write(buffer: WireBuffer) {
         buffer.writeByte(opcode)
@@ -49,7 +67,7 @@ class ClipRect(
 
     /** L2 render: bind this op to the paint context (REM-33). */
     override fun paint(context: RemoteContext, paint: PaintContext) {
-        paint.clipRect(x1, y1, x2, y2)
+        paint.clipRect(rX1, rY1, rX2, rY2)
     }
 
     override fun dump(): String = "CLIP_RECT x1=$x1 y1=$y1 x2=$x2 y2=$y2"
