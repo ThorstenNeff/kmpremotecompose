@@ -38,8 +38,16 @@ object RcCorpus {
      */
     var rootOverride: Path? = null
 
-    private fun reader(): RcCorpusReader =
-        RcCorpusReader(OkioCorpusIo(FileSystem.SYSTEM, fixtureRoot()))
+    private fun reader(): RcCorpusReader {
+        // REM-122: `FileSystem.SYSTEM` is absent on wasm-browser → behind [corpusSystemFileSystem] so
+        // commonTest compiles for wasm. Fail closed where there is no filesystem (the on-disk corpus
+        // simply isn't reachable there) — corpus-backed tests don't run on wasm; platform-pure ones do.
+        val fs = corpusSystemFileSystem() ?: throw okio.IOException(
+            "RcCorpus: no system filesystem on this platform (e.g. wasm browser) — corpus fixtures are " +
+                "unavailable here; run corpus-backed tests on JVM/Native/Android.",
+        )
+        return RcCorpusReader(OkioCorpusIo(fs, fixtureRoot()))
+    }
 
     fun readFixture(name: String): ByteArray = reader().readFixture(name)
 
