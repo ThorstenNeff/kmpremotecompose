@@ -42,6 +42,10 @@ import kotlin.system.exitProcess
  *   --priority           render only the bitmap/offscreen/opaque-sensitive subset (REM-75 gate)
  *   --docs a,b,c         render the named docs only (comma-separated, no .rc)
  *   --t SECONDS          static-time pin (default 0)
+ *   --density FLOAT      device-density seed (default 1.0; REM-78-follow-up for the REM-89/91
+ *                        cross-density verification sweep: density=1.0 is the canonical doc-px
+ *                        baseline, density>1 reproduces the over-scale bug class until REM-91/the
+ *                        density-posture fix lands).
  *   --out DIR            output PNG dir (default: screenshots/reference/desktop)
  *   --rc DIR             corpus dir   (default: androidApp/src/main/assets/rc)
  *   --csv FILE           classification CSV (default: <out>/_sweep.csv)
@@ -51,7 +55,7 @@ fun main(args: Array<String>) {
     cfg.outDir.mkdirs()
     println("[REM-78] corpus=${cfg.rcDir.absolutePath}")
     println("[REM-78] out=${cfg.outDir.absolutePath}")
-    println("[REM-78] t=${cfg.staticTime}")
+    println("[REM-78] t=${cfg.staticTime}  density=${cfg.density}")
 
     val docs = selectDocs(cfg)
     if (docs.isEmpty()) {
@@ -77,7 +81,7 @@ fun main(args: Array<String>) {
             error++
             continue
         }
-        val result = renderOne(rcFile.readBytes(), cfg.staticTime)
+        val result = renderOne(rcFile.readBytes(), cfg.staticTime, cfg.density)
         val status = when {
             result.throwMsg != null -> "ERROR"
             result.drawCount == 0   -> "BLANK"
@@ -117,7 +121,7 @@ private data class RenderResult(
     val throwMsg: String?,
 )
 
-private fun renderOne(rcBytes: ByteArray, staticTime: Float): RenderResult {
+private fun renderOne(rcBytes: ByteArray, staticTime: Float, density: Float): RenderResult {
     val doc: RemoteComposeDocument = try {
         DocumentReader.inflate(rcBytes)
     } catch (t: Throwable) {
@@ -126,12 +130,15 @@ private fun renderOne(rcBytes: ByteArray, staticTime: Float): RenderResult {
     val w = if (doc.width > 0) doc.width else 500
     val h = if (doc.height > 0) doc.height else 500
     val ctx = RemoteContext().apply {
-        setDensity(1f)
+        setDensity(density)
         animationEnabled = false
     }
     var thrown: String? = null
     var paintContextRef: ComposePaintContext? = null
-    val scene = ImageComposeScene(width = w, height = h, density = Density(1f)) {
+    // density seeds BOTH the RemoteContext (the doc's ID_DENSITY system var) AND the
+    // ImageComposeScene's local Density — so density-referencing ops AND CMP dp-conversion see
+    // the same density (mirrors what Android/iOS device-rendering does).
+    val scene = ImageComposeScene(width = w, height = h, density = Density(density)) {
         RenderDocCanvas(doc, ctx, w, h, staticTime, { pc -> paintContextRef = pc }) { thrown = it }
     }
     return try {
@@ -189,6 +196,7 @@ private data class Config(
     val outDir: File,
     val csvOut: File,
     val staticTime: Float,
+    val density: Float,
     val priorityOnly: Boolean,
     val explicitDocs: List<String>?,
 )
@@ -214,6 +222,7 @@ private fun parseArgs(args: Array<String>): Config {
     var outDir = "screenshots/reference/desktop"
     var csv: String? = null
     var t = 0f
+    var density = 1f
     var priority = false
     var docs: List<String>? = null
     var i = 0
@@ -223,6 +232,7 @@ private fun parseArgs(args: Array<String>): Config {
             "--out"      -> { outDir = args[++i] }
             "--csv"      -> { csv = args[++i] }
             "--t"        -> { t = args[++i].toFloat() }
+            "--density"  -> { density = args[++i].toFloat() }
             "--priority" -> { priority = true }
             "--docs"     -> { docs = args[++i].split(",").map { it.trim() }.filter { it.isNotEmpty() } }
             else         -> System.err.println("[REM-78] unknown arg: $a")
@@ -235,6 +245,7 @@ private fun parseArgs(args: Array<String>): Config {
         outDir = out,
         csvOut = csv?.let(::File) ?: File(out, "_sweep.csv"),
         staticTime = t,
+        density = density,
         priorityOnly = priority,
         explicitDocs = docs,
     )
