@@ -1,0 +1,55 @@
+# RC Web-Render-Sweep — wasmJs Browser-Capture  (REM-79 / A2 · feeds REM-80/C7)
+# Owner: test-2 (Flow/Harness). Render-Infra: dev-2 (REM-76, gemergt). Web-Shell-Hooks (W1/W2): dev (offen).
+#
+# Zweck: ein Korpus-`.rc` im wasmJs-webApp (ComposeViewport-Canvas) im headless-Browser rendern und
+# race-frei + FAIL-CLOSED capturen, sodass derselbe Verdikt-Stack wie mobil (screenshots/parity/
+# parity_compare.py: BLANK/PASS/TEXT/FAIL) die Web-Ausgabe gegen die bewiesene Android/iOS-Baseline
+# diffen kann. Web-Akzeptanz = „rendert dasselbe wie die Mobile-Referenz", nicht „rendert irgendwas".
+#
+# 🔴 TEST-FIRST-RED (erwartet rot — wie render_parity.yaml ohne Golden). Dieser Flow ist SCHARF erst wenn:
+#   W1  wasmJs-RcRouter URL-Parser  — `?rc=`/`&t=`/`&live` aus window.location → RcRouter (DEV, NICHT in REM-76).
+#       Ohne W1 rendert Web nur DEFAULT_DOC (procedure_simple1) → kein Doc-Select, kein Frame-Pin.
+#   W2  DOM-Spiegel der Render-Marker — Compose-testTags (rc-canvas/rc-rendered/rc-error/rc-doc) liegen IM
+#       wasm-<canvas> → ein DOM-Web-Driver sieht sie NICHT. webApp muss sie als `data-*`/DOM-Element beim
+#       Frame-Commit spiegeln (DEV, NICHT in REM-76). Ohne W2 kann der Capture nicht warten/FAIL-CLOSEDen.
+#   C5  Browser-`.rc`-async-Loading (HTTP-fetch statt okio-FileSystem) — dev-1, nach D1. Ohne C5 lädt der
+#       Browser kein Doc.
+# Contract-Details + Image-Doc-Verdacht-Bucket: docs/a2-web-render-sweep-harness-prep.md.
+#
+# Lauf (sobald W1+W2+C5 stehen):
+#   maestro test --device chromium --env RC=procedure_simple1 --env BASE=http://localhost:8080 web_render_sweep.yaml
+#   Frame-Pin (Uhren):  --env T=36630   (10:10:30, kanonischer Pin, s. clock-golden-freeze-spec)
+#   Sweep über die 173: Treiber-Skript ruft diesen Flow pro corpusName; PNGs → parity_compare.py.
+
+url: ${BASE}
+name: "RC Web Render Sweep (wasmJs)"
+tags:
+  - web
+  - sweep
+  - conformance
+env:
+  RC: "procedure_simple1"
+  BASE: "http://localhost:8080"
+  T: ""                      # leer = static t=0; sonst REM-62-Frame-Pin in Sekunden
+---
+# W1: Doc + optionaler Frame-Pin via URL-Query (window.location → RcRouter, DEV-offen).
+- openLink:
+    link: "${BASE}/?rc=${RC}${T == '' ? '' : '&t=' + T}"
+
+# W2 (DOM-Spiegel): erst NACH Frame-Commit sichtbar → race-frei, kein Timeout-Capture.
+- extendedWaitUntil:
+    visible:
+      id: "rc-rendered"
+    timeout: 15000
+    label: "post-frame-commit (Ehrlichkeits-Anker) — erst dann screenshotten"
+
+# FAIL-CLOSED gegen stale Frame: der gerenderte Doc-Name muss == angefragtem RC sein (adb-stale-Lektion).
+- assertVisible:
+    id: "rc-doc-${RC}"
+
+- assertNotVisible:
+    id: "rc-error"
+
+# Capture der Render-Fläche (rc-canvas = das ComposeViewport-Canvas). PNG geht in den
+# parity_compare.py-Verdikt (BLANK/PASS/TEXT/FAIL) gegen die Mobile-FULL/PARTIAL/BLANK-Baseline.
+- takeScreenshot: "web/${RC}"
