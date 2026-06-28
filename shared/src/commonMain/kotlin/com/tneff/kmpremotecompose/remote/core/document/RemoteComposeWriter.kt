@@ -36,21 +36,42 @@ class RemoteComposeWriter(
     height: Int,
     val profiles: Int = Operations.PROFILE_BASELINE,
     contentDescription: String? = null,
+    /**
+     * The header form to stamp. `7` ⇒ map-form (v1.1.0, TLV property table) — the legacy default for
+     * this writer. `6` ⇒ flat-form (v1.0.0, fixed-shape header) — what upstream's corpus oracles use
+     * and what the creation-DSL emits to achieve full byte-equality (REM-85). Flat-form cannot
+     * encode `DOC_PROFILES` or `DOC_CONTENT_DESCRIPTION` in the header, so those must be expressed as
+     * body ops (`ROOT_CONTENT_DESCRIPTION` over a `DATA_TEXT`); the writer enforces baseline-profile
+     * + null content-description on `apiLevel < 7` to prevent silently dropping the inputs.
+     */
+    apiLevel: Int = 7,
 ) {
 
     private val buffer = WireBuffer()
 
-    /** API level of the documents this writer produces (map-form header ⇒ 7). */
-    val apiLevel: Int = Header.versionToApiLevel(Header.MAJOR_VERSION, Header.MINOR_VERSION)
+    /** API level of the documents this writer produces — derived from the chosen header form. */
+    val apiLevel: Int = apiLevel
 
     init {
         Builtins.register()
-        val properties = LinkedHashMap<Int, Any>()
-        properties[Header.DOC_WIDTH] = width
-        properties[Header.DOC_HEIGHT] = height
-        if (contentDescription != null) properties[Header.DOC_CONTENT_DESCRIPTION] = contentDescription
-        if (profiles != Operations.PROFILE_BASELINE) properties[Header.DOC_PROFILES] = profiles
-        Header.fromProperties(properties).write(buffer)
+        if (apiLevel < 7) {
+            require(profiles == Operations.PROFILE_BASELINE) {
+                "flat-form header (apiLevel=$apiLevel) cannot encode profiles=$profiles — " +
+                    "use apiLevel >= 7 for non-baseline profiles"
+            }
+            require(contentDescription == null) {
+                "flat-form header (apiLevel=$apiLevel) cannot encode contentDescription in the " +
+                    "header — emit it as DATA_TEXT + ROOT_CONTENT_DESCRIPTION body ops"
+            }
+            Header.flat(width, height).write(buffer)
+        } else {
+            val properties = LinkedHashMap<Int, Any>()
+            properties[Header.DOC_WIDTH] = width
+            properties[Header.DOC_HEIGHT] = height
+            if (contentDescription != null) properties[Header.DOC_CONTENT_DESCRIPTION] = contentDescription
+            if (profiles != Operations.PROFILE_BASELINE) properties[Header.DOC_PROFILES] = profiles
+            Header.fromProperties(properties).write(buffer)
+        }
     }
 
     /**

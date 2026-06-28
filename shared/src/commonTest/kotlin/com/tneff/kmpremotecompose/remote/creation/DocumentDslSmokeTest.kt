@@ -17,8 +17,6 @@ package com.tneff.kmpremotecompose.remote.creation
 
 import com.tneff.kmpremotecompose.conformance.RcCorpus
 import com.tneff.kmpremotecompose.conformance.RcDocumentCodec
-import com.tneff.kmpremotecompose.remote.core.operations.RootContentDescription
-import com.tneff.kmpremotecompose.remote.core.operations.TextData
 import com.tneff.kmpremotecompose.remote.core.operations.draw.DrawCircle
 import com.tneff.kmpremotecompose.remote.core.operations.draw.DrawRect
 import kotlin.test.Test
@@ -26,19 +24,17 @@ import kotlin.test.assertEquals
 import kotlin.test.assertTrue
 
 /**
- * REM-73 (FC-E1) — creation-DSL smoke. Proves the three load-bearing E1 properties end-to-end on
- * every shared-module target:
+ * REM-73 (E1 scaffold) + REM-85 (byte-faithful lifecycle prolog) — creation-DSL smoke.
  *
+ * Pins the load-bearing properties the rest of Epic E builds on:
  *  1. `document { … }` produces parseable `.rc` bytes (header lifecycle correct).
- *  2. The bytes are *byte-faithful*: `decode → re-encode` equals the original. This is the
- *     round-trip basis for E5 conformance (writer ↔ oracle byte-equality).
- *  3. The recording path goes through `RemoteComposeContext.add(op)` — i.e. the external-drive
- *     seam the E6 Compose-DSL applier will use is the same path the receiver-lambda uses.
- *
- * The DSL is an op-emitter, not an encoder (§2): if (2) holds for a doc we built, the same proof
- * extends to every op we later wire into helpers, because `Operation.write()` is already byte-proven
- * by the L1 conformance harness (173/173). E1 ships no draw helpers yet; the smoke uses the raw
- * `add(DrawRect(…))` path that E2's `drawRect()` helper will route through.
+ *  2. The bytes are *byte-faithful*: `decode → re-encode` equals the original (round-trip basis
+ *     for E5 conformance — writer ↔ oracle byte-equality on the read/write path).
+ *  3. The recording path goes through `RemoteComposeContext.add(op)` — the same external-drive seam
+ *     the E6 Compose-DSL applier will use is what the receiver-lambda walks.
+ *  4. **REM-85 prolog (this story):** the DSL auto-selects flat-form (api 6, v1.0.0) for baseline
+ *     profiles and auto-emits `DATA_TEXT(42, contentDescription)` + `ROOT_CONTENT_DESCRIPTION(42)`
+ *     so a freshly authored document is byte-equal to the upstream `procedure_simple1.rc` oracle.
  */
 class DocumentDslSmokeTest {
 
@@ -72,47 +68,49 @@ class DocumentDslSmokeTest {
     }
 
     /**
-     * Post-header replay proof: the op stream the DSL emits after the header matches the upstream
-     * `procedure_simple1.rc` oracle byte-for-byte. This pins what E1 actually owns — op identity,
-     * id allocation from `START_ID = 42`, emission order, operand encoding — independently of the
-     * header form the writer stamps.
-     *
-     * Why not full byte-equality vs the fixture: `procedure_simple1.rc` carries a flat-form (API-6)
-     * header (`major=0, minor=1, patch=0`, no property map) while our `RemoteComposeWriter` always
-     * stamps the current map-form (API-7, `major=1, minor=1`). Both are valid `.rc` headers, but
-     * they cannot be byte-equal. Adding a flat-emit mode (or an api-version param on `document`)
-     * is the lever to lift this to full byte-equality in a follow-up — flagged to PO; out of E1
-     * scope to avoid changing L1 writer semantics here.
-     *
-     * `procedure_simple1.rc` (61 B): HEADER (29 B) · DATA_TEXT(id=42, "Clock") (14 B) ·
-     * ROOT_CONTENT_DESCRIPTION(id=42) (5 B) · DRAW_CIRCLE(150, 150, 150) (13 B). The 32-byte
-     * post-header tail is what this test asserts.
+     * REM-85 gate: full-document byte-equality against the upstream `procedure_simple1.rc` oracle.
+     * The oracle (61 B) is `RemoteComposeWriter(600,600,"Clock",6,0); drawCircle(150,150,150)` —
+     * HEADER (flat v1.0.0, 29 B) · DATA_TEXT(id=42,"Clock") (14 B) · ROOT_CONTENT_DESCRIPTION(42)
+     * (5 B) · DRAW_CIRCLE(150,150,150) (13 B). The DSL invocation below must encode to those exact
+     * bytes — proves the lifecycle prolog + writer auto-form land the corpus byte-contract.
      */
     @Test
-    fun procedureSimple1_postHeaderTail_matchesOracleByteForByte() {
+    fun procedureSimple1_fullDocument_matchesOracleByteForByte() {
         val oracle = RcCorpus.readFixture("corpus/procedure_simple1.rc")
-        val oracleHeaderLen = 29 // see Header.write: opcode(1) + major(4) + minor(4) + patch(4) + width(4) + height(4) + caps(8)
-        val oracleTail = oracle.copyOfRange(oracleHeaderLen, oracle.size)
 
-        val bytes = document(width = 600, height = 600) {
-            val textId = ids.nextId()
-            add(TextData(textId, "Clock"))
-            add(RootContentDescription(textId))
+        val bytes = document(width = 600, height = 600, contentDescription = "Clock") {
             add(DrawCircle(centerX = 150f, centerY = 150f, radius = 150f))
         }
-        val dslTail = bytes.copyOfRange(bytes.size - oracleTail.size, bytes.size)
-        if (!oracleTail.contentEquals(dslTail)) {
+
+        if (!oracle.contentEquals(bytes)) {
             throw AssertionError(
-                "post-header tail diverged from procedure_simple1 oracle " +
-                    "(${oracleTail.size}B each).\n" +
-                    "oracle: ${hex(oracleTail)}\n" +
-                    "dsl:    ${hex(dslTail)}"
+                "creation-DSL diverged from procedure_simple1 oracle " +
+                    "(oracle=${oracle.size}B, dsl=${bytes.size}B). " +
+                    "First diff at byte ${firstDiffIndex(oracle, bytes)}.\n" +
+                    "oracle: ${hex(oracle)}\n" +
+                    "dsl:    ${hex(bytes)}",
             )
         }
     }
 
-    private fun hex(b: ByteArray): String =
-        b.joinToString(" ") { (it.toInt() and 0xff).toString(16).padStart(2, '0') }
+    /**
+     * Without an explicit `contentDescription`, the lifecycle reserves no id and emits no body
+     * prolog — so the first user op gets id 42 (still the upstream `START_ID`). Pins the rule that
+     * id 42 is reserved *iff* there is a content-description to bind it to.
+     */
+    @Test
+    fun document_withoutContentDescription_idAllocatorStartsAt42() {
+        val ctx = RemoteComposeContext(
+            writer = com.tneff.kmpremotecompose.remote.core.document.RemoteComposeWriter(
+                width = 100,
+                height = 100,
+                apiLevel = 6,
+            ),
+            profile = Profile.Baseline,
+        )
+        // No content-description ⇒ id 42 is free for the first user-allocated id.
+        assertEquals(42, ctx.ids.nextId())
+    }
 
     @Test
     fun idAllocator_startsAtUpstreamStartId_andIncrementsMonotonically() {
@@ -125,13 +123,16 @@ class DocumentDslSmokeTest {
         assertEquals(100, ids.nextId())
     }
 
+    private fun hex(b: ByteArray): String =
+        b.joinToString(" ") { (it.toInt() and 0xff).toString(16).padStart(2, '0') }
+
     private fun assertRoundtripIdentical(bytes: ByteArray) {
         val reEncoded = RcDocumentCodec.decode(bytes).reEncode()
         if (!bytes.contentEquals(reEncoded)) {
             throw AssertionError(
                 "decode→re-encode diverged from DSL output " +
                     "(orig=${bytes.size}B, roundtrip=${reEncoded.size}B). " +
-                    "First diff at byte ${firstDiffIndex(bytes, reEncoded)}."
+                    "First diff at byte ${firstDiffIndex(bytes, reEncoded)}.",
             )
         }
     }
