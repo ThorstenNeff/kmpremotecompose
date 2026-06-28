@@ -39,21 +39,36 @@ package com.tneff.kmpremotecompose.remote.creation
  * Keeping the counters on the context — not on a global — means each `document { … }` call starts
  * from a known baseline (deterministic byte output for the same script).
  */
-class IdAllocator(start: Int = START_ID, startArray: Int = START_ARRAY) {
+class IdAllocator(
+    start: Int = START_ID,
+    startArray: Int = START_ARRAY,
+    startVariable: Int = START_VAR,
+) {
     private var next: Int = start
     private var nextArray: Int = startArray
+    private var nextVar: Int = startVariable
 
     /**
-     * Next region-0 id. Pool: every id-bearing op except `ID_MAP` (see [nextArrayId]). Mirrors
-     * upstream `createNextAvailableId(0)` / `createNextAvailableId()` ⇒ `mNextId++`.
+     * Next region-0 id. Pool: every id-bearing op except `ID_MAP` (see [nextArrayId]) and
+     * `NAMED_VARIABLE` (see [nextVariableId]). Mirrors upstream `createNextAvailableId(0)` /
+     * `createNextAvailableId()` ⇒ `mNextId++`.
      */
     fun nextId(): Int = next++
 
     /**
      * Next region-2 (array/data-map) id. Mirrors upstream `createNextAvailableId(TYPE_ARRAY)` ⇒
-     * `mIdMaps[2]++`. **Independent** of [nextId] — pulling here does NOT advance the plain pool.
+     * `mIdMaps[2]++`. **Independent** of [nextId] / [nextVariableId] — pulling here advances no
+     * other counter.
      */
     fun nextArrayId(): Int = nextArray++
+
+    /**
+     * Next region-1 (variable) id. Mirrors upstream `createNextAvailableId(TYPE_VARIABLE)` ⇒
+     * `mIdMaps[1]++`. **Independent** of [nextId] / [nextArrayId]. Used by `NamedVariable` /
+     * `addNamedVariable`; the four E5-watchpoint fixtures don't exercise this counter (so a value
+     * here is verifiable only against the upstream `NanMap.START_VAR` constant — see [START_VAR]).
+     */
+    fun nextVariableId(): Int = nextVar++
 
     /** Reseed the plain counter (mirrors upstream `RemoteComposeState.setNextId`). */
     fun setNextId(id: Int) { next = id }
@@ -61,11 +76,17 @@ class IdAllocator(start: Int = START_ID, startArray: Int = START_ARRAY) {
     /** Reseed the array (region-2) counter. */
     fun setNextArrayId(id: Int) { nextArray = id }
 
+    /** Reseed the variable (region-1) counter. */
+    fun setNextVariableId(id: Int) { nextVar = id }
+
     /** Current value of the plain counter without consuming it. */
     fun peek(): Int = next
 
     /** Current value of the array (region-2) counter without consuming it. */
     fun peekArray(): Int = nextArray
+
+    /** Current value of the variable (region-1) counter without consuming it. */
+    fun peekVariable(): Int = nextVar
 
     companion object {
         /** Upstream `NanMap.START_VARIABLE_ID` / `RemoteComposeState.START_ID`. */
@@ -73,5 +94,8 @@ class IdAllocator(start: Int = START_ID, startArray: Int = START_ARRAY) {
 
         /** Upstream `NanMap.START_ARRAY = (2 << 20) + START_VARIABLE_ID = 2097194`. */
         const val START_ARRAY: Int = (2 shl 20) + START_ID
+
+        /** Upstream `NanMap.START_VAR = (1 << 20) + START_VARIABLE_ID = 1048618`. */
+        const val START_VAR: Int = (1 shl 20) + START_ID
     }
 }
