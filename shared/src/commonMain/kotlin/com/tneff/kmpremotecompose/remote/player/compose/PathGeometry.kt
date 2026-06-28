@@ -19,7 +19,6 @@ import androidx.compose.ui.graphics.Path
 import androidx.compose.ui.graphics.PathFillType
 import androidx.compose.ui.graphics.PathOperation
 import com.tneff.kmpremotecompose.remote.player.core.RemoteContext
-import com.tneff.kmpremotecompose.remote.wire.WireTypes
 
 /**
  * REM-31 (L2-S2) — player-side path-geometry helpers layered on the raw state store ([RemoteContext]).
@@ -104,48 +103,13 @@ internal object PathGeometry {
     }
 
     /**
-     * REM-36 (position-aware) — resolve NaN **variable** coordinates of a path-data array against the
-     * store before the path is built, while NEVER touching the **command markers**. The walk mirrors
-     * [FloatsToPath.genPath]'s command lengths: the float at each command position is a marker (left raw
-     * — it dispatches MOVE/LINE/…), every following float in that command is a coordinate (dereferenced
-     * if it is a variable NaN). This is what makes path system-variable coords (region 0 — WINDOW_WIDTH/
-     * TIME) resolvable **without** the byte-collision that blocks element-wise region-0 resolution
-     * (markers and system-var ids share region 0; only POSITION distinguishes them). Operators (region 3)
-     * + literals pass through; unknown marker → stop (mirrors genPath fail-soft). Allocation-free when no
-     * coordinate needs resolving (static paths return the original array).
+     * REM-36 (position-aware) path-coordinate resolution — moved to the Compose-free
+     * [com.tneff.kmpremotecompose.remote.player.core.PathDataResolver] (REM-121) so `PathAppend`
+     * (core/draw) can bake loop-variant coords per iteration via the SAME logic. Kept here as a thin
+     * forwarder for the existing renderer callers + `PathSysVarResolutionTest`.
      */
-    internal fun resolvePathData(state: RemoteContext, data: FloatArray): FloatArray {
-        if (data.isEmpty()) return data
-        var out: FloatArray? = null
-        var i = 0
-        while (i < data.size) {
-            // The float at a command position is a MARKER (left raw — it dispatches the command);
-            // command lengths mirror FloatsToPath.genPath exactly.
-            val len = when (WireTypes.idFromNan(data[i])) {
-                FloatsToPath.MOVE -> 3
-                FloatsToPath.LINE -> 5
-                FloatsToPath.QUADRATIC -> 7
-                FloatsToPath.CONIC -> 8
-                FloatsToPath.CUBIC -> 9
-                FloatsToPath.CLOSE, FloatsToPath.DONE -> 1
-                else -> break // unknown marker — leave the remainder untouched (genPath stops too)
-            }
-            // Positions i+1 .. i+len-1 are COORDINATES: dereference any variable NaN (system R0 / normal
-            // R1 / data R2). The marker at i is never resolved → the R0 marker/system-var byte-collision
-            // is avoided by POSITION, not region. Operators (R3) + literals pass through.
-            var j = i + 1
-            while (j < i + len && j < data.size) {
-                val f = data[j]
-                if (f.isNaN() && !WireTypes.isOperationVariable(f)) {
-                    if (out == null) out = data.copyOf()
-                    out!![j] = state.getFloat(WireTypes.idFromNan(f))
-                }
-                j++
-            }
-            i += len
-        }
-        return out ?: data
-    }
+    internal fun resolvePathData(state: RemoteContext, data: FloatArray): FloatArray =
+        com.tneff.kmpremotecompose.remote.player.core.PathDataResolver.resolvePathData(state, data)
 
     /**
      * Map the `combinePath` operation byte to a [PathOperation]. Order verified against upstream

@@ -17,6 +17,7 @@ package com.tneff.kmpremotecompose.remote.player.compose
 
 import androidx.compose.ui.graphics.Path
 import androidx.compose.ui.graphics.PathMeasure
+import com.tneff.kmpremotecompose.remote.player.core.PathDataResolver
 import com.tneff.kmpremotecompose.remote.wire.WireTypes
 import kotlin.math.max
 import kotlin.math.min
@@ -40,14 +41,15 @@ import kotlin.math.sqrt
  */
 internal object FloatsToPath {
 
-    // Path command markers (NaN-encoded in the stream). Values verified against upstream PathData.
-    const val MOVE: Int = 10
-    const val LINE: Int = 11
-    const val QUADRATIC: Int = 12
-    const val CONIC: Int = 13
-    const val CUBIC: Int = 14
-    const val CLOSE: Int = 15
-    const val DONE: Int = 16
+    // Path command markers (NaN-encoded in the stream). Single source = PathDataResolver (REM-121); the
+    // command-length table that this object's per-command cursor advances must sum to lives there too.
+    const val MOVE: Int = PathDataResolver.MOVE
+    const val LINE: Int = PathDataResolver.LINE
+    const val QUADRATIC: Int = PathDataResolver.QUADRATIC
+    const val CONIC: Int = PathDataResolver.CONIC
+    const val CUBIC: Int = PathDataResolver.CUBIC
+    const val CLOSE: Int = PathDataResolver.CLOSE
+    const val DONE: Int = PathDataResolver.DONE
 
     /** Skia's default conic→quad flatness tolerance and recursion cap (`SkConic`). */
     private const val CONIC_QUAD_TOLERANCE: Float = 0.25f
