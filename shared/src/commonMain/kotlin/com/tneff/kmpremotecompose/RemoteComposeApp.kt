@@ -28,7 +28,6 @@ import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.SideEffect
 import androidx.compose.runtime.setValue
-import androidx.compose.runtime.withFrameNanos
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.layout.layout
 import androidx.compose.ui.platform.LocalDensity
@@ -122,9 +121,12 @@ fun RemoteComposeApp(
             frameTime = 0f
             return@LaunchedEffect
         }
-        val startNanos = withFrameNanos { it }
+        // REM-114: drive via the frame-pacing seam, not withFrameNanos directly — on wasm a pure
+        // withFrameNanos loop deadlocks the idle ComposeViewport frame clock (frozen at t=0). The seam
+        // keeps vsync on Android/Desktop/iOS and a timer tick on wasm. See [awaitAnimationFrameNanos].
+        val startNanos = awaitAnimationFrameNanos()
         while (true) {
-            val nowNanos = withFrameNanos { it }
+            val nowNanos = awaitAnimationFrameNanos()
             frameTime = (nowNanos - startNanos) / 1_000_000_000f
         }
     }
