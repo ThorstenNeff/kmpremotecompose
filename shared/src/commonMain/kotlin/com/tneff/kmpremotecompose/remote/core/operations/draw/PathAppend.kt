@@ -21,6 +21,7 @@ import com.tneff.kmpremotecompose.remote.core.operations.Operations
 import com.tneff.kmpremotecompose.remote.wire.WireTypes
 import com.tneff.kmpremotecompose.remote.player.core.PaintContext
 import com.tneff.kmpremotecompose.remote.player.core.PaintOperation
+import com.tneff.kmpremotecompose.remote.player.core.PathDataResolver
 import com.tneff.kmpremotecompose.remote.player.core.RemoteContext
 import com.tneff.kmpremotecompose.remote.wire.WireBuffer
 
@@ -50,8 +51,14 @@ class PathAppend(
             context.putPathData(id, FloatArray(0)) // upstream RESET (= asNan(17)) clears the path
             return
         }
+        // REM-121: BAKE the current coordinate values into the accumulated path NOW (render-only;
+        // [write] keeps the raw NaN var-refs → byte-exact). Inside a loop the SAME PathAppend appends
+        // each iteration with the index-variant coord vars freshly evaluated; without baking, the stored
+        // data would hold the raw var ids N times and the draw-time resolve would collapse every segment
+        // to the var's FINAL value (a degenerate single-point path — the REM-121 flat-line bug).
+        val resolved = PathDataResolver.resolvePathData(context, data)
         val existing = context.getPathData(id)
-        context.putPathData(id, if (existing != null) existing + data else data)
+        context.putPathData(id, if (existing != null) existing + resolved else resolved)
     }
 
     override fun dump(): String = "PATH_ADD id=$id data=${data.size}"
