@@ -80,4 +80,10 @@ class IdAllocatorRegionTest {
         assertEquals(100, ids.nextId())
         assertEquals(2097250, ids.nextArrayId())
     }
+
+    // Region-1 (TYPE_VARIABLE) is intentionally NOT wired here — see the IdAllocator header
+    // comment. Upstream allocates NAMED_VARIABLE varIds from the plain pool (verified against
+    // `color_table.rc`: NAMED_VARIABLE id=50 is region-0). The earlier region-1 counter was a
+    // REM-92-review byte-blocker; the dedicated NamedVariable byte-anchor test lives in
+    // ColorExpressionHelpersTest.
 }

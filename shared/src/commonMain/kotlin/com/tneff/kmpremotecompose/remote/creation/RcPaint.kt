@@ -102,6 +102,83 @@ class RcPaint {
         ints += px.toRawBits()
     }
 
+    /**
+     * Linear gradient (REM-92, closes the `procedure_gradient1` paint slot).
+     *
+     * **Slot layout** (matches `PaintData.resolveBundle` GRADIENT walk + upstream `PaintBundle`):
+     * `[GRADIENT_TAG | (LINEAR shl 16)]`, `[control = colorCount]`, `colorCount` colour ints,
+     * `[stopsLen]`, then if `stopsLen > 0` `colorCount` raw-bit stop floats, then geometry
+     * `[x0, y0, x1, y1, tile]` (raw float bits + int [tile]). Geometry is emitted only when
+     * `colors.isNotEmpty()` — upstream's contract.
+     *
+     * [colors] are ARGB ints (or colorIds — mode-routing is the player's job). [stops] is optional;
+     * if `null`, emits no stop floats and writes `stopsLen=0`. [tile] is the [TILE_CLAMP] /
+     * [TILE_REPEAT] / [TILE_MIRROR] enum (upstream `Shader.TileMode` ordinals).
+     */
+    fun linearGradient(
+        x0: Float, y0: Float, x1: Float, y1: Float,
+        colors: IntArray,
+        stops: FloatArray? = null,
+        tile: Int = TILE_CLAMP,
+    ): RcPaint = apply {
+        emitGradient(LINEAR_GRADIENT, colors, stops) {
+            ints += x0.toRawBits(); ints += y0.toRawBits()
+            ints += x1.toRawBits(); ints += y1.toRawBits()
+            ints += tile
+        }
+    }
+
+    /**
+     * Radial gradient — geometry is `[centerX, centerY, radius, tile]` (3 raw-float-bit slots +
+     * int tile). See [linearGradient] for the slot-layout / [stops] / [tile] contract.
+     */
+    fun radialGradient(
+        centerX: Float, centerY: Float, radius: Float,
+        colors: IntArray,
+        stops: FloatArray? = null,
+        tile: Int = TILE_CLAMP,
+    ): RcPaint = apply {
+        emitGradient(RADIAL_GRADIENT, colors, stops) {
+            ints += centerX.toRawBits(); ints += centerY.toRawBits()
+            ints += radius.toRawBits()
+            ints += tile
+        }
+    }
+
+    /**
+     * Sweep gradient — geometry is `[centerX, centerY]` (2 raw-float-bit slots; sweep has no tile
+     * mode in upstream's slot walk).
+     */
+    fun sweepGradient(
+        centerX: Float, centerY: Float,
+        colors: IntArray,
+        stops: FloatArray? = null,
+    ): RcPaint = apply {
+        emitGradient(SWEEP_GRADIENT, colors, stops) {
+            ints += centerX.toRawBits(); ints += centerY.toRawBits()
+        }
+    }
+
+    private inline fun emitGradient(
+        type: Int,
+        colors: IntArray,
+        stops: FloatArray?,
+        geometry: () -> Unit,
+    ) {
+        ints += PaintData.GRADIENT or (type shl 16)
+        ints += colors.size // control: low byte = color count
+        for (c in colors) ints += c
+        val stopsLen = stops?.size ?: 0
+        ints += stopsLen
+        if (stopsLen > 0 && colors.isNotEmpty()) {
+            require(stopsLen == colors.size) {
+                "stops.size (=$stopsLen) must equal colors.size (=${colors.size})"
+            }
+            for (s in stops!!) ints += s.toRawBits()
+        }
+        if (colors.isNotEmpty()) geometry()
+    }
+
     /** Materialise the accumulated tags into a [PaintData] op (PAINT_VALUES). */
     fun build(): PaintData = PaintData(ints.toIntArray())
 
@@ -120,6 +197,17 @@ class RcPaint {
         const val JOIN_MITER: Int = 0
         const val JOIN_ROUND: Int = 1
         const val JOIN_BEVEL: Int = 2
+
+        // Gradient type tags (packed into the GRADIENT command's high 16 bits).
+        // Match the private constants in PaintData.resolveBundle's gradient walk.
+        private const val LINEAR_GRADIENT: Int = 0
+        private const val RADIAL_GRADIENT: Int = 1
+        private const val SWEEP_GRADIENT: Int = 2
+
+        // Shader.TileMode ordinals (Android).
+        const val TILE_CLAMP: Int = 0
+        const val TILE_REPEAT: Int = 1
+        const val TILE_MIRROR: Int = 2
     }
 }
 
