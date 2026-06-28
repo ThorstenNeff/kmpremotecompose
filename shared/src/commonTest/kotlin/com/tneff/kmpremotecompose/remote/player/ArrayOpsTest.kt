@@ -54,6 +54,24 @@ class ArrayOpsTest {
     }
 
     @Test
+    fun rem109_aSpline_interpolatesArray() {
+        // REM-109: A_SPLINE (OFFSET+38) [arrayId, t] → MonotonicSpline(array).getPos(t), t normalised 0..1
+        // (upstream builds the spline with even time points). Linear data → spline is exact-linear.
+        val ctx = RemoteContext()
+        ctx.loadFloatArray(2097194, floatArrayOf(0f, 2f, 4f, 6f, 8f))
+        val arr = WireTypes.asNan(2097194)
+        assertEquals(0f, ev(ctx, arr, 0f, op(38)), "A_SPLINE t=0 → first sample")
+        assertEquals(4f, ev(ctx, arr, 0.5f, op(38)), "A_SPLINE t=0.5 → midpoint (linear)")
+        assertEquals(8f, ev(ctx, arr, 1f, op(38)), "A_SPLINE t=1 → last sample")
+    }
+
+    @Test
+    fun rem109_aSpline_failSoftWhenArrayMissing() {
+        val ctx = RemoteContext()
+        assertEquals(0f, ev(ctx, WireTypes.asNan(2097194), 0.5f, op(38)), "missing array → 0 (no throw)")
+    }
+
+    @Test
     fun realFixture_pieChart2_loopBoundResolves() {
         com.tneff.kmpremotecompose.remote.core.operations.Builtins.register()
         val doc = com.tneff.kmpremotecompose.remote.core.document.DocumentReader.inflate(

@@ -72,6 +72,12 @@ object RpnFloatEvaluator {
     private const val OP_DEG = OFFSET + 29
     private const val OP_RAD = OFFSET + 30
 
+    // REM-109 (slice 1): the highest-impact missing operators (graph/chart class). IFELSE is upstream's
+    // ternary; A_SPLINE samples a FLOAT_LIST via a monotonic cubic spline (the curve behind line/area
+    // charts). Previously both threw → fail-soft → variable 0 → blank/silent-wrong render.
+    private const val OP_IFELSE = OFFSET + 26 // upstream TERNARY_CONDITIONAL: [a, b, cond] → cond>0 ? b : a
+    private const val OP_A_SPLINE = OFFSET + 38 // [arrayId, t] → MonotonicSpline(array).getPos(t)
+
     // REM-104: stack/geometry ops (upstream AnimatedFloatExpression). HYPOT computes a radial-gradient
     // radius = hypot(w/2, h/2) in countdown/demo_use_of_global; the unimplemented operator previously threw,
     // leaving the radius unset (→ 0 → false "degenerate gradient"). Siblings SQUARE/SQUARE_SUM/DUP/SWAP are
@@ -140,6 +146,13 @@ object RpnFloatEvaluator {
             stack[sp] = if (a != null && a.isNotEmpty()) a.average().toFloat() else 0f
             sp
         }
+        // REM-109: [arrayId, t] → spline-interpolated array value (upstream getSplineValue builds the
+        // spline with even time points 0..1, so t is normalised). Empty/missing array → 0 (fail-soft).
+        OP_A_SPLINE -> {
+            val arr = context.getFloatArray(WireTypes.fromNaN(stack[sp - 1]))
+            stack[sp - 1] = if (arr != null && arr.isNotEmpty()) MonotonicSpline(null, arr).getPos(stack[sp]) else 0f
+            sp - 1
+        }
         OP_ADD -> { stack[sp - 1] = stack[sp - 1] + stack[sp]; sp - 1 }
         OP_SUB -> { stack[sp - 1] = stack[sp - 1] - stack[sp]; sp - 1 }
         OP_MUL -> { stack[sp - 1] = stack[sp - 1] * stack[sp]; sp - 1 }
@@ -148,6 +161,8 @@ object RpnFloatEvaluator {
         OP_MIN -> { stack[sp - 1] = min(stack[sp - 1], stack[sp]); sp - 1 }
         OP_MAX -> { stack[sp - 1] = max(stack[sp - 1], stack[sp]); sp - 1 }
         OP_CLAMP -> { stack[sp - 2] = min(max(stack[sp - 2], stack[sp]), stack[sp - 1]); sp - 2 }
+        // REM-109: upstream TERNARY_CONDITIONAL — [a, b, cond] → cond>0 ? b : a (result at sp-2).
+        OP_IFELSE -> { stack[sp - 2] = if (stack[sp] > 0f) stack[sp - 1] else stack[sp - 2]; sp - 2 }
         OP_POW -> { stack[sp - 1] = stack[sp - 1].pow(stack[sp]); sp - 1 }
         OP_SQRT -> { stack[sp] = sqrt(stack[sp]); sp }
         OP_ABS -> { stack[sp] = abs(stack[sp]); sp }

@@ -66,6 +66,16 @@ class EvalE2Test {
     }
 
     @Test
+    fun rem109_ifelseTernary_matchesUpstream() {
+        // REM-109: upstream TERNARY_CONDITIONAL [a, b, cond] → cond>0 ? b : a (graph/chart conditionals).
+        assertEquals(20f, eval(10f, 20f, 1f, op(26)), "cond>0 → b")
+        assertEquals(10f, eval(10f, 20f, 0f, op(26)), "cond==0 → a")
+        assertEquals(10f, eval(10f, 20f, -5f, op(26)), "cond<0 → a")
+        // cond from a sub-expression: (3-2)=1 > 0 → b
+        assertEquals(200f, eval(100f, 200f, 3f, 2f, op(2), op(26)), "cond>0 from sub-expression → b")
+    }
+
+    @Test
     fun offsetBoundary_isVariableNotOperator() {
         // `> OFFSET` (assist parity fix): id == OFFSET itself is not an operator → treated as a var ref.
         assertEquals(0f, eval(op(0)), "asNan(OFFSET) resolves as an (unset) variable → 0, no throw")
