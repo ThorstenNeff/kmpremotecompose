@@ -105,6 +105,17 @@ class EvalE2Test {
     }
 
     @Test
+    fun rem109_lerpAndSmoothStep_matchUpstream() {
+        // REM-109: LERP [a,b,t] → a+(b-a)·t.
+        assertEquals(5f, eval(0f, 10f, 0.5f, op(49)), "LERP midpoint")
+        assertEquals(12.5f, eval(10f, 20f, 0.25f, op(49)), "LERP quarter")
+        // SMOOTH_STEP [val, max, min].
+        assertEquals(0f, eval(-1f, 10f, 0f, op(50)), "below min → 0")
+        assertEquals(1f, eval(11f, 10f, 0f, op(50)), "above max → 1")
+        assertEquals(0.5f, eval(5f, 10f, 0f, op(50)), 1e-6f, "midpoint → 0.5")
+    }
+
+    @Test
     fun offsetBoundary_isVariableNotOperator() {
         // `> OFFSET` (assist parity fix): id == OFFSET itself is not an operator → treated as a var ref.
         assertEquals(0f, eval(op(0)), "asNan(OFFSET) resolves as an (unset) variable → 0, no throw")

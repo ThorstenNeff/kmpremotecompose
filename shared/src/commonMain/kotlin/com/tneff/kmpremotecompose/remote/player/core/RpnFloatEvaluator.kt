@@ -90,6 +90,8 @@ object RpnFloatEvaluator {
     private const val OP_ATAN2 = OFFSET + 24 // [y, x] → atan2(y, x)
     private const val OP_RAND = OFFSET + 39 // push a random float in [0,1)
     private const val OP_RAND_SEED = OFFSET + 40 // [seed] → reseed the RNG (0 = fresh), pops seed
+    private const val OP_LERP = OFFSET + 49 // [a, b, t] → a + (b-a)·t
+    private const val OP_SMOOTH_STEP = OFFSET + 50 // [val, max, min] → Hermite smoothstep in [0,1]
 
     // REM-109: shared RNG for RAND/RAND_SEED (mirrors upstream's static `sRandom`). Reseeded by RAND_SEED
     // so a doc that seeds gets reproducible randomness; default otherwise.
@@ -210,6 +212,20 @@ object RpnFloatEvaluator {
             val seed = stack[sp]
             rng = if (seed == 0f) Random.Default else Random(seed.toRawBits())
             sp - 1
+        }
+        // REM-109: LERP [a, b, t] → a+(b-a)·t (upstream linear interpolation).
+        OP_LERP -> { stack[sp - 2] = stack[sp - 2] + (stack[sp - 1] - stack[sp - 2]) * stack[sp]; sp - 2 }
+        // REM-109: SMOOTH_STEP [val, max, min] → 0 below min, 1 above max, else Hermite v²(3-2v).
+        OP_SMOOTH_STEP -> {
+            val value = stack[sp - 2]
+            val hi = stack[sp - 1]
+            val lo = stack[sp]
+            stack[sp - 2] = when {
+                value < lo -> 0f
+                value > hi -> 1f
+                else -> { val v = (value - lo) / (hi - lo); v * v * (3 - 2 * v) }
+            }
+            sp - 2
         }
         // REM-104: HYPOT and its sibling stack/geometry ops (upstream AnimatedFloatExpression).
         OP_HYPOT -> { stack[sp - 1] = hypot(stack[sp - 1], stack[sp]); sp - 1 }
