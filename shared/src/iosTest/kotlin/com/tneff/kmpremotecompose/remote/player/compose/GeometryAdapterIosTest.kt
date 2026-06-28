@@ -291,6 +291,44 @@ class GeometryAdapterIosTest {
         assertTrue("TEXTURE_NO_BITMAP" in deferred, "missing texture bitmap must be logged")
     }
 
+    // REM-99: PATH_EFFECT(25) carries (cmd>>16) float-encoded ints = a PaintPathEffects tree. DASH maps to
+    // CMP dashPathEffect; CMP-unreachable types (DISCRETE/SUM) log honestly. Slot count = (cmd>>16) exactly.
+
+    @Test
+    fun paintBundle_dashPathEffectIsApplied() {
+        // [PATH_EFFECT | count=5<<16][type=DASH=1][phase=0][len=2][10f][10f]
+        val arr = intArrayOf(25 or (5 shl 16), 1, 0f.toRawBits(), 2, 10f.toRawBits(), 10f.toRawBits())
+        val deferred = mutableSetOf<String>()
+        val state = PlayerPaintState()
+        PaintBundleApplier.applyTo(RemoteContext(), state, arr, deferred = deferred)
+        assertNotNull(state.paint.pathEffect, "DASH must set a CMP path effect")
+        assertTrue(deferred.isEmpty(), "a well-formed dash is fully handled, nothing deferred")
+    }
+
+    @Test
+    fun paintBundle_discretePathEffectIsCmpUnreachableAndLogged() {
+        // [PATH_EFFECT | count=3<<16][type=DISCRETE=2][segmentLength=20f][deviation=5f]
+        val arr = intArrayOf(25 or (3 shl 16), 2, 20f.toRawBits(), 5f.toRawBits())
+        val deferred = mutableSetOf<String>()
+        val state = PlayerPaintState()
+        PaintBundleApplier.applyTo(RemoteContext(), state, arr, deferred = deferred)
+        assertTrue(state.paint.pathEffect == null, "no CMP discrete path effect → unshaded")
+        assertTrue("PATH_EFFECT_DISCRETE" in deferred, "discrete is CMP-unreachable → logged honestly")
+        assertTrue("PATH_EFFECT" !in deferred, "no bare/generic PATH_EFFECT tag — the type is recognized")
+    }
+
+    @Test
+    fun paintBundle_pathEffectCountZeroClearsEffect() {
+        val state = PlayerPaintState()
+        // set a dash first…
+        PaintBundleApplier.applyTo(RemoteContext(), state,
+            intArrayOf(25 or (5 shl 16), 1, 0f.toRawBits(), 2, 10f.toRawBits(), 10f.toRawBits()))
+        assertNotNull(state.paint.pathEffect, "precondition: dash applied")
+        // …then a 0-count PATH_EFFECT clears it (upstream setPathEffect(null)).
+        PaintBundleApplier.applyTo(RemoteContext(), state, intArrayOf(25))
+        assertTrue(state.paint.pathEffect == null, "count=0 clears the path effect")
+    }
+
     @Test
     fun paintBundle_cursorStaysInSyncAcrossEveryTagType() {
         // P3 (critical): each tag's advance must match upstream PaintBundle slot counts exactly — a
@@ -317,7 +355,7 @@ class GeometryAdapterIosTest {
             22, 0f.toRawBits(),                                  // SHADER_MATRIX (1)
             23 or (1 shl 16), 7, 1f.toRawBits(),                 // FONT_AXIS count=1 (2: tag,val)
             24, 0, 0, 0,                                         // TEXTURE (3)
-            25 or (2 shl 16), 0f.toRawBits(), 0f.toRawBits(),    // PATH_EFFECT count=2 (2)
+            25 or (2 shl 16), 0f.toRawBits(), 0f.toRawBits(),    // PATH_EFFECT count=2 (2); type 0 = unknown
             11 or (0 shl 16), 2, 0xFFFF0000.toInt(), 0xFF00FF00.toInt(), 0,
             0f.toRawBits(), 0f.toRawBits(), 10f.toRawBits(), 0f.toRawBits(), 0, // GRADIENT linear (9)
             4, sentinel,                                         // COLOR sentinel (1)
@@ -331,7 +369,9 @@ class GeometryAdapterIosTest {
         // `SHADER_NO_DATA` (cursor still advances exactly 1 slot, so the sentinel above proves sync holds).
         // REM-98: TEXTURE likewise resolves now — bitmapId 0 has no registered bitmap → `TEXTURE_NO_BITMAP`
         // (cursor still advances exactly 3 slots, so the sentinel still proves sync).
-        for (tag in listOf("SHADER_NO_DATA", "SHADER_MATRIX", "FONT_AXIS", "TEXTURE_NO_BITMAP", "PATH_EFFECT")) {
+        // REM-99: the synthetic PATH_EFFECT payload here is type 0 (no real effect) → PATH_EFFECT_UNKNOWN
+        // (still advances exactly count=2 slots, so the trailing sentinel proves cursor sync).
+        for (tag in listOf("SHADER_NO_DATA", "SHADER_MATRIX", "FONT_AXIS", "TEXTURE_NO_BITMAP", "PATH_EFFECT_UNKNOWN")) {
             assertTrue(tag in deferred, "deferred should record $tag")
         }
         assertEquals(12f, state.textSizePx, "TEXT_SIZE applied to state")

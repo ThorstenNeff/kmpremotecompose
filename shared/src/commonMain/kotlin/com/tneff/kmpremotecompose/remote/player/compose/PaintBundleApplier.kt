@@ -25,7 +25,9 @@ import androidx.compose.ui.graphics.LinearGradientShader
 import androidx.compose.ui.graphics.Shader
 import androidx.compose.ui.graphics.Paint
 import androidx.compose.ui.graphics.PaintingStyle
+import androidx.compose.ui.graphics.PathEffect
 import androidx.compose.ui.graphics.RadialGradientShader
+import androidx.compose.ui.graphics.StampedPathEffectStyle
 import androidx.compose.ui.graphics.StrokeCap
 import androidx.compose.ui.graphics.StrokeJoin
 import androidx.compose.ui.graphics.SweepGradientShader
@@ -85,6 +87,13 @@ internal object PaintBundleApplier {
     private const val FALLBACK_TYPEFACE = 26
 
     private const val STYLE_FILL_AND_STROKE = 2
+
+    // REM-99: PaintPathEffects type tags (verified against upstream PaintPathEffects).
+    private const val PE_DASH = 1
+    private const val PE_DISCRETE = 2
+    private const val PE_PATH_DASH = 3
+    private const val PE_SUM = 4
+    private const val PE_COMPOSE = 5
 
     private const val LINEAR_GRADIENT = 0
     private const val RADIAL_GRADIENT = 1
@@ -159,7 +168,11 @@ internal object PaintBundleApplier {
                 // bitmap and set a tiled ImageShader. Fail-soft: a missing bitmap leaves the paint unshaded
                 // and is recorded in [deferred] — never throws the render path.
                 TEXTURE -> i = applyTexture(context, paint, values, i, deferred)
-                PATH_EFFECT -> { i += (cmd shr 16); deferred?.add("PATH_EFFECT") }
+                // REM-99: PATH_EFFECT carries (cmd>>16) float-encoded ints describing a (possibly nested)
+                // path effect → parse into a CMP PathEffect (dash/stamped/chain). CMP-unreachable types
+                // (discrete/sum) are recorded in [deferred], never silently dropped. The cursor always
+                // advances by the declared count (paint-byte-sync) regardless of what parse consumed.
+                PATH_EFFECT -> { applyPathEffect(context, paint, values, i, cmd shr 16, deferred); i += (cmd shr 16) }
 
                 else -> {
                     // Unknown tag — we can't know its arg width, so stop to avoid desync.
@@ -339,6 +352,101 @@ internal object PaintBundleApplier {
         }
         return ret
     }
+
+    /**
+     * REM-99: parse the PATH_EFFECT bundle payload ([count] float-encoded ints starting at [start]) into a
+     * CMP [PathEffect] and set it on [paint]. Mirrors upstream `PaintPathEffects.parse` +
+     * `AndroidPaintContext.getPathEffect`: a (possibly nested) effect tree of DASH / DISCRETE / PATH_DASH /
+     * SUM / COMPOSE. CMP covers DASH ([PathEffect.dashPathEffect]), PATH_DASH ([PathEffect.stampedPathEffect])
+     * and COMPOSE ([PathEffect.chainPathEffect]); DISCRETE and SUM have no CMP equivalent and are recorded in
+     * [deferred] (and make a containing SUM/COMPOSE collapse to whichever side resolved). `count == 0` clears
+     * the effect (upstream `setPathEffect(null)`). Fail-soft: any malformed/unsupported sub-tree leaves the
+     * effect null and is logged — never throws the render path. The caller advances the cursor by [count]
+     * (paint-byte-sync), independent of what this consumes.
+     */
+    private fun applyPathEffect(context: RemoteContext, paint: Paint, a: IntArray, start: Int, count: Int, deferred: MutableSet<String>?) {
+        if (count <= 0) { paint.pathEffect = null; return }
+        try {
+            val parsed = parsePathEffect(context, a, start, start + count, deferred)
+            paint.pathEffect = parsed?.effect
+            // A null effect from a recognized-but-CMP-unreachable/degenerate sub-tree already logged its
+            // specific reason (DISCRETE/SUM/*_DEGENERATE). Only the unparseable case (parse returned null)
+            // needs the generic marker — never silently drop.
+            if (parsed == null) deferred?.add("PATH_EFFECT_EMPTY")
+        } catch (t: Throwable) {
+            deferred?.add("PATH_EFFECT_INVALID")
+        }
+    }
+
+    /** A parsed path effect plus the number of ints it consumed (including its 1-int type slot). */
+    private class ParsedPe(val effect: PathEffect?, val len: Int)
+
+    /**
+     * Recursively parse one path effect at [off] (bounded by [end]). Returns null if [off] is out of range.
+     * Float fields resolve NaN var-refs via [RemoteContext.getFloat] (static-time); int fields (type/len/
+     * shapeId/style) are read raw. `len` lets SUM/COMPOSE locate their second child exactly as upstream
+     * (`offset + first.mDataLength + 1`).
+     */
+    private fun parsePathEffect(context: RemoteContext, a: IntArray, off: Int, end: Int, deferred: MutableSet<String>?): ParsedPe? {
+        if (off >= end || off >= a.size) return null
+        fun f(idx: Int): Float {
+            val raw = if (idx < a.size) Float.fromBits(a[idx]) else 0f
+            return if (raw.isNaN()) context.getFloat(WireTypes.idFromNan(raw)) else raw
+        }
+        return when (a[off]) {
+            PE_DASH -> {
+                val phase = f(off + 1)
+                val len = if (off + 2 < a.size) a[off + 2] else 0
+                val intervals = FloatArray(if (len < 0) 0 else len) { f(off + 3 + it) }
+                // Skiko/Android require ≥2 even-count intervals with a positive sum; otherwise no dashing.
+                val effect = if (intervals.size >= 2 && intervals.any { it > 0f })
+                    PathEffect.dashPathEffect(intervals, phase) else null
+                if (effect == null) deferred?.add("PATH_EFFECT_DASH_DEGENERATE")
+                ParsedPe(effect, 1 + 2 + (if (len < 0) 0 else len))
+            }
+            PE_DISCRETE -> {
+                // CMP has no discrete path effect → honest deferred (consumes 2 floats: segmentLength, deviation).
+                deferred?.add("PATH_EFFECT_DISCRETE")
+                ParsedPe(null, 1 + 2)
+            }
+            PE_PATH_DASH -> {
+                val shapeId = if (off + 1 < a.size) a[off + 1] else 0
+                val advance = f(off + 2)
+                val phase = f(off + 3)
+                val style = if (off + 4 < a.size) a[off + 4] else 0
+                val shape = PathGeometry.buildPath(context, shapeId, 0f, 1f, deferred)
+                val effect = if (!shape.isEmpty && advance > 0f)
+                    PathEffect.stampedPathEffect(shape, advance, phase, stampStyle(style)) else null
+                if (effect == null) deferred?.add("PATH_EFFECT_PATHDASH_DEGENERATE")
+                ParsedPe(effect, 1 + 4)
+            }
+            PE_SUM -> {
+                val first = parsePathEffect(context, a, off + 1, end, deferred)
+                val second = first?.let { parsePathEffect(context, a, off + 1 + it.len, end, deferred) }
+                // CMP has no SumPathEffect (parallel apply). Keep whichever side resolved; if both, log the gap.
+                if (first?.effect != null && second?.effect != null) deferred?.add("PATH_EFFECT_SUM")
+                val effect = first?.effect ?: second?.effect
+                ParsedPe(effect, 1 + (first?.len ?: 0) + (second?.len ?: 0))
+            }
+            PE_COMPOSE -> {
+                val outer = parsePathEffect(context, a, off + 1, end, deferred)
+                val inner = outer?.let { parsePathEffect(context, a, off + 1 + it.len, end, deferred) }
+                val effect = if (outer?.effect != null && inner?.effect != null)
+                    PathEffect.chainPathEffect(outer.effect, inner.effect)
+                else (outer?.effect ?: inner?.effect)
+                ParsedPe(effect, 1 + (outer?.len ?: 0) + (inner?.len ?: 0))
+            }
+            else -> { deferred?.add("PATH_EFFECT_UNKNOWN"); null }
+        }
+    }
+
+    /** Upstream `PathDashPathEffect.Style` order: 0=TRANSLATE, 1=ROTATE, 2=MORPH. */
+    private fun stampStyle(style: Int): StampedPathEffectStyle =
+        when (style) {
+            1 -> StampedPathEffectStyle.Rotate
+            2 -> StampedPathEffectStyle.Morph
+            else -> StampedPathEffectStyle.Translate
+        }
 
     /** Upstream `Paint.Style` order: 0=FILL, 1=STROKE, 2=FILL_AND_STROKE (no exact CMP equivalent). */
     private fun paintingStyle(style: Int): PaintingStyle =
