@@ -191,3 +191,13 @@ color_table = EXEMPT/held (non-visualizable stacked-swatch doc; ~195 swatches ov
 correctly-resolved near-white accent1_100; dev-2 confirmed commonMain resolve CORRECT, pre-existing layout overlap = REM-88).
 Baseline now: 153 frozen (152 + digital_clock1; clock/stock/text_refresh_bug/themed_plot1 updated-in-place) + 20 held
 (21 - digital_clock1; color_table stays held-exempt under REM-88).
+
+## REM-77 — shader_calendar golden = BLUE (develop 61b7d07, DATA_SHADER AGSL→SkSL merged, 2026-06-28)
+REM-77 (DATA_SHADER apply-path + AGSL→SkSL) merged. shader_calendar (only DATA_SHADER doc) now renders the wave-bands+gradient
+shader. Canonical color = BLUE (4-fold proven: dev-2 AGSL source-math rules out gray; Android RuntimeShader/AGSL = blue;
+iOS Skiko/SkSL = blue; dev-2 desktop-jvm-Skiko = blue). The prior gray golden was the stale PRE-REM-77 gray-fallback (shader
+not applied) — a code-state mismatch, not a render bug.
+RE-FROZEN (gray-fallback → blue shader), both platforms: shader_calendar. Captured on REM-77 branch 175485f (= 61b7d07
+render). Android RuntimeShader (emu API 37) + iOS Skiko both blue; A↔iOS = 93.2% when scroll-aligned (~120px month-phase
+offset; raw 71% was scroll-start only — Android-AGSL == iOS-SkSL confirmed). test-3 refreshes the Desktop golden (blue) in parallel.
+Note: shader_calendar is a tall scrollable doc (mobile crop shows ~May-Aug visible region). Baseline frozen count +0 (in-place update).
