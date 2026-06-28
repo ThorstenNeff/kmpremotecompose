@@ -1,0 +1,10 @@
+doc,surfaceW,surfaceH,drawCount,status,note
+c_image,400,400,1,RENDERS,
+texture_demo_basic_texture,300,300,2,RENDERS,
+texture_demo_texture_clock,300,300,5,RENDERS,
+demo_bitmap_drawing_bit_draw1,500,500,68,RENDERS,
+demo_bitmap_drawing_bit_draw2,500,500,67,RENDERS,
+stock,256,256,14,RENDERS,
+particle,300,300,11,RENDERS,
+hostile_actor1_c,500,500,1,RENDERS,
+wake_demo_wake_clock,300,300,5,RENDERS,
