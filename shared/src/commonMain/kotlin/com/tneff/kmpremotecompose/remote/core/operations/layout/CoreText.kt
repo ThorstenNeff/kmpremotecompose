@@ -50,23 +50,103 @@ class CoreText(
     private var baselineY = 0f
     private var positioned = false
 
+    // REM-74 (FC-D1): the measured component box (absolute top-left + size) — needed for multi-line wrap
+    // (maxWidth) + complex-text positioning. Set by LayoutMeasure alongside [setTextDraw]. Not serialized.
+    private var boxX = 0f
+    private var boxY = 0f
+    private var boxW = 0f
+    private var boxH = 0f
+
     /** Called by [com.tneff.kmpremotecompose.remote.player.core.LayoutMeasure] with the measured origin. */
     fun setTextDraw(x: Float, baseline: Float) {
         drawX = x; baselineY = baseline; positioned = true
     }
 
+    /** REM-74: the measured component box (absolute) — drives wrap decision + complex-text origin. */
+    fun setTextBox(x: Float, y: Float, w: Float, h: Float) {
+        boxX = x; boxY = y; boxW = w; boxH = h
+    }
+
     /**
-     * Emit the component text at its measured position (REM-37 c_text): a single-line run at the baseline
-     * via the text renderer (mirrors upstream `CoreText.paintingComponent` → `drawTextRun`). The text must
-     * already be loaded (DATA_TEXT ran earlier in the walk / the measure pre-load).
+     * Emit the component text at its measured position. **REM-74 (FC-D1):** route to the **complex**
+     * (`layoutComplexText`/`drawComplexText`) path when upstream would — mirroring `CoreText.java`'s
+     * `textLayout()` precondition (lines 777-811):
+     *
+     *   `forceComplex || (width > maxWidth && maxLines > 1 && maxWidth > 0)`
+     *
+     * where `forceComplex` is true for any of: an ellipsis overflow (END/START/MIDDLE), `letterSpacing≠0`,
+     * `lineHeightMultiplier≠1` (upstream field default is **1f**, not 0), `lineHeightAdd>0`, underline,
+     * strikethrough, `justification>0`, `breakStrategy>0`, `hyphenation>0`, or a `\n`/`\t` in the string.
+     * This is what makes single-line **END-ellipsis** text (e.g. `text_refresh_bug.rc`: overflow=3,
+     * maxLines=1) truncate with "…" instead of overflowing/clipping. Otherwise keep the **exact
+     * single-line** `drawTextRun` path (REM-37) so non-wrapping component text stays pixel-identical
+     * (Bein-2). The text must already be loaded (DATA_TEXT ran earlier in the walk / the measure pre-load).
      */
     override fun paint(context: RemoteContext, paint: PaintContext) {
-        if (!positioned || context.getText(textId) == null) return
+        val text = context.getText(textId)
+        if (!positioned || text == null) return
         paint.savePaint()
         applyStyle(context, paint)
-        paint.drawTextRun(textId, 0, -1, 0, 1, drawX, baselineY, false)
+        val maxLines = paramInt(P_MAX_LINES) ?: Int.MAX_VALUE // upstream default = unlimited (wrap)
+        val overflow = paramInt(P_OVERFLOW) ?: 0
+        // Upstream's forceComplex preconditions (CoreText.java:782-805). NOTE the lineHeightMultiplier
+        // default: upstream's mLineHeightMultiplier is 1f, so the "is-set" test is `!= 1f` (a 0f default
+        // here would force-complex EVERY text). This default differs from the renderer's layout-call
+        // convention below (0f ⇒ "use default lineHeight"), so the two are computed separately on purpose.
+        val lineHeightMult = paramFloat(P_LINE_HEIGHT_MULT) ?: 1f
+        val forceComplex =
+            overflow == OVERFLOW_ELLIPSIS ||
+                overflow == OVERFLOW_START_ELLIPSIS ||
+                overflow == OVERFLOW_MIDDLE_ELLIPSIS ||
+                (paramFloat(P_LETTER_SPACING) ?: 0f) != 0f ||
+                lineHeightMult != 1f ||
+                (paramFloat(P_LINE_HEIGHT_ADD) ?: 0f) > 0f ||
+                paramBool(P_UNDERLINE) ||
+                paramBool(P_STRIKETHROUGH) ||
+                (paramInt(P_JUSTIFICATION) ?: 0) > 0 ||
+                (paramInt(P_BREAK_STRATEGY) ?: 0) > 0 ||
+                (paramInt(P_HYPHENATION) ?: 0) > 0 ||
+                text.contains('\n') || text.contains('\t')
+        val wraps = forceComplex || (boxW > 0f && maxLines > 1 && singleLineWidth(paint) > boxW)
+        if (wraps) {
+            val layout = paint.layoutComplexText(
+                textId, 0, -1,
+                alignment = paramInt(P_TEXT_ALIGN) ?: 0,
+                overflow = overflow,
+                maxLines = maxLines,
+                maxWidth = boxW, maxHeight = boxH,
+                letterSpacing = paramFloat(P_LETTER_SPACING) ?: 0f,
+                lineHeightAdd = paramFloat(P_LINE_HEIGHT_ADD) ?: 0f,
+                lineHeightMultiplier = paramFloat(P_LINE_HEIGHT_MULT) ?: 0f, // renderer: 0f ⇒ default lineHeight
+                lineBreakStrategy = paramInt(P_BREAK_STRATEGY) ?: 0,
+                hyphenationFrequency = paramInt(P_HYPHENATION) ?: 0,
+                justificationMode = paramInt(P_JUSTIFICATION) ?: 0,
+                useUnderline = paramBool(P_UNDERLINE),
+                strikethrough = paramBool(P_STRIKETHROUGH),
+                flags = paramInt(P_TEXT_FLAGS) ?: 0,
+            )
+            // drawComplexText paints at the canvas origin → translate to the box top-left first.
+            paint.matrixSave()
+            paint.matrixTranslate(boxX, boxY)
+            paint.drawComplexText(layout)
+            paint.matrixRestore()
+        } else {
+            paint.drawTextRun(textId, 0, -1, 0, 1, drawX, baselineY, false)
+        }
         paint.restorePaint()
     }
+
+    /** The single-line text width (for the wrap decision), via the renderer's getTextBounds. */
+    private fun singleLineWidth(paint: PaintContext): Float {
+        val b = FloatArray(4)
+        paint.getTextBounds(textId, 0, -1, 0, b)
+        return b[2] - b[0]
+    }
+
+    private fun param(id: Int): ByteArray? = params.firstOrNull { it.id == id }?.value
+    private fun paramInt(id: Int): Int? = param(id)?.let { if (it.size >= 4) intOf(it) else (it[0].toInt() and 0xFF) }
+    private fun paramFloat(id: Int): Float? = param(id)?.let { Float.fromBits(intOf(it)) }
+    private fun paramBool(id: Int): Boolean = param(id)?.let { it.isNotEmpty() && it[0].toInt() != 0 } ?: false
 
     /**
      * Apply this component's TextStyle params (REM-37) to the shared paint state via the canonical
@@ -140,6 +220,25 @@ class CoreText(
         private const val P_FONT_SIZE = 5
         private const val P_FONT_STYLE = 6
         private const val P_FONT_WEIGHT = 7
+
+        // REM-74 (FC-D1): complex-text layout param ids (mirror the PARAM_TYPE map field numbers).
+        private const val P_TEXT_ALIGN = 9
+        private const val P_OVERFLOW = 10
+        private const val P_MAX_LINES = 11
+        private const val P_LETTER_SPACING = 12
+        private const val P_LINE_HEIGHT_ADD = 13
+        private const val P_LINE_HEIGHT_MULT = 14
+        private const val P_BREAK_STRATEGY = 15
+        private const val P_HYPHENATION = 16
+        private const val P_JUSTIFICATION = 17
+        private const val P_UNDERLINE = 18
+        private const val P_STRIKETHROUGH = 19
+        private const val P_TEXT_FLAGS = 23
+
+        // Overflow modes (upstream CoreText OVERFLOW_*). The three ellipsis modes force the complex path.
+        private const val OVERFLOW_ELLIPSIS = 3        // END ellipsis
+        private const val OVERFLOW_START_ELLIPSIS = 4
+        private const val OVERFLOW_MIDDLE_ELLIPSIS = 5
 
         // Upstream TextStyle defaults — params at these values mean "renderer default" (skip applying).
         private const val DEFAULT_COLOR = 0xFF000000.toInt()
