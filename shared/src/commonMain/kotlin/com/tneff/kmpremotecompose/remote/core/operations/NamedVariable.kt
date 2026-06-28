@@ -15,16 +15,27 @@
  */
 package com.tneff.kmpremotecompose.remote.core.operations
 
+import com.tneff.kmpremotecompose.remote.player.core.RemoteContext
+import com.tneff.kmpremotecompose.remote.player.core.VariableSupport
 import com.tneff.kmpremotecompose.remote.wire.WireBuffer
 
 /**
  * A named variable (`NAMED_VARIABLE`): binds a name (and a type) to [varId].
  *
  * Wire layout: opcode, `int varId`, `int varType`, length-prefixed UTF-8 name.
+ *
+ * REM-68: registers the name→id binding at apply time (1:1 upstream `NamedVariable.apply` = only
+ * `loadVariableName`, no `loadColor`). This lets a host theme palette resolve a `system_accent*` name to
+ * the doc's colorId(s) via [RemoteContext.setNamedColorOverride]. Byte-safe: `apply` is pure runtime;
+ * `write`/`read` are unchanged.
  */
-class NamedVariable(val varId: Int, val varType: Int, val name: String) : Operation {
+class NamedVariable(val varId: Int, val varType: Int, val name: String) : Operation, VariableSupport {
 
     override val opcode: Int get() = Operations.NAMED_VARIABLE
+
+    override fun apply(context: RemoteContext) {
+        context.loadVariableName(name, varId, varType)
+    }
 
     override fun write(buffer: WireBuffer) {
         buffer.writeByte(opcode)
