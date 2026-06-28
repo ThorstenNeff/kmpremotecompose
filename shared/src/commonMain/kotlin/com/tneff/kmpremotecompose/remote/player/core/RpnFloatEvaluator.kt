@@ -20,6 +20,7 @@ import kotlin.math.abs
 import kotlin.math.cos
 import kotlin.math.exp
 import kotlin.math.floor
+import kotlin.math.hypot
 import kotlin.math.ln
 import kotlin.math.log10
 import kotlin.math.max
@@ -70,6 +71,16 @@ object RpnFloatEvaluator {
     private const val OP_CLAMP = OFFSET + 27
     private const val OP_DEG = OFFSET + 29
     private const val OP_RAD = OFFSET + 30
+
+    // REM-104: stack/geometry ops (upstream AnimatedFloatExpression). HYPOT computes a radial-gradient
+    // radius = hypot(w/2, h/2) in countdown/demo_use_of_global; the unimplemented operator previously threw,
+    // leaving the radius unset (→ 0 → false "degenerate gradient"). Siblings SQUARE/SQUARE_SUM/DUP/SWAP are
+    // the same cheap cluster, added together for operator-class completeness.
+    private const val OP_SQUARE_SUM = OFFSET + 43 // x*x + y*y
+    private const val OP_SQUARE = OFFSET + 45 // x*x
+    private const val OP_DUP = OFFSET + 46 // duplicate top
+    private const val OP_HYPOT = OFFSET + 47 // sqrt(x*x + y*y)
+    private const val OP_SWAP = OFFSET + 48 // swap top two
 
     // Array/collection ops (REM-59; upstream A_*): operate on a FLOAT_LIST via its array-id on the stack.
     private const val OP_A_DEREF = OFFSET + 32
@@ -150,6 +161,12 @@ object RpnFloatEvaluator {
         OP_RAD -> { stack[sp] = stack[sp] * FP_TO_DEG; sp }
         OP_SIN -> { stack[sp] = sin(stack[sp].toDouble()).toFloat(); sp }
         OP_COS -> { stack[sp] = cos(stack[sp].toDouble()).toFloat(); sp }
+        // REM-104: HYPOT and its sibling stack/geometry ops (upstream AnimatedFloatExpression).
+        OP_HYPOT -> { stack[sp - 1] = hypot(stack[sp - 1], stack[sp]); sp - 1 }
+        OP_SQUARE_SUM -> { stack[sp - 1] = stack[sp - 1] * stack[sp - 1] + stack[sp] * stack[sp]; sp - 1 }
+        OP_SQUARE -> { stack[sp] = stack[sp] * stack[sp]; sp }
+        OP_DUP -> { stack[sp + 1] = stack[sp]; sp + 1 }
+        OP_SWAP -> { val t = stack[sp]; stack[sp] = stack[sp - 1]; stack[sp - 1] = t; sp }
         else -> throw IllegalArgumentException(
             "unsupported eval operator id=0x${id.toString(16)} (E2 MVP: ADD..MOD/MIN/MAX/CLAMP/SQRT/ABS/SIN/COS; E-D3 extends)",
         )
