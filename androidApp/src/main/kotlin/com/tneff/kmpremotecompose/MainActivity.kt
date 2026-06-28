@@ -5,10 +5,12 @@ import android.os.Bundle
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
+import androidx.compose.runtime.remember
 import androidx.compose.ui.ExperimentalComposeUiApi
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.semantics.testTagsAsResourceId
+import com.tneff.kmpremotecompose.remote.player.core.AndroidSensorSource
 
 class MainActivity : ComponentActivity() {
     @OptIn(ExperimentalComposeUiApi::class)
@@ -30,7 +32,12 @@ class MainActivity : ComponentActivity() {
         setContent {
             // REM-82/C5: no platform loader — the shared default reads the corpus via Compose-Multiplatform
             // resources (composeResources/files/rc/), packaged into the APK by the compose-resources plugin.
+            // REM-101/D5 S2: inject the Android SensorManager-backed source (App-Shell injection, TechSpec
+            // §5) so live sensor docs (sensor_demo_*) read real device sensors; remembered so it survives
+            // recomposition. The shared player only seeds in live mode → static/golden render is untouched.
+            val sensorSource = remember { AndroidSensorSource(applicationContext) }
             RemoteComposeApp(
+                sensorSource = sensorSource,
                 modifier = Modifier.semantics { testTagsAsResourceId = true },
             )
         }

@@ -86,24 +86,23 @@ rendern heute statisch (alle Werte 0). Der Sensor-Injektions-Seam sitzt **exakt 
 
 ---
 
-## 5. 🔴 Offene Frage für S2 (BLOCKER vor S2-Impl): Provider-Injektions-Mechanik
+## 5. ✅ ENTSCHIEDEN (assist/PO 2026-06-28): Provider-Injektion = App-Shell/Entry-Injektion
 
-Der Android-`SensorManager` braucht einen `Context` → ein Provider kann **nicht** context-los via
-`expect fun createSensorSource()` entstehen. Drei Optionen, die die TechSpec/assist festklopfen muss,
-**bevor** dev-1 S2 zieht:
+Der Android-`SensorManager` braucht einen `Context` → ein Provider kann nicht context-los via
+`expect fun createSensorSource()` entstehen. **Entscheidung: App-Shell/Entry-Injektion** (das bewährte
+`loadRc`-Muster, REM-82):
 
-1. **`expect fun createSensorSource(platform): SensorSource`** mit einem Plattform-Handle-Param (Android:
-   `Context`/`Application`; andere: ignoriert). Sauber typisiert, aber der Param ist target-asymmetrisch.
-2. **App-Shell-Injektion:** jede App-Shell (androidApp/iosApp/webApp/desktopApp) baut ihren Provider und
-   reicht ihn an `RemoteComposeApp(sensorSource = …)`. Symmetrisch zum `loadRc`-Muster (REM-82), hält
-   commonMain platform-frei, aber 4 Call-Sites.
-3. **In-Composable via `LocalContext`/Platform-Locals:** `RemoteComposeApp` baut den Provider intern aus
-   Compose-Locals (Android: `LocalContext.current`). Eine Call-Site, aber koppelt commonMain an
-   Compose-Local-Verfügbarkeit pro Target.
+- `RemoteComposeApp(sensorSource: SensorSource = NoOpSensorSource, …)` — Default = NoOp (S1-zero-risk
+  bleibt; Targets ohne Sensorik brauchen nichts zu tun).
+- Jede Platform-Entry erzeugt ihre Source, wo der Handle da ist: **androidApp/MainActivity** =
+  `AndroidSensorSource(applicationContext)`; **iosApp** = `IosSensorSource()` (CoreMotion context-frei);
+  **desktopApp** = NoOp (Capability-Floor); **webApp** = `WebSensorSource()` (S4).
+- **commonMain hält NUR `SensorSource` + `NoOpSensorSource`** — kein context-loses
+  `expect fun createSensorSource()` (für Android unmöglich), kein `@Composable`/`LocalContext`-Coupling.
 
-**dev-1-Empfehlung:** Option 2 (App-Shell-Injektion) — konsistent mit dem etablierten `loadRc`-Default-
-Param-Muster, hält `commonMain` sauber (kein `java.*`/Context-Leak), und der Provider-Lifecycle
-(`start/stop`) hängt ohnehin am App-Shell-/Composable-Lifecycle. **Entscheid abwarten.**
+Begründung: spiegelt exakt die `loadRc`-Entry-Injektion (Konsistenz), hält `commonMain`
+context/platform-frei (§5-Regel), und der Provider-Lifecycle (`start/stop`) hängt ohnehin am
+App-Shell-/Composable-Lifecycle.
 
 ---
 
