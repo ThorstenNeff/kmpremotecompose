@@ -54,6 +54,15 @@ auf dem dist → Maestro `run` device_id=`chromium` gegen die echten DOM-Marker.
 
 ---
 
+## 0.3 ✅ WEB-SWEEP-CLEANUP ABGESCHLOSSEN — 4 animierte re-pinned gg REFRESHED Goldens (REM-112, develop `e1a8d88`)
+Nach REM-112 (4 stale animierte/density-Goldens refreshed): rebase+dist-REBUILD (same-code-state) → die 4 Docs
+**static-pinned `&t=0&density=1.0`** (test-1-Pin) gg die refreshed Android-Goldens:
+- **moon_phases = PASS · thumb_wheel2 = PASS · text_refresh_bug = TEXT** → **stale-Baseline bestätigt, KEINE Web-Gaps** (waren prä-Density/REM-89/93-Fix-Goldens). 3/3 wie PO vorhergesagt.
+- **heart_rate_timeline = TEXT (breach 1.8%) — ABER REM-110-Gap STEHT (eyeball):** „60"/BPM/Bänder matchen jetzt (war stale-Golden/Density), **aber das rote Herz ❤ rendert weiterhin NICHT auf wasm** (Golden hat's, Web nicht) + die rote Linie liegt unten (Web) statt oben (Golden). **TEXT maskiert den kleinen-Flächen-Gap** — Verdikt-Zahl allein hätte's verschluckt. **REM-110 narrowed: Herz-Form + rote-Linie-Y-Position** (nicht mehr „ganzes Overlay"; Text/Size war stale-Golden). Herz ist gezeichnete Form (kein Emoji), fehlt an allen Frames → echter wasm-Render-Gap.
+**→ Web-Sweep-Cleanup zu:** alle „unbewiesenen" FAILs aufgelöst — Stale-Goldens (REM-105 Textur + REM-112 animiert) + Diskriminator-Artefakte + Viewport-Clip (REM-111) + Live-Loop (REM-114) + **1 echter Web-Gap = heart_rate ❤ (REM-110)**. REM-80/C7-Render-Beweis steht.
+
+---
+
 ## 0.2 🟢 ERSTER ECHTER WEB-RENDER-BEWEIS (REM-80/C7) — 2026-06-28, chromium gg. develop `c826125` (C5 gemergt)
 
 **Verifiziert (nicht angenommen):** webApp `→ RemoteComposeApp()` ✅, 173 `.rc` in `composeResources/files/rc/` ✅,
