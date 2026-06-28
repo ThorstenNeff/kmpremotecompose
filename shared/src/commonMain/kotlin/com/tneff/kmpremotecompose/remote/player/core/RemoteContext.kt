@@ -97,6 +97,14 @@ class RemoteContext {
     private val floatStore: MutableMap<Int, Float> = mutableMapOf()
     private val intStore: MutableMap<Int, Int> = mutableMapOf()
     private val colorStore: MutableMap<Int, Int> = mutableMapOf()
+
+    // REM-68 theme palette (upstream loadVariableName / setNamedColorOverride / mColorOverride):
+    // variableNames = a NamedVariable name → the doc colorId(s) it binds; pendingNamedColors = a pending
+    // host palette (name → ARGB) applied as names register; colorOverride = ids whose theme color wins
+    // over a (possibly later) ColorConstant fallback on the same id.
+    private val variableNames: MutableMap<String, MutableList<Int>> = mutableMapOf()
+    private val pendingNamedColors: MutableMap<String, Int> = mutableMapOf()
+    private val colorOverride: MutableSet<Int> = mutableSetOf()
     // REM-37 cube3d: 4×4 matrices (row-major FloatArray(16)) keyed by matrixId — upstream stores these as
     // objects (putObject/getObject); a dedicated store keeps the type explicit. Produced by MATRIX_EXPRESSION,
     // consumed by MATRIX_VECTOR_MATH.
@@ -125,7 +133,50 @@ class RemoteContext {
      */
     fun getColor(id: Int): Int = colorStore[id] ?: 0
 
-    fun loadColor(id: Int, value: Int) { colorStore[id] = value }
+    /**
+     * Store the resolved ARGB for [id]. REM-68: a value set as a theme override
+     * ([setNamedColorOverride]) is NOT clobbered by a later regular `loadColor` (e.g. a ColorConstant
+     * fallback on the same id in document order) — the host theme wins, mirroring upstream `mColorOverride`.
+     */
+    fun loadColor(id: Int, value: Int) {
+        if (id in colorOverride) return
+        colorStore[id] = value
+    }
+
+    /** Theme-override write: sets the color and marks the id so a later [loadColor] cannot clobber it. */
+    private fun overrideColorId(id: Int, color: Int) {
+        colorStore[id] = color
+        colorOverride.add(id)
+    }
+
+    /**
+     * REM-68 (upstream `loadVariableName`): register the [name]→[id] binding (dup-protected per id) so a
+     * host palette can resolve the name to the doc's colorId. If a theme override for [name] is already
+     * pending, it is applied to [id] immediately — making the override independent of set-vs-load order and
+     * resilient to the per-frame Phase-A re-run (single pass). [type] is accepted for upstream-signature
+     * fidelity; the registry is color-name-scoped (override writes colorStore, harmless for non-color ids).
+     */
+    @Suppress("UNUSED_PARAMETER")
+    fun loadVariableName(name: String, id: Int, type: Int) {
+        val ids = variableNames.getOrPut(name) { mutableListOf() }
+        if (id !in ids) ids.add(id)
+        pendingNamedColors[name]?.let { overrideColorId(id, it) }
+    }
+
+    /**
+     * REM-68 (upstream `setNamedColorOverride`): set the host theme [color] for the variable [name] — it
+     * wins over any ColorConstant fallback on the bound ids. Stored pending (so a name registered later
+     * still picks it up) and applied to every already-registered id for [name].
+     */
+    fun setNamedColorOverride(name: String, color: Int) {
+        pendingNamedColors[name] = color
+        variableNames[name]?.forEach { overrideColorId(it, color) }
+    }
+
+    /** Apply a whole host theme palette (`name → ARGB`) once; each entry is a [setNamedColorOverride]. */
+    fun setThemePaletteByName(palette: Map<String, Int>) {
+        for ((name, color) in palette) setNamedColorOverride(name, color)
+    }
 
     /**
      * Inject a host theme palette (REM-36 b1) — `colorId → ARGB`. Conceptually host-theme, like the
