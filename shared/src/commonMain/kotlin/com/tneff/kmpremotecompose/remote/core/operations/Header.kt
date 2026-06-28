@@ -117,9 +117,14 @@ class Header private constructor(
         fun fromProperties(properties: Map<Int, Any>): Header =
             Header(MAJOR_VERSION, MINOR_VERSION, PATCH_VERSION, properties, 256, 256, 1f, 0L)
 
-        /** Build a flat-form (API < 7) header. */
+        /**
+         * Build a flat-form (API 6) header. Version is pinned to v1.0.0 — the only flat-form version
+         * the upstream player and our corpus oracles use. (`MAJOR_VERSION`/`MINOR_VERSION` advance to
+         * v1.1 with the map form; mixing them with flat would mis-encode the apiLevel and break the
+         * profile-validity gate, since `ROOT_CONTENT_BEHAVIOR` is V6-base only.)
+         */
         fun flat(width: Int, height: Int, capabilities: Long = 0L): Header =
-            Header(MAJOR_VERSION, MINOR_VERSION, PATCH_VERSION, null, width, height, 1f, capabilities)
+            Header(1, 0, 0, null, width, height, 1f, capabilities)
 
         /**
          * Peek the api level from a buffer positioned at the very start, without consuming it.
