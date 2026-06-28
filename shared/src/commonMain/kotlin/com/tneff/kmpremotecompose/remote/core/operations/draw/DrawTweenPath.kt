@@ -21,6 +21,8 @@ import com.tneff.kmpremotecompose.remote.core.operations.Operations
 import com.tneff.kmpremotecompose.remote.player.core.PaintContext
 import com.tneff.kmpremotecompose.remote.player.core.PaintOperation
 import com.tneff.kmpremotecompose.remote.player.core.RemoteContext
+import com.tneff.kmpremotecompose.remote.player.core.VariableSupport
+import com.tneff.kmpremotecompose.remote.player.core.resolveCoord
 import com.tneff.kmpremotecompose.remote.wire.WireBuffer
 
 /**
@@ -35,9 +37,22 @@ class DrawTweenPath(
     val tween: Float,
     val start: Float,
     val stop: Float,
-) : PaintOperation {
+) : PaintOperation, VariableSupport {
 
     override val opcode: Int get() = Operations.DRAW_TWEEN_PATH
+
+    // REM-125: NaN-encoded var-ref tween/trim resolved at render time; raw fields untouched (byte-safe).
+    // Without this a computed tween/start/stop (e.g. sweep-clock stop = 1/60·TIME) reached the geometry as
+    // raw NaN → a broken interpolation (degenerate hand / frozen tween). Mirrors ClipRect/DrawRect.
+    var rTween: Float = tween
+    var rStart: Float = start
+    var rStop: Float = stop
+
+    override fun updateVariables(context: RemoteContext) {
+        rTween = context.resolveCoord(tween)
+        rStart = context.resolveCoord(start)
+        rStop = context.resolveCoord(stop)
+    }
 
     override fun write(buffer: WireBuffer) {
         buffer.writeByte(opcode)
@@ -50,7 +65,7 @@ class DrawTweenPath(
 
     /** L2 render: draw the interpolated path via the paint context (REM-33). */
     override fun paint(context: RemoteContext, paint: PaintContext) {
-        paint.drawTweenPath(path1Id, path2Id, tween, start, stop)
+        paint.drawTweenPath(path1Id, path2Id, rTween, rStart, rStop)
     }
 
     override fun dump(): String = "DRAW_TWEEN_PATH path1=$path1Id path2=$path2Id tween=$tween start=$start stop=$stop"
