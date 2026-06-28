@@ -1,0 +1,69 @@
+# RC Web-Render-Sweep — wasmJs Browser-Capture  (REM-79 / A2 · feeds REM-80/C7)
+# Owner: test-2 (Flow/Harness). Render-Infra: REM-76 (gemergt). W2 DOM-Marker: REM-83 (GEMERGT).
+#
+# Zweck: ein Korpus-`.rc` im wasmJs-webApp (ComposeViewport-Canvas) im headless-Chromium rendern,
+# race-arm + FAIL-CLOSED capturen, sodass derselbe Verdikt-Stack wie mobil (screenshots/parity/
+# parity_sweep.py: PASS/TEXT/BLANK/FAIL) die Web-Ausgabe gegen die bewiesene Android/iOS-Baseline difft.
+# Web-Akzeptanz = "rendert dasselbe wie die Mobile-Referenz", nicht "rendert irgendwas".
+#
+# ── W2 IST DA (REM-83, develop 494a6d8): die Render-Marker sind jetzt echte DOM-`data-*`-Attribute auf
+#    dem Compose-`<canvas>` (RenderMarkerMirror.wasmJs.kt), DOM-Web-Driver-sichtbar. Marker-Namen:
+#      data-rc-canvas="1" · data-rc-rendered="true|false" (honest-render: committed && drawCount>0)
+#      data-rc-draw-count="<n>" · data-rc-doc="<name>" · data-rc-error="<msg>" (entfernt wenn kein Fehler)
+#    → Gating per `assertTrue` + page-context-JS (`document.querySelector('canvas').getAttribute(...)`).
+#      VERIFIZIERT 2026-06-28: assertTrue läuft im Browser-Page-Context (chromium), liest data-* korrekt.
+#
+# 🔴 NOCH NICHT SCHARF — drei Web-Shell-Blocker offen (test-2 empirisch verifiziert 2026-06-28, chromium):
+#   W3  webApp-Entry rendert NICHT den Player: `webApp/main.kt → ComposeViewport { App() }` ist das CMP-
+#       Template ("Click me!"), NICHT `RemoteComposeApp` (androidApp nutzt setContent{RemoteComposeApp(...)}).
+#       → 0 data-rc-Marker auf Web, kein Doc rendert. FIX: web-Entry auf RemoteComposeApp umstellen (DEV).
+#   C5  Korpus-`.rc` async-Browser-Loading (HTTP-fetch) — dev-1, WIP (`feature/REM-82-c5-browser-loading`).
+#       Zusatzbefund: 0 `.rc` im web-dist (composeResources) → ohne C5 keine Doc-Bytes auf Web.
+#   W1  wasmJs-`RcRouter`-URL-Parser (`?rc=`/`&t=`/`&live` aus window.location) — sonst nur DEFAULT_DOC.
+# Contract-Details + Image-Doc-Verdacht-Bucket: docs/a2-web-render-sweep-harness-prep.md.
+#
+# Lauf (sobald W3+C5+W1 stehen) — via Maestro-MCP `run` device_id=chromium, oder CLI:
+#   maestro test --device chromium --env RC=procedure_simple1 --env BASE=http://localhost:8080 web_render_sweep.yaml
+#   Frame-Pin (Uhren):  --env T=36630   (10:10:30, kanonischer Pin, s. clock-golden-freeze-spec)
+#   Sweep über die 173: screenshots/parity/web_sweep_driver.sh ruft diesen Flow pro corpusName → PNGs
+#                       → parity_sweep.py screenshots/web screenshots/reference/android  (Mobile-Baseline).
+
+url: ${BASE}
+name: "RC Web Render Sweep (wasmJs)"
+tags:
+  - web
+  - sweep
+  - conformance
+env:
+  RC: "procedure_simple1"
+  BASE: "http://localhost:8080"
+  T: ""                      # leer = static t=0; sonst REM-62-Frame-Pin in Sekunden
+
+---
+# W1: Doc + optionaler Frame-Pin via URL-Query (window.location → RcRouter, DEV-offen).
+- openLink:
+    link: "${BASE}/?rc=${RC}${T == '' ? '' : '&t=' + T}"
+
+# wasm-Boot + erster Frame-Commit (Skiko mountet das <canvas> async). Danach FAIL-CLOSED-Gates.
+- waitForAnimationToEnd:
+    timeout: 15000
+    label: "wasm boot + first frame commit"
+
+# W2 honest-render-Gate (REM-83): erst NACH echtem Paint (committed && drawCount>0) → kein Leer-Frame.
+- assertTrue:
+    condition: "document.querySelector('canvas') && document.querySelector('canvas').getAttribute('data-rc-rendered') === 'true'"
+    label: "data-rc-rendered==true (honest-render-Anker)"
+
+# FAIL-CLOSED gegen stale Frame: der gerenderte Doc-Name muss == angefragtem RC sein (adb-stale-Lektion).
+- assertTrue:
+    condition: "document.querySelector('canvas') && document.querySelector('canvas').getAttribute('data-rc-doc') === '${RC}'"
+    label: "data-rc-doc==${RC} (stale-Frame-Guard)"
+
+# FAIL-CLOSED: Decode/Load/empty-Fehler ≠ legit-BLANK → als FAIL zählen, nicht maskieren.
+- assertTrue:
+    condition: "document.querySelector('canvas') && !document.querySelector('canvas').hasAttribute('data-rc-error')"
+    label: "kein data-rc-error"
+
+# Capture der Render-Fläche (das ComposeViewport-<canvas>). PNG → parity_sweep.py-Verdikt
+# (PASS/TEXT/BLANK/FAIL) gegen die Mobile-FULL/PARTIAL/BLANK-Baseline.
+- takeScreenshot: "web/${RC}"
