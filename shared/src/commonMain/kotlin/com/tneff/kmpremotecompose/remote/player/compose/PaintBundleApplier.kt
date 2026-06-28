@@ -29,6 +29,7 @@ import androidx.compose.ui.graphics.StrokeCap
 import androidx.compose.ui.graphics.StrokeJoin
 import androidx.compose.ui.graphics.SweepGradientShader
 import androidx.compose.ui.graphics.TileMode
+import com.tneff.kmpremotecompose.remote.player.core.RemoteContext
 
 /**
  * REM-31 (L2-S2) — applies a Layer-1 `PAINT_VALUES` bundle (raw `IntArray` from
@@ -92,6 +93,7 @@ internal object PaintBundleApplier {
      * [deferred] when provided.
      */
     fun applyTo(
+        context: RemoteContext,
         state: PlayerPaintState,
         values: IntArray,
         count: Int = values.size,
@@ -102,7 +104,11 @@ internal object PaintBundleApplier {
         while (i < count) {
             val cmd = values[i++]
             when (cmd and 0xFFFF) {
-                COLOR, COLOR_ID -> paint.color = Color(values[i++])
+                // Upstream PaintBundle: COLOR = literal ARGB; COLOR_ID = a color-id resolved via
+                // context.getColor (fixColor). Treating COLOR_ID as literal made e.g. Color(61)=0x0000003D
+                // (α≈0) → invisible clocks (REM-67). getColor is fail-soft (unset→0) → never-throw kept.
+                COLOR -> paint.color = Color(values[i++])
+                COLOR_ID -> paint.color = Color(context.getColor(values[i++]))
                 STROKE_WIDTH -> paint.strokeWidth = Float.fromBits(values[i++])
                 STROKE_MITER -> paint.strokeMiterLimit = Float.fromBits(values[i++])
                 STROKE_CAP -> paint.strokeCap = strokeCap(cmd shr 16)
@@ -122,10 +128,13 @@ internal object PaintBundleApplier {
                     if ((cmd shr 16) != 0) FilterQuality.Low else FilterQuality.None
                 IMAGE_FILTER_QUALITY -> paint.filterQuality =
                     if ((cmd shr 16) == 1) FilterQuality.Low else FilterQuality.None
-                COLOR_FILTER, COLOR_FILTER_ID ->
+                // Same literal-vs-color-id split for the tint colour (upstream fixColor on COLOR_FILTER_ID).
+                COLOR_FILTER ->
                     paint.colorFilter = ColorFilter.tint(Color(values[i++]), blendMode(cmd shr 16))
+                COLOR_FILTER_ID ->
+                    paint.colorFilter = ColorFilter.tint(Color(context.getColor(values[i++])), blendMode(cmd shr 16))
                 CLEAR_COLOR_FILTER -> paint.colorFilter = null
-                GRADIENT -> i = applyGradient(paint, cmd, values, i, deferred)
+                GRADIENT -> i = applyGradient(context, paint, cmd, values, i, deferred)
 
                 // ---- text attributes → shared state (read by the L2-S3 text renderer) ----
                 TEXT_SIZE -> state.textSizePx = Float.fromBits(values[i++])
@@ -158,7 +167,7 @@ internal object PaintBundleApplier {
      * are present), then — only if colors are present — the per-type geometry. When `colorLen == 0`
      * upstream returns right after the stops-length int **without** consuming geometry; mirrored here.
      */
-    private fun applyGradient(paint: Paint, cmd: Int, a: IntArray, start: Int, deferred: MutableSet<String>?): Int {
+    private fun applyGradient(context: RemoteContext, paint: Paint, cmd: Int, a: IntArray, start: Int, deferred: MutableSet<String>?): Int {
         var ret = start
         // Bounds-safe read: a truncated/corrupt bundle must never throw the render path (REM-37 fail-soft,
         // belt-and-suspenders). An over-read yields 0 but still advances the cursor so slot-count stays in
@@ -166,10 +175,19 @@ internal object PaintBundleApplier {
         fun rd(): Int = if (ret < a.size) a[ret++] else { ret++; 0 }
 
         val type = cmd shr 16
-        val colorLen = 0xFF and rd()
+        // The control int packs colorLen in its low byte and a per-color id-mask in the high 16 bits
+        // (upstream PaintBundle.updateFloatsInGradient): bit j set → color j is a color-id resolved via
+        // context.getColor, else a literal ARGB. Ignoring the mask rendered raw ids as ARGB garbage (REM-67).
+        val control = rd()
+        val colorLen = 0xFF and control
+        val idMask = (control shr 16) and 0xFFFF
         val colors: ArrayList<Color>? =
-            if (colorLen > 0) ArrayList<Color>(colorLen).apply { for (j in 0 until colorLen) add(Color(rd())) }
-            else null
+            if (colorLen > 0) ArrayList<Color>(colorLen).apply {
+                for (j in 0 until colorLen) {
+                    val raw = rd()
+                    add(if ((idMask and (1 shl j)) != 0) Color(context.getColor(raw)) else Color(raw))
+                }
+            } else null
 
         val stopsLen = rd()
         var stops: List<Float>? = null

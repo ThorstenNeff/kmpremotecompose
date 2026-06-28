@@ -5,6 +5,7 @@
 package com.tneff.kmpremotecompose.remote.player.compose
 
 import androidx.compose.ui.graphics.Color
+import com.tneff.kmpremotecompose.remote.player.core.RemoteContext
 import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertNotNull
@@ -20,7 +21,7 @@ class GradientFailSoftTest {
     private val BLUE = 0xFF0000FF.toInt()
 
     private fun apply(vararg v: Int): PlayerPaintState =
-        PlayerPaintState().also { PaintBundleApplier.applyTo(it, v) } // must not throw
+        PlayerPaintState().also { PaintBundleApplier.applyTo(RemoteContext(), it, v) } // must not throw
 
     @Test fun oneColorLinear_degradesToSolid() {
         // GRADIENT type=0(linear), colorLen=1, RED, stopsLen=0, sx,sy,ex,ey,tile
