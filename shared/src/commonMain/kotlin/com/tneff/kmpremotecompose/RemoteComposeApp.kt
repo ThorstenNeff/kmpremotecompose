@@ -21,6 +21,7 @@ import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.safeContentPadding
 import androidx.compose.foundation.text.BasicText
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
@@ -39,9 +40,11 @@ import com.tneff.kmpremotecompose.remote.core.document.RemoteComposeDocument
 import com.tneff.kmpremotecompose.remote.core.operations.Builtins
 import com.tneff.kmpremotecompose.remote.player.compose.ComposePaintContext
 import com.tneff.kmpremotecompose.remote.player.compose.GeometryPaintDelegate
+import com.tneff.kmpremotecompose.remote.player.core.NoOpSensorSource
 import com.tneff.kmpremotecompose.remote.player.core.RemoteComposePlayer
 import com.tneff.kmpremotecompose.remote.player.core.renderOpaque
 import com.tneff.kmpremotecompose.remote.player.core.RemoteContext
+import com.tneff.kmpremotecompose.remote.player.core.SensorSource
 import com.tneff.kmpremotecompose.remote.player.core.systemAccentPalette
 import kmpremotecompose.shared.generated.resources.Res
 
@@ -71,6 +74,7 @@ import kmpremotecompose.shared.generated.resources.Res
 @Composable
 fun RemoteComposeApp(
     loadRc: suspend (String) -> ByteArray = { name -> Res.readBytes("files/rc/$name.rc") },
+    sensorSource: SensorSource = NoOpSensorSource,
     modifier: Modifier = Modifier,
 ) {
     // The selected bundled doc (REM-34): default, or a deep-link `kmprc://render?rc=<name>` via RcRouter.
@@ -125,6 +129,17 @@ fun RemoteComposeApp(
         }
     }
 
+    // REM-101 (D5) S2: drive the host [sensorSource] lifecycle. Start exactly the sensors the live doc
+    // reads ([RemoteComposePlayer.sensorIdsUsed]) when it goes live; stop on leaving live / doc change /
+    // disposal. Static mode never starts a sensor (determinism). NoOp default ⇒ no-op (S1 unchanged).
+    // The render itself re-evaluates each frame: the live loop advances frameTime → recomposition → the
+    // Canvas's paint() re-reads the source's latest values (full per-frame re-eval; no dirty-tracking).
+    DisposableEffect(doc, live) {
+        val usedIds = doc?.let { RemoteComposePlayer.sensorIdsUsed(it) } ?: emptySet()
+        if (live && usedIds.isNotEmpty()) sensorSource.start(usedIds)
+        onDispose { sensorSource.stop() }
+    }
+
     // Read frameTime at COMPOSITION level (live only) so each advance recomposes → the Canvas redraws.
     val renderTime = if (live) frameTime else 0f
     // REM-91: a deep-link `&density=<f>` overrides the platform density for cross-target parity
@@ -175,6 +190,8 @@ fun RemoteComposeApp(
                                 // REM-62: static-mode frame pin (deep-link `&t=N`); the player reads it
                                 // only when animation is off, so the live loop is untouched. 0f ⇒ t=0 path.
                                 staticTimeSeconds = staticTimeSeconds,
+                                // REM-101 (D5): the player seeds the doc's sensor ids from this LIVE-only.
+                                sensorSource = sensorSource,
                             )
                         }
                         // Draw-phase writes: read only outside this lambda → one settling recompose.

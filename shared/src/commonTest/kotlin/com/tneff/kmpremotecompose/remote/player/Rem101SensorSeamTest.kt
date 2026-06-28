@@ -26,6 +26,7 @@ import com.tneff.kmpremotecompose.remote.player.core.SensorSource
 import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertFalse
+import kotlin.test.assertNotEquals
 import kotlin.test.assertTrue
 
 /**
@@ -167,6 +168,27 @@ class Rem101SensorSeamTest {
         assertEquals(4f, ctx.getFloat(17))
         assertEquals(0f, ctx.getFloat(18), "unavailable axis (read==null) ⇒ static 0f default")
         assertEquals(6f, ctx.getFloat(19))
+    }
+
+    @Test fun liveMode_valueChangeBetweenFrames_changesRender() {
+        // assist TechSpec addition (b) — live re-eval: the player re-evaluates Phase A on every paint(), so
+        // a new sensor value on the next live frame changes the render (no dirty-tracking needed; the
+        // RemoteComposeApp live loop drives a paint per frame). Proven via the geometry/matrix draw stream.
+        val ctx = RemoteContext()
+        ctx.animationEnabled = true
+        val d = doc("sensor_demo_acc_sensor1.rc")
+        fun frame(v: Float): List<String> {
+            val rec = RecordingDrawPaintContext(ctx)
+            RemoteComposePlayer(ctx).paint(
+                d, rec, frameTimeSeconds = 1f,
+                sensorSource = FakeSensorSource(mapOf(17 to v, 18 to v, 19 to v)),
+            )
+            return rec.log
+        }
+        val flat = frame(0f)
+        val tilted = frame(8f)
+        assertTrue(flat.isNotEmpty(), "acc demo should draw something")
+        assertNotEquals(flat, tilted, "a changed accel value must change the live render (per-frame re-eval)")
     }
 
     @Test fun noOpSource_default_seedsNothing() {
