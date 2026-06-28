@@ -19,7 +19,10 @@
 
 ---
 
-## 2. 🎯 Orakel-Decode der 4 Fixtures (headless, evidenzbasiert) — id-Order + Op-Sequenz = Replikations-Target
+## 2. 🎯 Orakel-Decode der 4 Fixtures — id-Order + Op-Sequenz = Replikations-Target
+
+> **📌 Kanonische Quelle = `docs/TECHSPEC-E5-id-order-reference.md` (assist, gemergt).** Volle byte-akkurate op+id-Sequenzen aller 4 dort.
+> **Cross-Validation:** mein unabhängiger L1-Decode (unten) **deckt sich exakt** mit assists Referenz (id=42-content-desc-first · single-pool-monoton-ab-43 · `ID_MAP=(2<<20)|42=2097194` region · `ROOT_CONTENT_BEHAVIOR(0,34,2,6)` konstant). Zwei unabhängige Decodes = solides Orakel. Mein Harness assertet gegen die **echten Fixture-Bytes** (= was die Referenz dokumentiert), nicht gegen eine Transkription.
 
 Alle 4 sind **300×300, contentDescription `"Clock"`, profiles=0 (Baseline)**. **Shared-Pool id ab START_ID=42** (IdAllocator).
 **🔑 id=42 ist IMMER die contentDescription** (`DATA_TEXT id=42 "Clock"` direkt nach HEADER + `ROOT_CONTENT_DESCRIPTION id=42`),
@@ -58,7 +61,9 @@ Ich habe `document(300,300,contentDescription="Clock"){}` ausgeführt + decoded 
 
 **Ursache = genau die „Header-Form-Auto-Auswahl", die der PO/assist benannt hat:** *flat-API-6 ohne extra-properties / map-API-7 mit.* Die `procedure_*`-Orakel sind **flat-API-6** (keine extra-props → contentDescription als Body-Op, fixed-Header v1.0.0). **E1 wählt aktuell IMMER map-API-7** (`RemoteComposeWriter.init` schreibt contentDescription in `properties[DOC_CONTENT_DESCRIPTION]` + `Header.fromProperties`). → Für procedure_*-Byte-Match muss der Writer **flat-API-6 wählen, wenn keine extra-properties vorliegen**, und contentDescription als Body-`DATA_TEXT`+`ROOT_CONTENT_DESCRIPTION` emittieren (das ist auch, was id=42 vergibt).
 
-**Severity/Framing:** **kein „Bug", sondern E1-noch-nicht-implementiert** (E1 ist Scaffold; Auto-Auswahl ist das benannte Design, nur noch nicht im Merge). **Aber es ist der GATING-Prolog:** solange er map-API ist, kann KEIN procedure_*-Fixture byte-matchen (Prolog steht vor allem) — und die id-Order verschiebt sich (ohne id=42-desc-Body-Op fangen Content-ids bei 42 statt 43 an). **→ dev-3 sollte die flat/map-Auto-Auswahl als ersten E1-Byte-Checkpoint landen, VOR E2-Draw-Aufbau** (Techspec §6.1: „sofort gegen procedure_gradient1 byte-prüfen"). Harness-Test `e1Prolog_byteMatchesOracleHeaderBlock` ist als KNOWN-RED `@Ignore`d + un-ignorebar, sobald das landet.
+**Severity/Framing:** **kein „Bug", sondern E1-noch-nicht-implementiert** (E1 ist Scaffold; Auto-Auswahl ist das benannte Design, nur noch nicht im Merge). **Von assist unabhängig bestätigt** (`TECHSPEC-E5-id-order-reference.md` §Schluss: „alle 4 nutzen den flat-API-6-Header → braucht die flat/map-Auto-Form-Auswahl (REM-73 Header-Story)"). **Aber es ist der GATING-Prolog:** solange er map-API ist, kann KEIN procedure_*-Fixture byte-matchen (Prolog steht vor allem) — und die id-Order verschiebt sich (ohne id=42-desc-Body-Op fangen Content-ids bei 42 statt 43 an). **→ dev-3 sollte die flat/map-Auto-Auswahl als ersten E1-Byte-Checkpoint landen, VOR E2-Draw-Aufbau** (Techspec §6.1: „sofort gegen procedure_gradient1 byte-prüfen"). Harness-Test `e1Prolog_byteMatchesOracleHeaderBlock` ist als KNOWN-RED `@Ignore`d + un-ignorebar, sobald das landet.
+
+> **Interim-Assertion (assist-Vorschlag, vor der flat/map-Auswahl):** **Post-Header-Tail-Vergleich** — die Body-Op-Bytes NACH dem Header gegen die Orakel-Sequenz prüfen, auch wenn der Header noch divergiert. Gibt ein früheres Grün-Signal auf die Body-Replikation (sobald E2–E4-Ops da sind), entkoppelt vom Header-Fix. Faltet sich in die Stage-3-Tests als Zwischenschritt ein.
 
 ---
 
