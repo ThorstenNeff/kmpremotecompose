@@ -25,6 +25,7 @@ import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.SideEffect
 import androidx.compose.runtime.setValue
 import androidx.compose.runtime.withFrameNanos
 import androidx.compose.ui.Modifier
@@ -196,6 +197,18 @@ fun RemoteComposeApp(loadRc: (String) -> ByteArray, modifier: Modifier = Modifie
                 // Bound to renderedDocName (the committed frame's name) so it never drifts from rc-rendered.
                 BasicText(renderedDocName, Modifier.testTag("rc-doc"))
             }
+        }
+        // REM-83 (W2): mirror the hook state to DOM `data-*` on the wasm <canvas> so DOM web-drivers
+        // (Maestro-chromium / Playwright) can read it (the testTags live inside the Skiko canvas). Uses
+        // the SAME honest-render gate (`committed && drawCount > 0`) as the rc-rendered testTag — never
+        // greens ahead of a paint. No-op on non-web targets. Fires once per committed composition.
+        SideEffect {
+            mirrorRenderMarkersToDom(
+                rendered = committed && drawCount > 0,
+                error = error,
+                docName = renderedDocName,
+                drawCount = drawCount,
+            )
         }
     }
 }
