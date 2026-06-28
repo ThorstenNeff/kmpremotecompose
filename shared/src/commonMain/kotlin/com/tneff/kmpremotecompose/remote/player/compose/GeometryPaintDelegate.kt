@@ -138,6 +138,9 @@ internal class GeometryPaintDelegate(
 
     /** Draw the whole bitmap [id] into the destination rect. */
     override fun drawBitmap(id: Int, left: Float, top: Float, right: Float, bottom: Float) {
+        // REM-63 (B): reading the still-active offscreen (DRAW_BITMAP_SCALED(A) with no restore) must see
+        // its current pixels, not the stale store — mirror the active offscreen before the read.
+        if (id == activeOffscreenId) snapshotActiveToStore()
         val image = context.getBitmap(id) ?: return
         context.incrementDrawCount()
         canvas.drawImageRect(
@@ -164,6 +167,8 @@ internal class GeometryPaintDelegate(
         dstBottom: Int,
         cdId: Int,
     ) {
+        // REM-63 (B): mirror the active offscreen before reading it (see the single-rect overload).
+        if (imageId == activeOffscreenId) snapshotActiveToStore()
         val image = context.getBitmap(imageId) ?: return
         context.incrementDrawCount()
         canvas.drawImageRect(
@@ -351,6 +356,10 @@ internal class GeometryPaintDelegate(
             canvas = mainCanvas!!
             return
         }
+        // REM-63 (A): an unbracketed switch DRAW_TO_BITMAP(A) → DRAW_TO_BITMAP(B) (no restore between)
+        // must flush A first — otherwise activeOffscreenId is overwritten and A's drawn pixels are never
+        // mirrored to the store. Re-entering the SAME id keeps drawing into it (no flush).
+        if (activeOffscreenId != 0 && activeOffscreenId != bitmapId) flushActiveOffscreen()
         val existing = context.getBitmap(bitmapId) ?: return
         val w = existing.width
         val h = existing.height
@@ -375,15 +384,24 @@ internal class GeometryPaintDelegate(
     }
 
     /**
-     * REM-60: snapshot the active offscreen back into the bitmap store so the subsequent reads
-     * (`DRAW_BITMAP_SCALED`) see finished pixels. On iOS the snapshot forces the Skia-surface flush that
-     * a bare `Canvas(ImageBitmap)` lacked (intermittently-empty tiled reads); on Android/jvm it returns
-     * the same raster bitmap, so behavior is unchanged.
+     * REM-60/REM-63: mirror the active offscreen's current pixels into the bitmap store WITHOUT
+     * deactivating it — so a read of the still-active offscreen (REM-63 case B) sees finished pixels.
+     * On iOS the snapshot forces the Skia-surface flush a bare `Canvas(ImageBitmap)` lacked; on
+     * Android/jvm it returns the same raster bitmap. No active offscreen → no-op.
      */
-    private fun flushActiveOffscreen() {
+    private fun snapshotActiveToStore() {
         val id = activeOffscreenId
         if (id == 0) return
         offscreens[id]?.let { context.putBitmap(id, it.snapshot()) }
+    }
+
+    /**
+     * REM-60: flush the active offscreen into the store **and deactivate it** — used on
+     * `DRAW_TO_BITMAP(0)` (restore) and, since REM-63, before an unbracketed switch to a different
+     * offscreen (case A). The store then holds the finished pixels for the subsequent reads.
+     */
+    private fun flushActiveOffscreen() {
+        snapshotActiveToStore()
         activeOffscreenId = 0
     }
 
