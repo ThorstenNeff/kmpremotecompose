@@ -16,6 +16,7 @@
 package com.tneff.kmpremotecompose
 
 import androidx.compose.foundation.Canvas
+import androidx.compose.foundation.gestures.detectDragGestures
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.safeContentPadding
@@ -30,6 +31,7 @@ import androidx.compose.runtime.SideEffect
 import androidx.compose.runtime.setValue
 import androidx.compose.runtime.withFrameNanos
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.layout.layout
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.platform.LocalFontFamilyResolver
@@ -46,6 +48,7 @@ import com.tneff.kmpremotecompose.remote.player.core.renderOpaque
 import com.tneff.kmpremotecompose.remote.player.core.RemoteContext
 import com.tneff.kmpremotecompose.remote.player.core.SensorSource
 import com.tneff.kmpremotecompose.remote.player.core.systemAccentPalette
+import com.tneff.kmpremotecompose.remote.player.core.TouchState
 import kmpremotecompose.shared.generated.resources.Res
 
 /**
@@ -153,6 +156,9 @@ fun RemoteComposeApp(
     // context below so a `NamedVariable`-bound theme color (e.g. color.system_accent1_100) overrides the
     // doc's debug `ColorConstant` fallback (REM-61/67) — clock/digital_clock1/color_table get real tones.
     val themePalette = remember { systemAccentPalette() }
+    // REM-108 S2b: persistent pointer-gesture state (survives the per-frame-fresh RemoteContext). Written
+    // by the live pointerInput below, consumed one transition per frame by the player.
+    val touchState = remember { TouchState() }
     val d = doc
     // REM-51: size the canvas in EXACT pixels (the doc dims are px). The old `(d.width/density).dp` round-trips
     // px→dp→px; at density 3 (iOS) the dp→px reconversion rounds down 1–2px (e.g. 400→399) → a ±2px A↔iOS
@@ -163,7 +169,23 @@ fun RemoteComposeApp(
 
     Column(modifier.safeContentPadding()) {
         // rc-canvas = the render surface (this is what render_smoke crops for parity).
-        Box(Modifier.pxSize(pxW, pxH).testTag("rc-canvas")) {
+        // REM-108 S2b: LIVE-only pointer input — CMP detectDragGestures unifies touch/mouse/pointer across
+        // targets. Writes doc-space positions into the persistent touchState (the Box is doc-px sized,
+        // REM-51, so the local offset ≈ doc-space; SIZING_SCALE-doc inverse is a deferred note). Keyed on
+        // (live, d) so it re-arms per doc and is inert in static mode → static render stays deterministic.
+        val canvasModifier = if (live && d != null) {
+            Modifier.pxSize(pxW, pxH).testTag("rc-canvas").pointerInput(d) {
+                detectDragGestures(
+                    onDragStart = { off -> touchState.down(off.x, off.y) },
+                    onDrag = { change, _ -> touchState.move(change.position.x, change.position.y) },
+                    onDragEnd = { touchState.up(touchState.x, touchState.y) },
+                    onDragCancel = { touchState.cancel() },
+                )
+            }
+        } else {
+            Modifier.pxSize(pxW, pxH).testTag("rc-canvas")
+        }
+        Box(canvasModifier) {
             if (d != null && decodeError == null) {
                 Canvas(Modifier.pxSize(pxW, pxH)) {
                     val canvas = drawContext.canvas
@@ -192,6 +214,8 @@ fun RemoteComposeApp(
                                 staticTimeSeconds = staticTimeSeconds,
                                 // REM-101 (D5): the player seeds the doc's sensor ids from this LIVE-only.
                                 sensorSource = sensorSource,
+                                // REM-108 (S2b): live pointer gesture (consumed LIVE-only; null ⇒ no touch).
+                                touchState = if (live) touchState else null,
                             )
                         }
                         // Draw-phase writes: read only outside this lambda → one settling recompose.

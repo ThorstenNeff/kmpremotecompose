@@ -22,6 +22,8 @@ import com.tneff.kmpremotecompose.remote.core.operations.Builtins
 import com.tneff.kmpremotecompose.remote.core.operations.layout.TouchExpression
 import com.tneff.kmpremotecompose.remote.player.core.RemoteComposePlayer
 import com.tneff.kmpremotecompose.remote.player.core.RemoteContext
+import com.tneff.kmpremotecompose.remote.player.core.TouchPhase
+import com.tneff.kmpremotecompose.remote.player.core.TouchState
 import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertNotEquals
@@ -76,25 +78,71 @@ class Rem108TouchEvalTest {
         assertTrue(a.isFinite(), "default output must be finite (not NaN)")
     }
 
-    @Test fun wrapDoc_degradesGracefully_noCrash_whenEvaluatorLacksOperator() {
-        // touch_wrap is NOTCHES_EVEN(3) + wrap-mode, but its 13-op expression uses an RPN operator beyond
-        // the current E2-MVP evaluator (0x310018; needs E-D3). The contract: NO crash — TouchExpression
-        // fail-closes (keeps default), so the doc still renders + the value stays finite & in the wrap
-        // range. Full interactive wrap lands when the evaluator extends (flagged to PO).
+    @Test fun wrapDoc_isInteractive_evalResolvesAfterAtan2_staysInRange() {
+        // touch_wrap is NOTCHES_EVEN(3) + wrap-mode; its expression uses ATAN2, which the evaluator now
+        // supports (REM-109 convergence) → eval no longer throws/degrades, so touch_wrap is fully
+        // interactive. Through the down/drag/up lifecycle the value stays finite and in the wrap range
+        // [0,360). (The fail-closed safeEval bridge from the gap window remains as defence-in-depth.)
         val ctx = RemoteContext().also { it.animationEnabled = true }
         val d = doc("touch_wrap.rc")
         val te = firstTouch(d)
         assertEquals(3, te.stopLogic ushr 16, "touch_wrap is NOTCHES_EVEN(3)")
+        // Convergence proof: the ATAN2 operator is now in the evaluator → a direct eval does NOT throw.
+        ctx.loadFloat(RemoteContext.ID_TOUCH_POS_X, 100f)
+        ctx.loadFloat(RemoteContext.ID_TOUCH_POS_Y, 100f)
+        val direct = com.tneff.kmpremotecompose.remote.player.core.RpnFloatEvaluator.eval(te.exp, te.exp.size, ctx)
+        assertTrue(direct.isFinite(), "touch_wrap exp (ATAN2) now evaluates to a finite value (was $direct)")
+
         val player = RemoteComposePlayer(ctx)
         paint(player, d, ctx)
         val outId = te.id
-        player.touchDown(d, ctx, 10f, 10f)
-        player.touchDrag(d, ctx, 5000f, 5000f)
-        player.touchUp(d, ctx, 5000f, 5000f)
+        player.touchDown(d, ctx, 100f, 200f)
+        player.touchDrag(d, ctx, 250f, 60f)
+        val dragged = ctx.getFloat(outId)
+        assertTrue(dragged.isFinite() && dragged >= 0f && dragged < 360f + 0.01f, "wrap keeps value in [0,360) (was $dragged)")
+        player.touchUp(d, ctx, 250f, 60f)
         paint(player, d, ctx)
         val settled = ctx.getFloat(outId)
-        assertTrue(settled.isFinite(), "must not crash / produce NaN when the operator is unsupported (was $settled)")
-        assertTrue(settled >= 0f && settled < 360f + 0.01f, "value stays in the wrap range [0,360) (was $settled)")
+        assertTrue(settled.isFinite() && settled >= 0f && settled < 360f + 0.01f, "settled in wrap range (was $settled)")
+    }
+
+    @Test fun touchState_phaseConsume_drivesGestureAcrossFrames() {
+        // S2b: the persistent TouchState drives exactly one transition per paint across the per-frame-fresh
+        // RemoteContext. DOWN→(consumed)DRAG→…→UP→(consumed)IDLE; a drag moves the output; release settles.
+        val ctx = RemoteContext().also { it.animationEnabled = true }
+        val d = doc("touch1.rc")
+        val player = RemoteComposePlayer(ctx)
+        val ts = TouchState()
+        player.paint(d, NoOpPaintContext(ctx), frameTimeSeconds = 1f, touchState = ts)
+        val outId = firstTouch(d).id
+        val atRest = ctx.getFloat(outId)
+
+        ts.down(40f, 40f)
+        player.paint(d, NoOpPaintContext(ctx), frameTimeSeconds = 1f, touchState = ts)
+        assertEquals(TouchPhase.DRAG, ts.phase, "DOWN is consumed in one frame → DRAG")
+
+        ts.move(260f, 260f)
+        player.paint(d, NoOpPaintContext(ctx), frameTimeSeconds = 1f, touchState = ts)
+        assertNotEquals(atRest, ctx.getFloat(outId), "a drag moves the touch output")
+
+        ts.up(260f, 260f)
+        player.paint(d, NoOpPaintContext(ctx), frameTimeSeconds = 1f, touchState = ts)
+        assertEquals(TouchPhase.IDLE, ts.phase, "UP is consumed in one frame → IDLE")
+    }
+
+    @Test fun staticMode_touchStateNotConsumed_determinismPin() {
+        // S2b determinism: in static mode the player must NOT consume the TouchState (no dispatch) → the
+        // phase stays DOWN and the output stays the default. Goldens/REM-78 sweep immune to touch.
+        val ctx = RemoteContext().also { it.animationEnabled = false }
+        val d = doc("touch1.rc")
+        val player = RemoteComposePlayer(ctx)
+        val ts = TouchState().also { it.down(40f, 40f) }
+        player.paint(d, NoOpPaintContext(ctx), frameTimeSeconds = 0f, touchState = ts)
+        val outId = firstTouch(d).id
+        val v1 = ctx.getFloat(outId)
+        assertEquals(TouchPhase.DOWN, ts.phase, "static mode does not consume the touch (phase stays DOWN)")
+        player.paint(d, NoOpPaintContext(ctx), frameTimeSeconds = 0f, touchState = ts)
+        assertEquals(v1, ctx.getFloat(outId), "static output stable — touch never drives it")
     }
 
     @Test fun staticMode_touchDispatchHasNoEffect_determinismPin() {
