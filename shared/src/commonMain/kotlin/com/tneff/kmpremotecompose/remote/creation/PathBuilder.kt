@@ -19,6 +19,7 @@ import com.tneff.kmpremotecompose.remote.core.operations.draw.DrawPath
 import com.tneff.kmpremotecompose.remote.core.operations.draw.DrawTweenPath
 import com.tneff.kmpremotecompose.remote.core.operations.draw.PathAppend
 import com.tneff.kmpremotecompose.remote.core.operations.draw.PathCreate
+import com.tneff.kmpremotecompose.remote.core.operations.draw.PathData
 import com.tneff.kmpremotecompose.remote.wire.WireTypes
 
 /**
@@ -138,6 +139,35 @@ fun RemoteComposeContext.pathAppendClose(pathId: Int) {
  */
 fun RemoteComposeContext.pathAppendReset(pathId: Int) {
     add(PathAppend(pathId, floatArrayOf(WireTypes.asNan(PATH_RESET))))
+}
+
+/**
+ * REM-103 — one-shot `DATA_PATH` emitter from a raw [floats] stream. Complements the incremental
+ * [pathCreate] + [pathAppendMoveTo]/.../[pathAppendClose] family: emits ONE `PathData` op carrying
+ * the entire geometry as a `count`-prefixed float bit-stream (mirror upstream
+ * `RemoteComposeWriter.addPathData(float[])` — `RemoteComposeWriter.java:1690-1727` →
+ * `RemoteComposeBuffer.addPathData(id, data)` → `PathData.apply(buffer, id, data)` at
+ * `RemoteComposeBuffer.java:883-890`).
+ *
+ * **When to use this vs. the incremental form.** The text-path-effects corpus oracle bakes its
+ * geometry as a single `DATA_PATH` op (count = 2141 floats). The incremental builder produces a
+ * different op-form (`PATH_CREATE` + a sequence of `PATH_ADD`) — byte-divergent against that
+ * oracle. Use this helper when reproducing a pre-baked geometry (Skia-style `Path.toFloatArray()`
+ * outputs). Use [pathCreate] + `pathAppend*` when scripting geometry op-by-op in the DSL.
+ *
+ * **Wire / id encoding.** Allocates a region-0 id via [IdAllocator.nextId]. The optional
+ * [winding] is OR'd into the high byte of the wire id (`id | (winding shl 24)` — mirror
+ * `RemoteComposeBuffer.java:895` overload `addPathData(id, data, winding)`); the returned id is the
+ * **bare** id (low 24 bits, no winding) — that's the value to pass to [drawPath] or other path
+ * consumers. Floats are written as `Float.toRawBits()`, preserving NaN-encoded variable ids
+ * exactly (matches [PathData]'s wire which writes ints).
+ */
+fun RemoteComposeContext.addPathData(floats: FloatArray, winding: Int = 0): Int {
+    val id = ids.nextId()
+    val wireId = if (winding != 0) id or (winding shl 24) else id
+    val intBits = IntArray(floats.size) { floats[it].toRawBits() }
+    add(PathData(wireId, intBits))
+    return id
 }
 
 /** `DRAW_PATH` — render the path previously created at [pathId]. Does NOT allocate a new id. */
