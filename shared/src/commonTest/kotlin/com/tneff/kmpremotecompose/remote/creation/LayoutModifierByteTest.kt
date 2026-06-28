@@ -194,21 +194,24 @@ class LayoutModifierByteTest {
     }
 
     @Test
-    fun scroll_emits_fullUpstreamGroup_ScrollModifier_TouchExpression_ContainerEnd() {
-        // 🔴 REM-96 scroll() fix anchor — REM-92/97-class fixture-blindness avoided.
+    fun scroll_emits_fullUpstreamGroup_DataFloat_ScrollModifier_TouchExpression_ContainerEnd() {
+        // 🔴 REM-96 scroll() fix anchor — REM-92/97-class fixture-blindness avoided (iter-2).
         //
-        // Pre-fix: scroll() emitted only ScrollModifier(direction, 0f, 0f, 0f) → corrupts the
-        // container stack (ScrollModifierOperation extends ListActionsOperation → opens a scope
-        // that requires a trailing ContainerEnd). Following ops would be sucked into the scroll-
-        // action list.
+        // Pre-fix (iter-1): scroll() emitted only ScrollModifier(direction, 0f, 0f, 0f) →
+        //   corrupted the container stack (ScrollModifierOperation extends ListActionsOperation
+        //   → opens a scope that requires a trailing ContainerEnd). Following ops were sucked
+        //   into the scroll-action list. Fixed via trailing ContainerEnd + TouchExpression.
+        // Pre-fix (iter-2): the positionId was reserved via ids.nextId() but no DATA_FLOAT op
+        //   was emitted to declare it. TouchExpression then referenced an undeclared variable.
+        //   Fixed by emitting FloatConstant(positionId, 0f) BEFORE the ScrollModifier op.
         //
-        // Verified group, mirror RemoteComposeWriter.addModifierScroll(direction, positionId)
-        // (RemoteComposeWriter.java:3670-3691):
-        //   1. reserveFloatVariable() × 2 (positionId/max/notchMax — pure id alloc, no op)
-        //   2. ScrollModifierOperation.apply(buf, direction, asNan(posId), asNan(maxId), asNan(notchMaxId))
-        //   3. addTouchExpression(posId, 0f, 0f, asNan(maxId), 0f, 3, [touchDir, -1, MUL],
-        //      STOP_GENTLY, null, null)
-        //   4. addContainerEnd()
+        // Verified group, mirror upstream:
+        //   1. ScrollModifier.write() (creation/modifiers/ScrollModifier.java:42-46) — default-
+        //      position branch calls writer.addFloatConstant(0f) → DATA_FLOAT(positionId, 0f)
+        //      + returns asNan(positionId).
+        //   2. RemoteComposeWriter.addModifierScroll(direction, positionId)
+        //      (RemoteComposeWriter.java:3670-3691) — reserveFloatVariable() × 2 (no op),
+        //      ScrollModifier.apply, addTouchExpression, addContainerEnd.
         //
         // Anchored against the c_modifier_vertical_scroll.rc / c_modifier_horizontal_scroll.rc
         // corpus fixtures (assist NO-GO 2026-06-28 — both decoded to this group).
@@ -225,6 +228,7 @@ class LayoutModifierByteTest {
         assertEquals(
             listOf(
                 com.tneff.kmpremotecompose.remote.core.operations.Operations.LAYOUT_BOX,
+                com.tneff.kmpremotecompose.remote.core.operations.Operations.DATA_FLOAT,
                 com.tneff.kmpremotecompose.remote.core.operations.Operations.MODIFIER_SCROLL,
                 com.tneff.kmpremotecompose.remote.core.operations.Operations.TOUCH_EXPRESSION,
                 com.tneff.kmpremotecompose.remote.core.operations.Operations.CONTAINER_END,
@@ -233,23 +237,158 @@ class LayoutModifierByteTest {
                 com.tneff.kmpremotecompose.remote.core.operations.Operations.CONTAINER_END,
             ),
             opcodes,
-            "scroll() = ScrollModifier + TouchExpression + ContainerEnd (closing scroll scope) " +
-                "BEFORE LayoutContent + 2 × ContainerEnd (closing the box)",
+            "scroll() = DATA_FLOAT(positionId, 0f) + ScrollModifier + TouchExpression + " +
+                "ContainerEnd (closing scroll scope) BEFORE LayoutContent + 2 × ContainerEnd " +
+                "(closing the box)",
         )
     }
 
     @Test
+    fun scroll_positionIdDeclaredViaDataFloat_beforeScrollModifier() {
+        // Iter-2 specific anchor: the DATA_FLOAT op must (a) precede MODIFIER_SCROLL and
+        // (b) carry id == positionId, value == 0f. Without it, TOUCH_EXPRESSION's id field
+        // references an undeclared variable — silent byte divergence the iter-1 anchors missed.
+        val bytes = document(width = 200, height = 200) {
+            box(modifier = LayoutModifier().scroll(direction = LayoutModifier.SCROLL_VERTICAL)) {}
+        }
+        val ops = DocumentReader.inflate(bytes).operations
+        val dataFloatIdx = ops.indexOfFirst {
+            it is com.tneff.kmpremotecompose.remote.core.operations.FloatConstant
+        }
+        val scrollIdx = ops.indexOfFirst { it is ScrollModifier }
+        assertTrue(dataFloatIdx >= 0, "DATA_FLOAT must be emitted as part of the scroll group")
+        assertTrue(
+            dataFloatIdx < scrollIdx,
+            "DATA_FLOAT(positionId, 0f) must precede MODIFIER_SCROLL — declares the position var",
+        )
+        val df = ops[dataFloatIdx] as com.tneff.kmpremotecompose.remote.core.operations.FloatConstant
+        assertEquals(42, df.id, "positionId = first allocated plain id (42, no contentDescription)")
+        assertEquals(0f, df.value, "positionId is bound to literal 0f (default position)")
+        // And the ScrollModifier's position slot must be asNan(positionId).
+        val s = ops[scrollIdx] as ScrollModifier
+        assertEquals(
+            com.tneff.kmpremotecompose.remote.wire.WireTypes.asNan(42).toRawBits(),
+            s.position.toRawBits(),
+            "MODIFIER_SCROLL.position = asNan(positionId) — back-reference to the just-declared DATA_FLOAT",
+        )
+    }
+
+    @Test
+    fun scroll_fullByteEquality_vsCorpusFixture_verticalScroll() {
+        // 🔑 The "Gold" byte-anchor per assist iter-2: extract the scroll-region (DATA_FLOAT
+        // through the scroll's trailing ContainerEnd) from BOTH a minimal DSL document and the
+        // c_modifier_vertical_scroll.rc corpus fixture, then assertContentEquals.
+        //
+        // The fixture was generated upstream from DemoModifierVerticalScroll (assist-decoded
+        // 2026-06-28). The MODIFIER_CLIP_RECT op that appears in the fixture before the scroll
+        // group is upstream's Modifier.verticalScroll() convenience clip — it's caller-side
+        // (LayoutModifier.clipRect), NOT part of scroll's mandatory op group. So this test
+        // anchors ONLY the scroll group itself.
+        //
+        // The expected 76-byte scroll-region (positionId=42 / maxId=43 / notchMaxId=44 at the
+        // virgin allocator state — matches the fixture's id-pool position at the scroll site):
+        //   DATA_FLOAT(0x50): 1 + 4(id=42) + 4(0f)                            = 9 bytes
+        //   MODIFIER_SCROLL(0xE2): 1 + 4(dir=0) + 4(asNan42) + 4(asNan43) + 4(asNan44) = 17 bytes
+        //   TOUCH_EXPRESSION(0x9D): 1 + 4(id=42) + 4*4(value/min/max/velocity) + 4(touchEff=3)
+        //     + 4(expLen=3) + 4*3(touchPosY/-1f/MUL) + 4(stopLogic=0) + 4(easingLen=0) = 49 bytes
+        //   CONTAINER_END(0xD6): 1 byte
+        //   Total = 76 bytes
+        val expectedScrollRegion = byteArrayOf(
+            // DATA_FLOAT(id=42, value=0f)
+            0x50,
+            0x00, 0x00, 0x00, 0x2A,
+            0x00, 0x00, 0x00, 0x00,
+            // MODIFIER_SCROLL(direction=0, asNan(42), asNan(43), asNan(44))
+            0xE2.toByte(),
+            0x00, 0x00, 0x00, 0x00,
+            0xFF.toByte(), 0x80.toByte(), 0x00, 0x2A,
+            0xFF.toByte(), 0x80.toByte(), 0x00, 0x2B,
+            0xFF.toByte(), 0x80.toByte(), 0x00, 0x2C,
+            // TOUCH_EXPRESSION(id=42, value=0f, min=0f, max=asNan(43), velocityId=0f, touchEff=3,
+            //                  exp=[asNan(14)=FLOAT_TOUCH_POS_Y, -1f, asNan(0x310003)=MUL],
+            //                  stopLogic=STOP_GENTLY<<16=0, stops=[], easing=[])
+            0x9D.toByte(),
+            0x00, 0x00, 0x00, 0x2A, // id
+            0x00, 0x00, 0x00, 0x00, // value
+            0x00, 0x00, 0x00, 0x00, // min
+            0xFF.toByte(), 0x80.toByte(), 0x00, 0x2B, // max=asNan(43)
+            0x00, 0x00, 0x00, 0x00, // velocityId
+            0x00, 0x00, 0x00, 0x03, // touchEffects=3
+            0x00, 0x00, 0x00, 0x03, // exp.length=3
+            0xFF.toByte(), 0x80.toByte(), 0x00, 0x0E, // exp[0]=FLOAT_TOUCH_POS_Y=asNan(14)
+            0xBF.toByte(), 0x80.toByte(), 0x00, 0x00, // exp[1]=-1f
+            0xFF.toByte(), 0xB1.toByte(), 0x00, 0x03, // exp[2]=MUL=asNan(0x310003)
+            0x00, 0x00, 0x00, 0x00, // stopLogic = 0
+            0x00, 0x00, 0x00, 0x00, // easing.length = 0
+            // CONTAINER_END
+            0xD6.toByte(),
+        )
+
+        // (a) DSL-produced scroll region.
+        val dslBytes = document(width = 200, height = 200) {
+            box(modifier = LayoutModifier().scroll(direction = LayoutModifier.SCROLL_VERTICAL)) {}
+        }
+        val dslStart = findScrollRegionStart(dslBytes)
+        val dslRegion = dslBytes.copyOfRange(dslStart, dslStart + expectedScrollRegion.size)
+        assertTrue(
+            expectedScrollRegion.contentEquals(dslRegion),
+            "DSL-produced scroll bytes diverge from the hand-computed expected sequence",
+        )
+
+        // (b) Corpus-fixture scroll region (Gold-Oracle).
+        val fixtureBytes = com.tneff.kmpremotecompose.conformance.RcCorpus
+            .readFixture("corpus/c_modifier_vertical_scroll.rc")
+        val fixStart = findScrollRegionStart(fixtureBytes)
+        val fixRegion = fixtureBytes.copyOfRange(fixStart, fixStart + expectedScrollRegion.size)
+        assertTrue(
+            expectedScrollRegion.contentEquals(fixRegion),
+            "Fixture c_modifier_vertical_scroll.rc scroll-region diverges from the expected " +
+                "sequence — either upstream changed or the audit was wrong",
+        )
+
+        // (c) Triple-pin: DSL and fixture must agree byte-for-byte at the scroll region.
+        assertTrue(
+            dslRegion.contentEquals(fixRegion),
+            "DSL scroll-region bytes ≠ fixture scroll-region bytes (§2-divergence)",
+        )
+    }
+
+    /**
+     * Find the start of the scroll-region by scanning for the DATA_FLOAT(id=42, value=0f) byte
+     * signature — that's the first op of the scroll group at the virgin allocator state.
+     * Returns the offset of the leading DATA_FLOAT opcode byte (0x50).
+     */
+    private fun findScrollRegionStart(bytes: ByteArray): Int {
+        // Signature: 0x50, 0x00, 0x00, 0x00, 0x2A, 0x00, 0x00, 0x00, 0x00 (9 bytes).
+        for (i in 0..bytes.size - 9) {
+            if (bytes[i] == 0x50.toByte() &&
+                bytes[i + 1] == 0x00.toByte() && bytes[i + 2] == 0x00.toByte() &&
+                bytes[i + 3] == 0x00.toByte() && bytes[i + 4] == 0x2A.toByte() &&
+                bytes[i + 5] == 0x00.toByte() && bytes[i + 6] == 0x00.toByte() &&
+                bytes[i + 7] == 0x00.toByte() && bytes[i + 8] == 0x00.toByte() &&
+                // Confirm the next op is MODIFIER_SCROLL (0xE2).
+                i + 9 < bytes.size && bytes[i + 9] == 0xE2.toByte()
+            ) {
+                return i
+            }
+        }
+        kotlin.test.fail("DATA_FLOAT(id=42, 0f) + MODIFIER_SCROLL signature not found in bytes")
+    }
+
+    @Test
     fun scroll_allocatesThreePlainIds_positionMaxNotchMax_andNaNEncodesIntoScrollModifier() {
-        // Mirror reserveFloatVariable() × 3 → asNan() wrapping. Verifies the wire-shape pin:
-        //   ScrollModifier.position/max/notchMax all = asNan(reserved-id).
+        // Mirror upstream id-allocation pattern (iter-2):
+        //   positionId via addFloatConstant(0f) → emits DATA_FLOAT(positionId, 0f) + allocates the id
+        //   maxId + notchMaxId via reserveFloatVariable() × 2 (pure id alloc, no op)
+        // All three are NaN-wrapped into the ScrollModifier's position/max/notchMax slots.
         val bytes = document(width = 100, height = 100, contentDescription = "Clock") {
-            // content-desc claimed id 42; scroll's first reserved id is the next available = 43.
+            // content-desc claimed id 42; scroll's first allocated id (positionId) = 43,
+            // then max = 44, notchMax = 45.
             box(modifier = LayoutModifier().scroll(direction = LayoutModifier.SCROLL_HORIZONTAL)) {}
         }
         val s = DocumentReader.inflate(bytes).operations
             .first { it is ScrollModifier } as ScrollModifier
         assertEquals(1, s.direction, "horizontal direction = 1")
-        // The 3 reserved ids in order: 43 (position), 44 (max), 45 (notchMax).
         assertEquals(
             com.tneff.kmpremotecompose.remote.wire.WireTypes.asNan(43).toRawBits(),
             s.position.toRawBits(),

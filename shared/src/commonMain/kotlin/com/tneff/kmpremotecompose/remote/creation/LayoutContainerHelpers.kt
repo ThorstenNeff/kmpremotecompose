@@ -15,6 +15,7 @@
  */
 package com.tneff.kmpremotecompose.remote.creation
 
+import com.tneff.kmpremotecompose.remote.core.operations.FloatConstant
 import com.tneff.kmpremotecompose.remote.core.operations.layout.AlignByModifier
 import com.tneff.kmpremotecompose.remote.core.operations.layout.BackgroundModifier
 import com.tneff.kmpremotecompose.remote.core.operations.layout.BorderModifier
@@ -254,26 +255,38 @@ class LayoutModifier {
 
     /**
      * `MODIFIER_SCROLL` — scroll wrapper. Emits the **full upstream op group** (verified against
-     * `c_modifier_vertical_scroll.rc` + `c_modifier_horizontal_scroll.rc` corpus fixtures —
-     * NOT just MODIFIER_SCROLL).
+     * `c_modifier_vertical_scroll.rc` + `c_modifier_horizontal_scroll.rc` corpus fixtures via
+     * a full-byte assertContentEquals over the scroll-region — NOT just MODIFIER_SCROLL).
      *
-     * **Wire group, mirror `RemoteComposeWriter.addModifierScroll(direction, positionId)`
-     * (`RemoteComposeWriter.java:3670-3691`):**
-     * 1. Reserve 3 region-0 plain ids via `ids.nextId()` (mirror `reserveFloatVariable()` at
-     *    `RemoteComposeWriter.java:1953-1956` — pure id allocation, **no op emitted**):
-     *    `positionId`, `maxId`, `notchMaxId`.
-     * 2. `ScrollModifier(direction, asNan(positionId), asNan(maxId), asNan(notchMaxId))` — all
-     *    three slots are NaN-encoded id-refs into the reserved plain pool.
-     * 3. `TouchExpression(positionId, value=0f, min=0f, max=asNan(maxId), velocityId=0f,
+     * **Wire group, mirror upstream:**
+     *  - `ScrollModifier.write()` (`creation/modifiers/ScrollModifier.java:42-46`) — when
+     *    `positionId <= 0f` (the default-position branch) it calls
+     *    `float variable = writer.addFloatConstant(0f);` and passes that NaN-encoded ref to
+     *    `writer.addModifierScroll(direction, variable)`. `addFloatConstant` itself emits a
+     *    `DATA_FLOAT(id, 0f)` op and returns `asNan(id)` (`RemoteComposeWriter.java:1943-1946`).
+     *  - `RemoteComposeWriter.addModifierScroll(direction, positionId)`
+     *    (`RemoteComposeWriter.java:3670-3691`) then reserves `max` + `notchMax` via
+     *    `reserveFloatVariable()` (`RemoteComposeWriter.java:1953-1956` — pure id alloc, **no
+     *    op emitted**), and emits `ScrollModifier + TouchExpression + ContainerEnd`.
+     *
+     * **Full emit sequence:**
+     * 1. **`FloatConstant(positionId, 0f)`** — DATA_FLOAT op declaring the position slot. Mirror
+     *    of `addFloatConstant(0f)`; without this op the TOUCH_EXPRESSION below references an
+     *    undeclared variable (§2-divergent, caught by assist iter-2 2026-06-28).
+     * 2. Reserve `maxId` + `notchMaxId` via `ids.nextId()` × 2 (mirror `reserveFloatVariable()`).
+     * 3. `ScrollModifier(direction, asNan(positionId), asNan(maxId), asNan(notchMaxId))` — all
+     *    three slots are NaN-encoded id-refs.
+     * 4. `TouchExpression(positionId, value=0f, min=0f, max=asNan(maxId), velocityId=0f,
      *    touchEffects=3, exp=[touchDirection, -1f, MUL], stopLogic=STOP_GENTLY<<16, stops=[],
      *    easing=[])`. `touchDirection` is `asNan(ID_TOUCH_POS_X=13)` for horizontal,
-     *    `asNan(ID_TOUCH_POS_Y=14)` for vertical (mirror `RemoteContext.FLOAT_TOUCH_POS_X/Y`
-     *    at `RemoteContext.java:840-841,922-925`). `MUL` is the RPN multiply marker
-     *    (`asNan(0x310003)` per [RcExpression.OFFSET]).
-     * 4. **`ContainerEnd`** — closes the `ListActionsOperation` scope opened by `MODIFIER_SCROLL`
-     *    (`ScrollModifierOperation extends ListActionsOperation` — without the trailing End
-     *    the following modifier / `LayoutContent` ops would be sucked into the scroll-action
-     *    list, corrupting the doc tree).
+     *    `asNan(ID_TOUCH_POS_Y=14)` for vertical (`RemoteContext.java:840-841,922-925`).
+     *    `MUL` is the RPN multiply marker (`asNan(0x310003)` per [RcExpression.OFFSET]).
+     * 5. **`ContainerEnd`** — closes the `ListActionsOperation` scope opened by `MODIFIER_SCROLL`.
+     *
+     * **Out of scope (caller's responsibility):** the `MODIFIER_CLIP_RECT` op that appears
+     * before the scroll group in upstream's `Modifier.verticalScroll()` convenience builder is
+     * a separate concern (it's upstream's Compose convenience-clip, not part of scroll's
+     * mandatory op group). Add it via [LayoutModifier.clipRect] when needed.
      *
      * [direction] is [SCROLL_VERTICAL] (0) or [SCROLL_HORIZONTAL] (1) — verified against
      * `ScrollModifierOperation.java:245,257,276`. **Scope:** REM-96 emits the byte-faithful op
@@ -281,9 +294,13 @@ class LayoutModifier {
      */
     fun scroll(direction: Int): LayoutModifier {
         emitters.add { ctx ->
+            // 1. positionId is declared via DATA_FLOAT — mirror addFloatConstant(0f).
             val positionId = ctx.ids.nextId()
+            ctx.add(FloatConstant(positionId, 0f))
+            // 2. maxId + notchMaxId are reservations only (no op emitted).
             val maxId = ctx.ids.nextId()
             val notchMaxId = ctx.ids.nextId()
+            // 3. MODIFIER_SCROLL — opens the ListActionsOperation scope.
             ctx.add(
                 ScrollModifier(
                     direction,
@@ -292,6 +309,7 @@ class LayoutModifier {
                     WireTypes.asNan(notchMaxId),
                 ),
             )
+            // 4. TouchExpression — RPN expression bound to the touch axis.
             val touchDirection = if (direction != SCROLL_VERTICAL) {
                 WireTypes.asNan(ID_TOUCH_POS_X)
             } else {
@@ -311,6 +329,7 @@ class LayoutModifier {
                     easing = floatArrayOf(),
                 ),
             )
+            // 5. ContainerEnd — closes the scroll's ListActions scope.
             ctx.add(ContainerEnd())
         }
         return this
