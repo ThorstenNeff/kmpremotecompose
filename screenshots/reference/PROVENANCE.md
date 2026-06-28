@@ -166,3 +166,16 @@ HELD / PENDING (22 docs — NOT frozen; goldens land as follow-up updates):
   confirmed final-correct).
 KNOWN-GAP docs that ARE frozen (tracked, faithful-current): c_modifier_wrap_content_size (REM-66 iOS white-on-white
 gap), c_modifier_background_id (deferred color-seed) — carried from round-11 with these notes.
+
+## REM-69 update — flow_control golden unfrozen (develop 5fbed28, post-REM-70/REM-65, 2026-06-28)
+REM-70 (incl. REM-65) merged → develop 5fbed28: the circle-r<=0 guard makes iOS skip the spurious negative-radius circle,
+so flow_control_checks_test_conditional now renders the TEXT branch on iOS too — matching Android (the upstream oracle).
+FROZEN (was held under REM-65): flow_control_checks_test_conditional, both platforms, as TEXT-on-both.
+- Source: the &t=0 deterministic capture (Android mean 19,19,9 / iOS 17,17,8 = text), build d959bc4 == merged 5fbed28
+  render (re-verify was 4/4 GREEN: heart_rate bands restored, Android pixel-identical, A<->iOS flow_control 93.7%).
+- ⚠️ IMPORTANT: this golden is the **&t=0-PINNED** render. The default deep-link (no &t) for this doc is time-driven
+  ((TIME_IN_SEC%3) gates circle/text/red) → non-deterministic. The conformance/screenshot test for this doc MUST pin &t=0,
+  else it will flake. (Per the REM-62 deterministic frame-pin, now on develop.)
+Baseline now: 152 frozen + 21 held (was 151 frozen + 22 held). REMAINING HELD (21): REM-68 theme-palette (12:
+digital_clock1, calendar_heatmap_grid + 10 blank fancy/analog clocks) + fallback-color pending-oracle (9: color, color_list,
+color_table, count_down, demo_text_transform, experimental_gmt, experimental_solar_gmt, procedure_simple6, weather_forecast_bars).
