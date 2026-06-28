@@ -15,8 +15,10 @@
  */
 package com.tneff.kmpremotecompose.remote.player.compose
 
+import androidx.compose.ui.graphics.BlendMode
 import androidx.compose.ui.graphics.Canvas
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.ColorFilter
 import androidx.compose.ui.graphics.ImageBitmap
 import androidx.compose.ui.graphics.PaintingStyle
 import androidx.compose.ui.graphics.Path
@@ -92,11 +94,90 @@ class GeometryAdapterIosTest {
             .build()
             .values
         val state = PlayerPaintState()
-        PaintBundleApplier.applyTo(state, bundle)
+        PaintBundleApplier.applyTo(RemoteContext(), state,bundle)
         assertEquals(Color(0xFF112233.toInt()), state.paint.color)
         assertEquals(4f, state.paint.strokeWidth)
         assertEquals(PaintingStyle.Stroke, state.paint.style)
         assertEquals(StrokeCap.Square, state.paint.strokeCap)
+    }
+
+    // REM-67: COLOR_ID / COLOR_FILTER_ID carry a *color-id*, resolved via context.getColor (upstream
+    // fixColor) — NOT a literal ARGB. The literal COLOR / COLOR_FILTER paths must stay byte-for-byte the same.
+
+    @Test
+    fun paintBundle_colorId_resolvesViaContext() {
+        val context = RemoteContext()
+        context.loadColor(61, 0xFF223344.toInt()) // the registered colour for id 61
+        // [COLOR_ID=19, id=61] — pre-fix this set Color(61)=0x0000003D (α≈0, invisible).
+        val state = PlayerPaintState()
+        PaintBundleApplier.applyTo(context, state, intArrayOf(19, 61))
+        assertEquals(Color(0xFF223344.toInt()), state.paint.color)
+    }
+
+    @Test
+    fun paintBundle_color_literalUnchanged() {
+        // COLOR=4 stays a literal ARGB regardless of any context registration for that numeric value.
+        val context = RemoteContext().also { it.loadColor(0xFF112233.toInt(), 0xFFDEAD00.toInt()) }
+        val state = PlayerPaintState()
+        PaintBundleApplier.applyTo(context, state, intArrayOf(4, 0xFF112233.toInt()))
+        assertEquals(Color(0xFF112233.toInt()), state.paint.color)
+    }
+
+    @Test
+    fun paintBundle_colorFilterId_resolvesViaContext() {
+        val context = RemoteContext()
+        context.loadColor(7, 0xFFAABBCC.toInt())
+        // [COLOR_FILTER_ID=20 | (BLEND_MODE_SRC_IN=5 << 16), id=7]
+        val state = PlayerPaintState()
+        PaintBundleApplier.applyTo(context, state, intArrayOf(20 or (5 shl 16), 7))
+        assertEquals(ColorFilter.tint(Color(0xFFAABBCC.toInt()), BlendMode.SrcIn), state.paint.colorFilter)
+    }
+
+    @Test
+    fun paintBundle_colorFilter_literalUnchanged() {
+        // COLOR_FILTER=13 stays a literal ARGB tint.
+        val context = RemoteContext().also { it.loadColor(0xFFAABBCC.toInt(), 0xFF00FF00.toInt()) }
+        val state = PlayerPaintState()
+        PaintBundleApplier.applyTo(context, state, intArrayOf(13 or (5 shl 16), 0xFFAABBCC.toInt()))
+        assertEquals(ColorFilter.tint(Color(0xFFAABBCC.toInt()), BlendMode.SrcIn), state.paint.colorFilter)
+    }
+
+    // REM-67 site 3: applyGradient's control int packs a per-color id-mask in its high 16 bits. A
+    // 1-color gradient degrades to a solid fill = the first colour, so paint.color exposes the resolved value.
+
+    @Test
+    fun paintBundle_gradientColorId_resolvesViaContext() {
+        val context = RemoteContext()
+        context.loadColor(9, 0xFF010203.toInt())
+        // [GRADIENT=11 LINEAR(0)][control: colorLen=1, idMask bit0=1][color0=id 9][stopsLen=0][sx,sy,ex,ey][tile=0]
+        val arr = intArrayOf(
+            11,
+            1 or (1 shl 16),
+            9,
+            0,
+            0f.toRawBits(), 0f.toRawBits(), 1f.toRawBits(), 1f.toRawBits(),
+            0,
+        )
+        val state = PlayerPaintState()
+        PaintBundleApplier.applyTo(context, state, arr)
+        assertEquals(Color(0xFF010203.toInt()), state.paint.color) // id 9 resolved, not Color(9)=ARGB garbage
+    }
+
+    @Test
+    fun paintBundle_gradientColor_literalUnchanged() {
+        // Same shape, idMask=0 → color0 is a literal ARGB (not resolved via context).
+        val context = RemoteContext().also { it.loadColor(0xFF112233.toInt(), 0xFFDEAD00.toInt()) }
+        val arr = intArrayOf(
+            11,
+            1 or (0 shl 16),
+            0xFF112233.toInt(),
+            0,
+            0f.toRawBits(), 0f.toRawBits(), 1f.toRawBits(), 1f.toRawBits(),
+            0,
+        )
+        val state = PlayerPaintState()
+        PaintBundleApplier.applyTo(context, state, arr)
+        assertEquals(Color(0xFF112233.toInt()), state.paint.color)
     }
 
     @Test
@@ -106,7 +187,7 @@ class GeometryAdapterIosTest {
         val arr = intArrayOf(1, 24f.toRawBits(), 16 or (0 shl 16), 7)
         val deferred = mutableSetOf<String>()
         val state = PlayerPaintState()
-        PaintBundleApplier.applyTo(state, arr, deferred = deferred)
+        PaintBundleApplier.applyTo(RemoteContext(), state,arr, deferred = deferred)
         assertEquals(24f, state.textSizePx)
         assertEquals(7, state.typefaceId)
         assertTrue("TEXT_SIZE" !in deferred && "TYPEFACE" !in deferred, "text attrs applied, not deferred")
@@ -134,7 +215,7 @@ class GeometryAdapterIosTest {
         val arr = intArrayOf(24, 7, 0, 0, 4, 0xFF00FF00.toInt())
         val deferred = mutableSetOf<String>()
         val state = PlayerPaintState()
-        PaintBundleApplier.applyTo(state, arr, deferred = deferred)
+        PaintBundleApplier.applyTo(RemoteContext(), state,arr, deferred = deferred)
         assertTrue("TEXTURE" in deferred, "deferred tag recorded")
         assertEquals(Color(0xFF00FF00.toInt()), state.paint.color, "color after deferred tag applied")
     }
@@ -145,7 +226,7 @@ class GeometryAdapterIosTest {
         val bundle = PaintData.Builder().style(2).build().values
         val deferred = mutableSetOf<String>()
         val state = PlayerPaintState()
-        PaintBundleApplier.applyTo(state, bundle, deferred = deferred)
+        PaintBundleApplier.applyTo(RemoteContext(), state,bundle, deferred = deferred)
         assertEquals(PaintingStyle.Fill, state.paint.style)
         assertTrue("STYLE_FILL_AND_STROKE" in deferred, "lossy fill+stroke must be logged, not silent")
     }
@@ -161,7 +242,7 @@ class GeometryAdapterIosTest {
             0, // tileMode CLAMP
         )
         val state = PlayerPaintState()
-        PaintBundleApplier.applyTo(state, arr)
+        PaintBundleApplier.applyTo(RemoteContext(), state,arr)
         assertNotNull(state.paint.shader, "linear gradient should set a shader")
     }
 
@@ -198,7 +279,7 @@ class GeometryAdapterIosTest {
         )
         val deferred = mutableSetOf<String>()
         val state = PlayerPaintState()
-        PaintBundleApplier.applyTo(state, arr, deferred = deferred)
+        PaintBundleApplier.applyTo(RemoteContext(), state,arr, deferred = deferred)
         assertEquals(Color(sentinel), state.paint.color, "sentinel COLOR after every tag → cursor stayed in sync")
         // TEXT_SIZE/TYPEFACE now land in the shared state (REM-32); the rest stay deferred.
         for (tag in listOf("SHADER", "SHADER_MATRIX", "FONT_AXIS", "TEXTURE", "PATH_EFFECT")) {

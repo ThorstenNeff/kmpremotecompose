@@ -214,7 +214,7 @@ internal class GeometryPaintDelegate(
 
     /** Apply a Layer-1 `PAINT_VALUES` bundle ([PaintData]) onto the shared paint state. */
     override fun applyPaint(paint: PaintData) {
-        PaintBundleApplier.applyTo(paintState, paint.values, deferred = deferredPaintTags)
+        PaintBundleApplier.applyTo(context, paintState, paint.values, deferred = deferredPaintTags)
     }
 
     override fun reset() {
