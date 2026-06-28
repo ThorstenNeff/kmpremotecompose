@@ -201,3 +201,17 @@ RE-FROZEN (gray-fallback → blue shader), both platforms: shader_calendar. Capt
 render). Android RuntimeShader (emu API 37) + iOS Skiko both blue; A↔iOS = 93.2% when scroll-aligned (~120px month-phase
 offset; raw 71% was scroll-start only — Android-AGSL == iOS-SkSL confirmed). test-3 refreshes the Desktop golden (blue) in parallel.
 Note: shader_calendar is a tall scrollable doc (mobile crop shows ~May-Aug visible region). Baseline frozen count +0 (in-place update).
+
+## REM-105 — Mobile texture-golden refresh (develop 59a9c37, post-REM-94/98 FILL_AND_STROKE+TEXTURE, 2026-06-28)
+test-2's Web-sweep flagged the mobile texture goldens as STALE (pre-REM-98). Confirmed via diff vs fresh §6 post-REM-98
+renders (develop 59a9c37, &t=0): the 4 texture goldens showed the pre-texture render — basic_texture = solid-GREEN (78.9%
+green), texture_clock + wake_clock = BLACK/empty, texture_clock_test = plain-GRAY — while Web + Desktop + my §6 mobile render
+all show the TEXTURE. Diffs 53–79% both platforms; dims unchanged (300×300 A+iOS).
+RE-FROZEN (stale pre-texture → real bitmap texture), both platforms, from bl_*_dev (= 59a9c37 §6 captures, feature
+verified via zoom + center-hi-freq 35–55 ruling out plain-fill): texture_demo_basic_texture (→ teal bubble texture),
+texture_demo_texture_clock (→ grainy noise face), texture_demo_texture_clock_test (→ blue bg + bubble texture + checkered
+hand), wake_demo_wake_clock (→ grainy noise face). Analogous to test-3's REM-102 Desktop refresh.
+NOT refreshed: path_demo_remote_construction (FILL_AND_STROKE golden already CURRENT — diff 0.2% vs fresh, red stroke-ring
+matches). experimental_gmt / experimental_solar_gmt — NO golden (intentionally HELD = fallback-color pending-oracle, time-
+driven GMT hands); NOT added (would need PO/oracle sign-off, out of REM-105 scope).
+Baseline frozen count +0 (4 in-place updates; held set unchanged).
