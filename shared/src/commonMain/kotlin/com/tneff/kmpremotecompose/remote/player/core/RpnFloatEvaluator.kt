@@ -17,6 +17,8 @@ package com.tneff.kmpremotecompose.remote.player.core
 
 import com.tneff.kmpremotecompose.remote.wire.WireTypes
 import kotlin.math.abs
+import kotlin.math.acos
+import kotlin.math.atan2
 import kotlin.math.cos
 import kotlin.math.exp
 import kotlin.math.floor
@@ -29,6 +31,7 @@ import kotlin.math.pow
 import kotlin.math.sign
 import kotlin.math.sin
 import kotlin.math.sqrt
+import kotlin.math.tan
 
 /**
  * The RPN float-expression evaluator (REM-37, Eval-Engine E2) — port of upstream
@@ -81,6 +84,9 @@ object RpnFloatEvaluator {
     // REM-109 (slice 2): the remaining E-D3 operators by impact. PINGPONG = triangle wave (used by
     // text-transform / paths_demos for back-and-forth animation phase).
     private const val OP_PINGPONG = OFFSET + 54 // [v, max] → triangle wave in [0, max]
+    private const val OP_TAN = OFFSET + 20
+    private const val OP_ACOS = OFFSET + 22
+    private const val OP_ATAN2 = OFFSET + 24 // [y, x] → atan2(y, x)
 
     // REM-104: stack/geometry ops (upstream AnimatedFloatExpression). HYPOT computes a radial-gradient
     // radius = hypot(w/2, h/2) in countdown/demo_use_of_global; the unimplemented operator previously threw,
@@ -187,6 +193,10 @@ object RpnFloatEvaluator {
         OP_RAD -> { stack[sp] = stack[sp] * FP_TO_DEG; sp }
         OP_SIN -> { stack[sp] = sin(stack[sp].toDouble()).toFloat(); sp }
         OP_COS -> { stack[sp] = cos(stack[sp].toDouble()).toFloat(); sp }
+        // REM-109: trig — TAN/ACOS unary, ATAN2 binary [y, x] (clock_demo2/experimental_solar_gmt/compass).
+        OP_TAN -> { stack[sp] = tan(stack[sp]); sp }
+        OP_ACOS -> { stack[sp] = acos(stack[sp]); sp }
+        OP_ATAN2 -> { stack[sp - 1] = atan2(stack[sp - 1], stack[sp]); sp - 1 }
         // REM-104: HYPOT and its sibling stack/geometry ops (upstream AnimatedFloatExpression).
         OP_HYPOT -> { stack[sp - 1] = hypot(stack[sp - 1], stack[sp]); sp - 1 }
         OP_SQUARE_SUM -> { stack[sp - 1] = stack[sp - 1] * stack[sp - 1] + stack[sp] * stack[sp]; sp - 1 }

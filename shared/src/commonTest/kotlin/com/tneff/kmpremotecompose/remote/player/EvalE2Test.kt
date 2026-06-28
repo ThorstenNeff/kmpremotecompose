@@ -85,6 +85,16 @@ class EvalE2Test {
     }
 
     @Test
+    fun rem109_trigOperators_matchUpstream() {
+        // REM-109: TAN/ACOS unary, ATAN2 binary [y, x].
+        assertEquals(0f, eval(0f, op(20)), 1e-6f, "TAN(0)")
+        assertEquals(1f, eval(0.7853982f, op(20)), 1e-5f, "TAN(π/4)=1")
+        assertEquals(0f, eval(1f, op(22)), 1e-6f, "ACOS(1)")
+        assertEquals(1.5707964f, eval(0f, op(22)), 1e-5f, "ACOS(0)=π/2")
+        assertEquals(0.7853982f, eval(1f, 1f, op(24)), 1e-5f, "ATAN2(1,1)=π/4")
+    }
+
+    @Test
     fun offsetBoundary_isVariableNotOperator() {
         // `> OFFSET` (assist parity fix): id == OFFSET itself is not an operator → treated as a var ref.
         assertEquals(0f, eval(op(0)), "asNan(OFFSET) resolves as an (unset) variable → 0, no throw")
