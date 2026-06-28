@@ -24,6 +24,7 @@ import com.tneff.kmpremotecompose.remote.player.core.RpnFloatEvaluator
 import com.tneff.kmpremotecompose.remote.wire.WireTypes
 import kotlin.test.Test
 import kotlin.test.assertEquals
+import kotlin.test.assertTrue
 
 /**
  * REM-37 Eval-Engine E2 — the RPN float evaluator (MVP operator subset) + `FLOAT_EXPRESSION` apply.
@@ -76,6 +77,45 @@ class EvalE2Test {
     }
 
     @Test
+    fun rem109_pingpong_isTriangleWave() {
+        // REM-109: PINGPONG [v, max] → max2=2·max; t=v%max2; t<max ? t : max2-t.
+        assertEquals(1f, eval(1f, 3f, op(54)), "rising")
+        assertEquals(2f, eval(4f, 3f, op(54)), "falling (4 → 6-4)")
+        assertEquals(1f, eval(7f, 3f, op(54)), "wraps past 2·max")
+        assertEquals(3f, eval(3f, 3f, op(54)), "peak at max")
+    }
+
+    @Test
+    fun rem109_trigOperators_matchUpstream() {
+        // REM-109: TAN/ACOS unary, ATAN2 binary [y, x].
+        assertEquals(0f, eval(0f, op(20)), 1e-6f, "TAN(0)")
+        assertEquals(1f, eval(0.7853982f, op(20)), 1e-5f, "TAN(π/4)=1")
+        assertEquals(0f, eval(1f, op(22)), 1e-6f, "ACOS(1)")
+        assertEquals(1.5707964f, eval(0f, op(22)), 1e-5f, "ACOS(0)=π/2")
+        assertEquals(0.7853982f, eval(1f, 1f, op(24)), 1e-5f, "ATAN2(1,1)=π/4")
+    }
+
+    @Test
+    fun rem109_randSeed_isDeterministicAndInRange() {
+        // REM-109: RAND_SEED [seed] reseeds, RAND pushes [0,1). A fixed seed → reproducible.
+        val a = eval(42f, op(40), op(39))
+        val b = eval(42f, op(40), op(39))
+        assertTrue(a in 0f..1f, "RAND in [0,1), was $a")
+        assertEquals(a, b, "same seed → same random value (reproducible)")
+    }
+
+    @Test
+    fun rem109_lerpAndSmoothStep_matchUpstream() {
+        // REM-109: LERP [a,b,t] → a+(b-a)·t.
+        assertEquals(5f, eval(0f, 10f, 0.5f, op(49)), "LERP midpoint")
+        assertEquals(12.5f, eval(10f, 20f, 0.25f, op(49)), "LERP quarter")
+        // SMOOTH_STEP [val, max, min].
+        assertEquals(0f, eval(-1f, 10f, 0f, op(50)), "below min → 0")
+        assertEquals(1f, eval(11f, 10f, 0f, op(50)), "above max → 1")
+        assertEquals(0.5f, eval(5f, 10f, 0f, op(50)), 1e-6f, "midpoint → 0.5")
+    }
+
+    @Test
     fun offsetBoundary_isVariableNotOperator() {
         // `> OFFSET` (assist parity fix): id == OFFSET itself is not an operator → treated as a var ref.
         assertEquals(0f, eval(op(0)), "asNan(OFFSET) resolves as an (unset) variable → 0, no throw")
@@ -121,8 +161,9 @@ class EvalE2Test {
     @Test
     fun floatExpression_nonMvpOperator_degradesToZero_noCrash() {
         val ctx = RemoteContext()
-        // LERP (OFFSET+49) is still outside the subset (E-D3b) → evaluator throws → apply falls back to 0f.
-        FloatExpression(id = 101, value = floatArrayOf(2f, 3f, op(49))).apply(ctx)
+        // CBRT (OFFSET+28) is still outside the implemented subset → evaluator throws → apply falls back to 0f.
+        // (LERP/op49 used to play this role but is now implemented in REM-109.)
+        FloatExpression(id = 101, value = floatArrayOf(2f, op(28))).apply(ctx)
         assertEquals(0f, ctx.getFloat(101))
     }
 

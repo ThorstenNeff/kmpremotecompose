@@ -72,6 +72,31 @@ class ArrayOpsTest {
     }
 
     @Test
+    fun rem109_arraySumOps_matchUpstream() {
+        // REM-109: A_SUM_TILL [arrayId,last]→Σ0..last, A_SUM_XY [idX,idY]→Σx·y, A_SUM_SQR [arrayId]→Σv².
+        val ctx = RemoteContext()
+        ctx.loadFloatArray(2097194, floatArrayOf(10f, 20f, 30f, 40f, 50f))
+        ctx.loadFloatArray(2097195, floatArrayOf(1f, 2f, 3f))
+        ctx.loadFloatArray(2097196, floatArrayOf(4f, 5f, 6f))
+        val a = WireTypes.asNan(2097194)
+        val x = WireTypes.asNan(2097195)
+        val y = WireTypes.asNan(2097196)
+        assertEquals(60f, ev(ctx, a, 2f, op(76)), "A_SUM_TILL[0..2] = 10+20+30")
+        assertEquals(10f, ev(ctx, a, 0f, op(76)), "A_SUM_TILL[0..0]")
+        assertEquals(150f, ev(ctx, a, 99f, op(76)), "A_SUM_TILL bounds last to array")
+        assertEquals(32f, ev(ctx, x, y, op(77)), "A_SUM_XY = 1·4+2·5+3·6")
+        assertEquals(14f, ev(ctx, x, op(78)), "A_SUM_SQR = 1+4+9")
+    }
+
+    @Test
+    fun rem109_arraySumOps_failSoftWhenMissing() {
+        val ctx = RemoteContext()
+        assertEquals(0f, ev(ctx, WireTypes.asNan(2097194), 2f, op(76)), "A_SUM_TILL missing → 0")
+        assertEquals(0f, ev(ctx, WireTypes.asNan(2097194), WireTypes.asNan(2097195), op(77)), "A_SUM_XY missing → 0")
+        assertEquals(0f, ev(ctx, WireTypes.asNan(2097194), op(78)), "A_SUM_SQR missing → 0")
+    }
+
+    @Test
     fun realFixture_pieChart2_loopBoundResolves() {
         com.tneff.kmpremotecompose.remote.core.operations.Builtins.register()
         val doc = com.tneff.kmpremotecompose.remote.core.document.DocumentReader.inflate(

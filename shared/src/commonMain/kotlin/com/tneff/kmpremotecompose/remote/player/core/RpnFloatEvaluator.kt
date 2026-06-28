@@ -17,6 +17,8 @@ package com.tneff.kmpremotecompose.remote.player.core
 
 import com.tneff.kmpremotecompose.remote.wire.WireTypes
 import kotlin.math.abs
+import kotlin.math.acos
+import kotlin.math.atan2
 import kotlin.math.cos
 import kotlin.math.exp
 import kotlin.math.floor
@@ -29,6 +31,8 @@ import kotlin.math.pow
 import kotlin.math.sign
 import kotlin.math.sin
 import kotlin.math.sqrt
+import kotlin.math.tan
+import kotlin.random.Random
 
 /**
  * The RPN float-expression evaluator (REM-37, Eval-Engine E2) — port of upstream
@@ -78,6 +82,21 @@ object RpnFloatEvaluator {
     private const val OP_IFELSE = OFFSET + 26 // upstream TERNARY_CONDITIONAL: [a, b, cond] → cond>0 ? b : a
     private const val OP_A_SPLINE = OFFSET + 38 // [arrayId, t] → MonotonicSpline(array).getPos(t)
 
+    // REM-109 (slice 2): the remaining E-D3 operators by impact. PINGPONG = triangle wave (used by
+    // text-transform / paths_demos for back-and-forth animation phase).
+    private const val OP_PINGPONG = OFFSET + 54 // [v, max] → triangle wave in [0, max]
+    private const val OP_TAN = OFFSET + 20
+    private const val OP_ACOS = OFFSET + 22
+    private const val OP_ATAN2 = OFFSET + 24 // [y, x] → atan2(y, x)
+    private const val OP_RAND = OFFSET + 39 // push a random float in [0,1)
+    private const val OP_RAND_SEED = OFFSET + 40 // [seed] → reseed the RNG (0 = fresh), pops seed
+    private const val OP_LERP = OFFSET + 49 // [a, b, t] → a + (b-a)·t
+    private const val OP_SMOOTH_STEP = OFFSET + 50 // [val, max, min] → Hermite smoothstep in [0,1]
+
+    // REM-109: shared RNG for RAND/RAND_SEED (mirrors upstream's static `sRandom`). Reseeded by RAND_SEED
+    // so a doc that seeds gets reproducible randomness; default otherwise.
+    private var rng: Random = Random.Default
+
     // REM-104: stack/geometry ops (upstream AnimatedFloatExpression). HYPOT computes a radial-gradient
     // radius = hypot(w/2, h/2) in countdown/demo_use_of_global; the unimplemented operator previously threw,
     // leaving the radius unset (→ 0 → false "degenerate gradient"). Siblings SQUARE/SQUARE_SUM/DUP/SWAP are
@@ -95,6 +114,10 @@ object RpnFloatEvaluator {
     private const val OP_A_SUM = OFFSET + 35
     private const val OP_A_AVG = OFFSET + 36
     private const val OP_A_LEN = OFFSET + 37
+    // REM-109 (slice 2e): array stats for linear_regression / pie_chart2.
+    private const val OP_A_SUM_TILL = OFFSET + 76 // [arrayId, last] → Σ array[0..last]
+    private const val OP_A_SUM_XY = OFFSET + 77 // [idX, idY] → Σ x_i·y_i
+    private const val OP_A_SUM_SQR = OFFSET + 78 // [arrayId] → Σ v_i²
 
     // upstream radian/degree conversion factors.
     private const val FP_TO_RAD = 57.29578f // 180/PI (DEG: radians → degrees)
@@ -153,6 +176,32 @@ object RpnFloatEvaluator {
             stack[sp - 1] = if (arr != null && arr.isNotEmpty()) MonotonicSpline(null, arr).getPos(stack[sp]) else 0f
             sp - 1
         }
+        // REM-109: [arrayId, last] → Σ array[0..last] inclusive (fail-soft: bound to the array, missing → 0).
+        OP_A_SUM_TILL -> {
+            val arr = context.getFloatArray(WireTypes.fromNaN(stack[sp - 1]))
+            val last = stack[sp].toInt()
+            var s = 0f
+            if (arr != null) for (j in 0..minOf(last, arr.size - 1)) s += arr[j]
+            stack[sp - 1] = s
+            sp - 1
+        }
+        // REM-109: [idX, idY] → Σ x_i·y_i over the overlapping length (fail-soft on missing arrays).
+        OP_A_SUM_XY -> {
+            val ax = context.getFloatArray(WireTypes.fromNaN(stack[sp - 1]))
+            val ay = context.getFloatArray(WireTypes.fromNaN(stack[sp]))
+            var s = 0f
+            if (ax != null && ay != null) for (k in 0 until minOf(ax.size, ay.size)) s += ax[k] * ay[k]
+            stack[sp - 1] = s
+            sp - 1
+        }
+        // REM-109: [arrayId] → Σ v_i² (fail-soft: missing → 0).
+        OP_A_SUM_SQR -> {
+            val arr = context.getFloatArray(WireTypes.fromNaN(stack[sp]))
+            var s = 0f
+            if (arr != null) for (v in arr) s += v * v
+            stack[sp] = s
+            sp
+        }
         OP_ADD -> { stack[sp - 1] = stack[sp - 1] + stack[sp]; sp - 1 }
         OP_SUB -> { stack[sp - 1] = stack[sp - 1] - stack[sp]; sp - 1 }
         OP_MUL -> { stack[sp - 1] = stack[sp - 1] * stack[sp]; sp - 1 }
@@ -163,6 +212,13 @@ object RpnFloatEvaluator {
         OP_CLAMP -> { stack[sp - 2] = min(max(stack[sp - 2], stack[sp]), stack[sp - 1]); sp - 2 }
         // REM-109: upstream TERNARY_CONDITIONAL — [a, b, cond] → cond>0 ? b : a (result at sp-2).
         OP_IFELSE -> { stack[sp - 2] = if (stack[sp] > 0f) stack[sp - 1] else stack[sp - 2]; sp - 2 }
+        // REM-109: PINGPONG [v, max] → triangle wave; upstream: tmp = v % (2max); tmp<max ? tmp : 2max-tmp.
+        OP_PINGPONG -> {
+            val max2 = stack[sp] * 2
+            val t = stack[sp - 1] % max2
+            stack[sp - 1] = if (t < stack[sp]) t else max2 - t
+            sp - 1
+        }
         OP_POW -> { stack[sp - 1] = stack[sp - 1].pow(stack[sp]); sp - 1 }
         OP_SQRT -> { stack[sp] = sqrt(stack[sp]); sp }
         OP_ABS -> { stack[sp] = abs(stack[sp]); sp }
@@ -176,6 +232,31 @@ object RpnFloatEvaluator {
         OP_RAD -> { stack[sp] = stack[sp] * FP_TO_DEG; sp }
         OP_SIN -> { stack[sp] = sin(stack[sp].toDouble()).toFloat(); sp }
         OP_COS -> { stack[sp] = cos(stack[sp].toDouble()).toFloat(); sp }
+        // REM-109: trig — TAN/ACOS unary, ATAN2 binary [y, x] (clock_demo2/experimental_solar_gmt/compass).
+        OP_TAN -> { stack[sp] = tan(stack[sp]); sp }
+        OP_ACOS -> { stack[sp] = acos(stack[sp]); sp }
+        OP_ATAN2 -> { stack[sp - 1] = atan2(stack[sp - 1], stack[sp]); sp - 1 }
+        // REM-109: RAND pushes a random [0,1); RAND_SEED reseeds (seed 0 = fresh, else deterministic).
+        OP_RAND -> { stack[sp + 1] = rng.nextFloat(); sp + 1 }
+        OP_RAND_SEED -> {
+            val seed = stack[sp]
+            rng = if (seed == 0f) Random.Default else Random(seed.toRawBits())
+            sp - 1
+        }
+        // REM-109: LERP [a, b, t] → a+(b-a)·t (upstream linear interpolation).
+        OP_LERP -> { stack[sp - 2] = stack[sp - 2] + (stack[sp - 1] - stack[sp - 2]) * stack[sp]; sp - 2 }
+        // REM-109: SMOOTH_STEP [val, max, min] → 0 below min, 1 above max, else Hermite v²(3-2v).
+        OP_SMOOTH_STEP -> {
+            val value = stack[sp - 2]
+            val hi = stack[sp - 1]
+            val lo = stack[sp]
+            stack[sp - 2] = when {
+                value < lo -> 0f
+                value > hi -> 1f
+                else -> { val v = (value - lo) / (hi - lo); v * v * (3 - 2 * v) }
+            }
+            sp - 2
+        }
         // REM-104: HYPOT and its sibling stack/geometry ops (upstream AnimatedFloatExpression).
         OP_HYPOT -> { stack[sp - 1] = hypot(stack[sp - 1], stack[sp]); sp - 1 }
         OP_SQUARE_SUM -> { stack[sp - 1] = stack[sp - 1] * stack[sp - 1] + stack[sp] * stack[sp]; sp - 1 }
