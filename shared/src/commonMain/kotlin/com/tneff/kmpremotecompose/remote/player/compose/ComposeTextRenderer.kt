@@ -113,9 +113,10 @@ class ComposeTextRenderer(
     }
 
     /** Draw a single text run at the baseline `(x, y)` (upstream `drawTextRun`). */
-    fun drawTextRun(canvas: Canvas, text: String, start: Int, end: Int, x: Float, y: Float, rtl: Boolean) {
+    /** Draws the run; returns true iff something was actually painted (false for an empty slice). */
+    fun drawTextRun(canvas: Canvas, text: String, start: Int, end: Int, x: Float, y: Float, rtl: Boolean): Boolean {
         val run = slice(text, start, end)
-        if (run.isEmpty()) return
+        if (run.isEmpty()) return false
         val result = measurer.measure(
             text = run,
             style = currentStyle(run),
@@ -126,6 +127,7 @@ class ComposeTextRenderer(
         canvas.translate(x, y - result.firstBaseline)
         TextPainter.paint(canvas, result)
         canvas.restore()
+        return true
     }
 
     /**
@@ -209,8 +211,8 @@ class ComposeTextRenderer(
         y: Float,
         glyphSpacing: Float = 0f,
         bitmapById: (Int) -> ImageBitmap?,
-    ) {
-        if (text.isEmpty() || font.glyphs.isEmpty()) return
+    ): Boolean {
+        if (text.isEmpty() || font.glyphs.isEmpty()) return false
         val byLongest = font.glyphs.sortedByDescending { it.chars.length }
         val kerning = font.kerning.associate { it.key to it.adjustment }
         // Tint the glyph with the current text color (REM-42b). The glyph bitmaps are alpha/light masks;
@@ -239,6 +241,7 @@ class ComposeTextRenderer(
             prevChars = glyph.chars
             i += glyph.chars.length
         }
+        return true
     }
 
     private fun alignmentToTextAlign(alignment: Int): TextAlign = when (alignment) {
