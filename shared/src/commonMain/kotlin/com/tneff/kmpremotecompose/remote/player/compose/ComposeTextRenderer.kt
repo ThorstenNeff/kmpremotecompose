@@ -18,6 +18,7 @@ package com.tneff.kmpremotecompose.remote.player.compose
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.Canvas
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.ColorFilter
 import androidx.compose.ui.graphics.ImageBitmap
 import androidx.compose.ui.graphics.Paint
 import androidx.compose.ui.text.TextLayoutResult
@@ -190,7 +191,12 @@ class ComposeTextRenderer(
         if (text.isEmpty() || font.glyphs.isEmpty()) return
         val byLongest = font.glyphs.sortedByDescending { it.chars.length }
         val kerning = font.kerning.associate { it.key to it.adjustment }
-        val paint = Paint()
+        // Tint the glyph with the current text color (REM-42b). The glyph bitmaps are alpha/light masks;
+        // drawn raw they render white-on-white (~250 on a white canvas → invisible). Upstream blits the
+        // glyph in the paint color — so apply a tint ColorFilter from the shared paint state (the same
+        // color base text uses via currentStyle), defaulting to black when no state is bound.
+        val tint = paintState?.paint?.color ?: Color.Black
+        val paint = Paint().apply { colorFilter = ColorFilter.tint(tint) }
         var penX = x
         var i = 0
         var prevChars: String? = null
