@@ -16,7 +16,13 @@ kleine Fläche → TEXT. (1. Sweep: anchored_text/moon_phases = 1px-Linien → T
 bit_draw2 = solide Blöcke → FAIL.)
 
 Density (PO Option b): iOS->Android resize, <=2px = dp-Rounding silent, größer geflaggt, >2.25x ERROR.
-Usage: parity_compare.py <android.png> <ios.png> <doc> [--diff-out <dir>]
+
+Desktop-Mode (--no-resize, REM-78): die Compose-Desktop-Render-Sweep-Lane (`screenshots/reference/
+desktop/`) capturet density=1.0 doc-native-px. Gegen iOS-Density-3-Goldens würde der ±2px-Resize-Pfad
+LANCZOS auf ~3-5% Kanten-Pixel anwenden (false-FAILs). Mit --no-resize wird bei dim-Diff ≤2px beidseitig
+auf min-Dim gecroppt (kein Resample → exakte Pixel-Vergleichbarkeit); >2px bleibt PRÜFEN/ERROR-Verhalten.
+
+Usage: parity_compare.py <a.png> <b.png> <doc> [--diff-out <dir>] [--no-resize]
 """
 import sys
 from collections import deque, Counter
@@ -40,7 +46,7 @@ def load_rgb(p):
     return Image.open(p).convert("RGB")
 
 
-def compare(android_path, ios_path, doc, diff_out=None):
+def compare(android_path, ios_path, doc, diff_out=None, no_resize=False):
     a = load_rgb(android_path)
     i = load_rgb(ios_path)
     note = ""
@@ -50,9 +56,21 @@ def compare(android_path, ios_path, doc, diff_out=None):
         if ratio > 2.25 or ratio < 0.444:
             print(f"PARITY | {doc} | a={a.size} i={i.size} | verdict=ERROR reason=size-mismatch({ratio:.2f}x)")
             return "ERROR"
-        i = i.resize(a.size, Image.LANCZOS)
-        note = (" (±2px-density)" if abs(dw) <= 2 and abs(dh) <= 2
-                else f" (resized {ratio:.2f}x>±2px PRÜFEN)")
+        if no_resize:
+            # REM-78 Desktop-Mode: kein LANCZOS-Resample. Bei ≤2px dim-Diff beidseitig auf min-Dim
+            # croppen (Top-Left), >2px ist ein ERROR-Indikator (heterogene Densities — sollte im
+            # Desktop-vs-iOS-Vergleich nicht passieren, beide doc-native sein).
+            if abs(dw) > 2 or abs(dh) > 2:
+                print(f"PARITY | {doc} | a={a.size} i={i.size} | verdict=ERROR reason=no-resize-dim-diff>2px(dw={dw} dh={dh})")
+                return "ERROR"
+            mw, mh = min(a.size[0], i.size[0]), min(a.size[1], i.size[1])
+            a = a.crop((0, 0, mw, mh))
+            i = i.crop((0, 0, mw, mh))
+            note = f" (no-resize, cropped to {mw}x{mh})"
+        else:
+            i = i.resize(a.size, Image.LANCZOS)
+            note = (" (±2px-density)" if abs(dw) <= 2 and abs(dh) <= 2
+                    else f" (resized {ratio:.2f}x>±2px PRÜFEN)")
     w, h = a.size
     total = w * h
     pa = a.load(); pi = i.load()
@@ -118,8 +136,9 @@ def compare(android_path, ios_path, doc, diff_out=None):
 
 if __name__ == "__main__":
     if len(sys.argv) < 4:
-        print("usage: parity_compare.py <android.png> <ios.png> <doc> [--diff-out <dir>]")
+        print("usage: parity_compare.py <a.png> <b.png> <doc> [--diff-out <dir>] [--no-resize]")
         sys.exit(2)
     diff = sys.argv[sys.argv.index("--diff-out") + 1] if "--diff-out" in sys.argv else None
-    v = compare(sys.argv[1], sys.argv[2], sys.argv[3], diff)
+    no_resize = "--no-resize" in sys.argv
+    v = compare(sys.argv[1], sys.argv[2], sys.argv[3], diff, no_resize=no_resize)
     sys.exit({"PASS": 0, "TEXT": 0, "BLANK": 0, "FAIL": 1, "ERROR": 2}.get(v, 2))
