@@ -49,7 +49,10 @@ class RemoteComposeAppDesktopTest {
             ?: error("could not locate androidApp rc corpus from cwd=${File(".").absolutePath}")
     }
 
-    private fun loadRc(name: String): ByteArray =
+    // suspend to match RemoteComposeApp's loadRc: suspend (String) -> ByteArray (REM-82/C5). The read
+    // itself is synchronous; this test injects a file loader instead of the default compose-resources one
+    // so it keeps exercising the on-disk corpus directly (the unified default is covered by the web path).
+    private suspend fun loadRc(name: String): ByteArray =
         File(rcDir, "$name.rc").also {
             require(it.isFile) { "rc fixture not bundled: ${it.absolutePath}" }
         }.readBytes()

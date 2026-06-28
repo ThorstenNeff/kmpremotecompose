@@ -84,6 +84,7 @@ kotlin {
         commonTest {
             dependencies {
                 implementation(libs.kotlin.test)
+                implementation(libs.kotlinx.coroutinesTest) // REM-82: runTest for the suspend loader
             }
             // Generated absolute corpus-root constant (see generateCorpusRoot above).
             kotlin.srcDir(generateCorpusRoot)
