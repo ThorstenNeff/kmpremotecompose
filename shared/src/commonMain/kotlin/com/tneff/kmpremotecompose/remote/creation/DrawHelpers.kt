@@ -20,7 +20,9 @@ import com.tneff.kmpremotecompose.remote.core.operations.draw.DrawCircle
 import com.tneff.kmpremotecompose.remote.core.operations.draw.DrawLine
 import com.tneff.kmpremotecompose.remote.core.operations.draw.DrawOval
 import com.tneff.kmpremotecompose.remote.core.operations.draw.DrawRect
+import com.tneff.kmpremotecompose.remote.core.operations.draw.DrawRoundRect
 import com.tneff.kmpremotecompose.remote.core.operations.draw.DrawSector
+import com.tneff.kmpremotecompose.remote.core.operations.draw.DrawTextOnCircle
 
 /**
  * Procedural draw helpers (REM-86 / E2): one Kotlin function per `DRAW_*` op, [Number]-typed so
@@ -91,6 +93,64 @@ fun RemoteComposeContext.drawSector(
         DrawSector(
             left.toFloat(), top.toFloat(), right.toFloat(), bottom.toFloat(),
             startAngle.toFloat(), sweepAngle.toFloat(),
+        ),
+    )
+}
+
+/**
+ * `DRAW_ROUND_RECT` (REM-113) — rounded rectangle with edges [left], [top], [right], [bottom] and
+ * uniform corner radii ([radiusX], [radiusY]) applied to all four corners. Mirrors upstream
+ * `RemoteComposeWriter.drawRoundRect` (`RemoteComposeWriter.java:1256-1259`) → `DrawBase6` wire.
+ *
+ * All six floats may carry NaN-encoded variable ids (raw bits preserved). The radii are uniform
+ * across all corners (not per-corner) — per Compose convention. For per-corner clipping, use
+ * `LayoutModifier.roundedClipRect` from REM-96 instead.
+ */
+fun RemoteComposeContext.drawRoundRect(
+    left: Number,
+    top: Number,
+    right: Number,
+    bottom: Number,
+    radiusX: Number,
+    radiusY: Number,
+) {
+    add(
+        DrawRoundRect(
+            left.toFloat(), top.toFloat(), right.toFloat(), bottom.toFloat(),
+            radiusX.toFloat(), radiusY.toFloat(),
+        ),
+    )
+}
+
+/**
+ * `DRAW_TEXT_ON_CIRCLE` (REM-113) — render the text previously registered under [textId] along a
+ * circular arc centred at ([centerX], [centerY]) with [radius], starting at [startAngle] degrees
+ * and an optional [warpRadiusOffset] (default `0f` — no per-glyph radius variation).
+ *
+ * Mirrors upstream `RemoteComposeWriter.drawTextOnCircle`
+ * (`RemoteComposeWriter.java:1429-1434`). [textId] is a region-0 plain id allocated by a prior
+ * [addText] (see `TextHelpers.kt`); this helper does NOT allocate. [alignment] /
+ * [placement] are `DrawTextOnCircle.Alignment` / `Placement` enums; defaults `CENTER` /
+ * `OUTSIDE` are the most common; their ordinals are the wire bytes.
+ *
+ * All five floats may carry NaN-encoded variable ids (raw bits preserved).
+ */
+fun RemoteComposeContext.drawTextOnCircle(
+    textId: Int,
+    centerX: Number,
+    centerY: Number,
+    radius: Number,
+    startAngle: Number,
+    warpRadiusOffset: Number = 0f,
+    alignment: DrawTextOnCircle.Alignment = DrawTextOnCircle.Alignment.CENTER,
+    placement: DrawTextOnCircle.Placement = DrawTextOnCircle.Placement.OUTSIDE,
+) {
+    add(
+        DrawTextOnCircle(
+            textId,
+            centerX.toFloat(), centerY.toFloat(), radius.toFloat(),
+            startAngle.toFloat(), warpRadiusOffset.toFloat(),
+            alignment, placement,
         ),
     )
 }

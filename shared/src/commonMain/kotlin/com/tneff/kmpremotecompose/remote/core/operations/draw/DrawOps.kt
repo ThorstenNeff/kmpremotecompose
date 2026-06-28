@@ -68,5 +68,8 @@ object DrawOps {
         Operations.registerInOverlay(Operations.Layer.V7_ANDROIDX, Operations.PARTICLE_COMPARE, ParticlesCompare)
         Operations.registerInOverlay(Operations.Layer.V7_WIDGETS, Operations.PARTICLE_COMPARE, ParticlesCompare)
         Operations.registerInBase(Operations.DRAW_BITMAP, DrawBitmap) // REM-29 (masked behind particles)
+        // REM-113 G2 Advanced-Draw-Shapes (all base).
+        Operations.registerInBase(Operations.DRAW_TEXT_ON_CIRCLE, DrawTextOnCircle)
+        Operations.registerInBase(Operations.DRAW_BITMAP_INT, DrawBitmapInt)
     }
 }

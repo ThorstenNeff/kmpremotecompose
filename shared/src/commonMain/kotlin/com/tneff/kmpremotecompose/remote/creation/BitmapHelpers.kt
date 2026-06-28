@@ -17,6 +17,7 @@ package com.tneff.kmpremotecompose.remote.creation
 
 import com.tneff.kmpremotecompose.remote.core.operations.BitmapData
 import com.tneff.kmpremotecompose.remote.core.operations.draw.DrawBitmap
+import com.tneff.kmpremotecompose.remote.core.operations.draw.DrawBitmapInt
 import com.tneff.kmpremotecompose.remote.core.operations.draw.DrawBitmapScaled
 
 /**
@@ -104,6 +105,43 @@ fun RemoteComposeContext.drawBitmapScaled(
             scaleType = scaleType,
             scaleFactor = scaleFactor.toFloat(),
             contentDescriptionId = contentDescriptionId,
+        ),
+    )
+}
+
+/**
+ * `DRAW_BITMAP_INT` (REM-113) — blit the bitmap at [imageId] from int-coord source rectangle
+ * `(srcLeft..srcRight, srcTop..srcBottom)` into int-coord destination rectangle
+ * `(dstLeft..dstRight, dstTop..dstBottom)`. Mirrors upstream
+ * `RemoteComposeBuffer.addDrawBitmap(int, int, int, ..., int)` →
+ * `DrawBitmapInt.apply` (`DrawBitmapInt.java:152-175`).
+ *
+ * Wire is **10 big-endian ints** — `imageId, src{L,T,R,B}, dst{L,T,R,B}, cdId`. Unlike
+ * [drawBitmap] / [drawBitmapScaled] which take floats, this op carries integer pixel
+ * coordinates verbatim — useful for the bitmap-text + texture corpus that uses integer pixel
+ * addressing in the source bitmap.
+ *
+ * [imageId] is a region-0 plain id allocated by a prior [addBitmap] (this helper does NOT
+ * allocate). [contentDescriptionId] is the optional DATA_TEXT id for a11y (0 = none).
+ */
+fun RemoteComposeContext.drawBitmapInt(
+    imageId: Int,
+    srcLeft: Int,
+    srcTop: Int,
+    srcRight: Int,
+    srcBottom: Int,
+    dstLeft: Int,
+    dstTop: Int,
+    dstRight: Int,
+    dstBottom: Int,
+    contentDescriptionId: Int = 0,
+) {
+    add(
+        DrawBitmapInt(
+            imageId = imageId,
+            srcLeft = srcLeft, srcTop = srcTop, srcRight = srcRight, srcBottom = srcBottom,
+            dstLeft = dstLeft, dstTop = dstTop, dstRight = dstRight, dstBottom = dstBottom,
+            cdId = contentDescriptionId,
         ),
     )
 }
