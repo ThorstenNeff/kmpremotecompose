@@ -28,8 +28,9 @@ class MainActivity : ComponentActivity() {
         // address the rc-* hooks by `id`; built here and passed into the shared composable so commonMain
         // stays platform-clean. On iOS, testTag maps to the accessibility id directly.
         setContent {
+            // REM-82/C5: no platform loader — the shared default reads the corpus via Compose-Multiplatform
+            // resources (composeResources/files/rc/), packaged into the APK by the compose-resources plugin.
             RemoteComposeApp(
-                loadRc = { name -> assets.open("rc/$name.rc").use { it.readBytes() } },
                 modifier = Modifier.semantics { testTagsAsResourceId = true },
             )
         }

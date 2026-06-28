@@ -43,6 +43,7 @@ import com.tneff.kmpremotecompose.remote.player.core.RemoteComposePlayer
 import com.tneff.kmpremotecompose.remote.player.core.renderOpaque
 import com.tneff.kmpremotecompose.remote.player.core.RemoteContext
 import com.tneff.kmpremotecompose.remote.player.core.systemAccentPalette
+import kmpremotecompose.shared.generated.resources.Res
 
 /**
  * REM-8 — the "touchable app" render vehicle. Loads one bundled `.rc`, decodes it through the Layer-1
@@ -56,14 +57,22 @@ import com.tneff.kmpremotecompose.remote.player.core.systemAccentPalette
  * decode-OK pass that draws nothing surfaces `rc-error "rendered empty"` instead of false-greening. The
  * `rc-draw-count` node carries the primitive count for Maestro's independent `^[1-9][0-9]*$` check.
  *
- * @param loadRc platform byte source for a bundled fixture **by name** (Android assets / iOS bundle) —
- *   injected by the entry point so `commonMain` stays free of platform IO. Throws on an unknown name
- *   → surfaced as `rc-error` (contract §2B). The name comes from [RcRouter] (default or deep-link).
+ * @param loadRc **suspend** byte source for a bundled fixture **by name**. Default = the unified
+ *   Compose-Multiplatform resources loader ([Res.readBytes] from `composeResources/files/rc/`), which
+ *   serves the corpus on **every** target — Android/iOS/Desktop read it synchronously under the hood,
+ *   wasmJs fetches it async from the web host (no okio FileSystem in the browser) (REM-82/C5). Suspend
+ *   because the web read is genuinely async; the sole call site is already inside a `LaunchedEffect`
+ *   (below), so no state-machine change is needed. Throws on an unknown name (404 / missing) → surfaced
+ *   as `rc-error` (contract §2B; fail-closed — never returns empty bytes). The name comes from
+ *   [RcRouter] (default or deep-link / web `?rc=`). An entry may still inject a custom loader (tests).
  * @param modifier applied to the root; the Android entry passes `semantics { testTagsAsResourceId =
  *   true }` (Android-only API) so Maestro can address the hooks by `id`. iOS maps testTag → a11y id.
  */
 @Composable
-fun RemoteComposeApp(loadRc: (String) -> ByteArray, modifier: Modifier = Modifier) {
+fun RemoteComposeApp(
+    loadRc: suspend (String) -> ByteArray = { name -> Res.readBytes("files/rc/$name.rc") },
+    modifier: Modifier = Modifier,
+) {
     // The selected bundled doc (REM-34): default, or a deep-link `kmprc://render?rc=<name>` via RcRouter.
     val docName = RcRouter.docName
     // REM-37 E-D1: live-animation flag (deep-link `&live=1`). Default false ⇒ static t=0 (deterministic golden).
