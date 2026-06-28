@@ -221,14 +221,30 @@ class GeometryAdapterIosTest {
     }
 
     @Test
-    fun paintBundle_fillAndStrokeIsApproximatedAsFillAndLoggedVisibly() {
-        // style=2 (FILL_AND_STROKE) has no CMP equivalent → Fill + visible in `deferred` (PO decision).
+    fun paintBundle_fillAndStrokeSetsTwoPassFlagNotDeferred() {
+        // REM-94: style=2 (FILL_AND_STROKE) has no single CMP PaintingStyle, but it is no longer a lossy
+        // fill-only approximation: the applier sets `fillAndStroke` so the geometry adapter draws a fill
+        // pass + a stroke pass (two-pass). paint.style carries Fill (the fill-pass default) and the tag is
+        // NO LONGER deferred — the gap is closed.
         val bundle = PaintData.Builder().style(2).build().values
         val deferred = mutableSetOf<String>()
         val state = PlayerPaintState()
         PaintBundleApplier.applyTo(RemoteContext(), state,bundle, deferred = deferred)
+        assertTrue(state.fillAndStroke, "FILL_AND_STROKE must set the two-pass flag")
         assertEquals(PaintingStyle.Fill, state.paint.style)
-        assertTrue("STYLE_FILL_AND_STROKE" in deferred, "lossy fill+stroke must be logged, not silent")
+        assertTrue("STYLE_FILL_AND_STROKE" !in deferred, "FILL_AND_STROKE is handled now, not deferred")
+    }
+
+    @Test
+    fun paintBundle_plainFillOrStrokeClearsFillAndStrokeFlag() {
+        // REM-94 regression guard: a plain FILL/STROKE after a FILL_AND_STROKE must clear the flag so a
+        // later shape isn't accidentally double-drawn.
+        val state = PlayerPaintState()
+        PaintBundleApplier.applyTo(RemoteContext(), state, PaintData.Builder().style(2).build().values)
+        assertTrue(state.fillAndStroke, "precondition: flag set by FILL_AND_STROKE")
+        PaintBundleApplier.applyTo(RemoteContext(), state, PaintData.Builder().style(1).build().values)
+        assertTrue(!state.fillAndStroke, "plain STROKE clears the two-pass flag")
+        assertEquals(PaintingStyle.Stroke, state.paint.style)
     }
 
     @Test

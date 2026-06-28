@@ -24,6 +24,7 @@ import androidx.compose.ui.graphics.ClipOp
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.Matrix
 import androidx.compose.ui.graphics.Paint
+import androidx.compose.ui.graphics.PaintingStyle
 import androidx.compose.ui.graphics.Path
 import androidx.compose.ui.graphics.PathMeasure
 import androidx.compose.ui.unit.IntOffset
@@ -78,31 +79,48 @@ internal class GeometryPaintDelegate(
 
     // ---- shapes (each pixel-emitting primitive bumps the honest-render draw counter, REM-8) ----
 
-    override fun drawRect(left: Float, top: Float, right: Float, bottom: Float) {
+    /**
+     * REM-94: emit one shape, counted as ONE logical primitive. For `FILL_AND_STROKE`
+     * ([PlayerPaintState.fillAndStroke] — no single CMP [PaintingStyle]) draw it twice: a fill pass then
+     * a stroke pass (the paint already carries width/cap/join) so the outline shows over the fill,
+     * matching upstream `Paint.Style.FILL_AND_STROKE`. The two passes are an implementation detail —
+     * `drawCount` bumps once, so existing (non-fill+stroke) docs keep their exact primitive count.
+     */
+    private inline fun emit(draw: () -> Unit) {
         context.incrementDrawCount()
-        canvas.drawRect(left, top, right, bottom, paint)
+        if (!paintState.fillAndStroke) {
+            draw()
+            return
+        }
+        val savedStyle = paint.style
+        paint.style = PaintingStyle.Fill
+        draw()
+        paint.style = PaintingStyle.Stroke
+        draw()
+        paint.style = savedStyle
     }
+
+    override fun drawRect(left: Float, top: Float, right: Float, bottom: Float) =
+        emit { canvas.drawRect(left, top, right, bottom, paint) }
 
     override fun drawCircle(centerX: Float, centerY: Float, radius: Float) {
         // REM-65: android.graphics.drawCircle has an explicit r<=0 skip that CMP-Canvas forwards; Skiko
         // would otherwise paint abs(r) (e.g. flow_control r=-240). The ONLY real rect-vs-circle divergence:
         // CMP normalizes+draws inverted rects on both platforms (so rect-family is NOT guarded), but a
         // non-positive-radius circle must be skipped to match android.graphics/CMP-Android. Guard before
-        // incrementDrawCount: a skipped shape emits no pixels.
+        // emit: a skipped shape emits no pixels.
         if (radius <= 0f) return
-        context.incrementDrawCount()
-        canvas.drawCircle(Offset(centerX, centerY), radius, paint)
+        emit { canvas.drawCircle(Offset(centerX, centerY), radius, paint) }
     }
 
     override fun drawLine(x1: Float, y1: Float, x2: Float, y2: Float) {
+        // A line has no fill area → FILL_AND_STROKE is meaningless; always a single stroked draw.
         context.incrementDrawCount()
         canvas.drawLine(Offset(x1, y1), Offset(x2, y2), paint)
     }
 
-    override fun drawOval(left: Float, top: Float, right: Float, bottom: Float) {
-        context.incrementDrawCount()
-        canvas.drawOval(left, top, right, bottom, paint)
-    }
+    override fun drawOval(left: Float, top: Float, right: Float, bottom: Float) =
+        emit { canvas.drawOval(left, top, right, bottom, paint) }
 
     override fun drawRoundRect(
         left: Float,
@@ -111,10 +129,7 @@ internal class GeometryPaintDelegate(
         bottom: Float,
         radiusX: Float,
         radiusY: Float,
-    ) {
-        context.incrementDrawCount()
-        canvas.drawRoundRect(left, top, right, bottom, radiusX, radiusY, paint)
-    }
+    ) = emit { canvas.drawRoundRect(left, top, right, bottom, radiusX, radiusY, paint) }
 
     override fun drawArc(
         left: Float,
@@ -123,10 +138,7 @@ internal class GeometryPaintDelegate(
         bottom: Float,
         startAngle: Float,
         sweepAngle: Float,
-    ) {
-        context.incrementDrawCount()
-        canvas.drawArc(left, top, right, bottom, startAngle, sweepAngle, useCenter = false, paint)
-    }
+    ) = emit { canvas.drawArc(left, top, right, bottom, startAngle, sweepAngle, useCenter = false, paint) }
 
     override fun drawSector(
         left: Float,
@@ -135,10 +147,7 @@ internal class GeometryPaintDelegate(
         bottom: Float,
         startAngle: Float,
         sweepAngle: Float,
-    ) {
-        context.incrementDrawCount()
-        canvas.drawArc(left, top, right, bottom, startAngle, sweepAngle, useCenter = true, paint)
-    }
+    ) = emit { canvas.drawArc(left, top, right, bottom, startAngle, sweepAngle, useCenter = true, paint) }
 
     // ---- bitmaps ----
 
@@ -189,15 +198,11 @@ internal class GeometryPaintDelegate(
 
     // ---- path geometry ----
 
-    override fun drawPath(id: Int, start: Float, end: Float) {
-        context.incrementDrawCount()
-        canvas.drawPath(PathGeometry.buildPath(context, id, start, end, deferredPaintTags), paint)
-    }
+    override fun drawPath(id: Int, start: Float, end: Float) =
+        emit { canvas.drawPath(PathGeometry.buildPath(context, id, start, end, deferredPaintTags), paint) }
 
-    override fun drawTweenPath(path1Id: Int, path2Id: Int, tween: Float, start: Float, end: Float) {
-        context.incrementDrawCount()
-        canvas.drawPath(PathGeometry.buildTweenPath(context, path1Id, path2Id, tween, start, end), paint)
-    }
+    override fun drawTweenPath(path1Id: Int, path2Id: Int, tween: Float, start: Float, end: Float) =
+        emit { canvas.drawPath(PathGeometry.buildTweenPath(context, path1Id, path2Id, tween, start, end), paint) }
 
     /** Interpolate two paths' data and store the result under [out] (no draw). */
     override fun tweenPath(out: Int, path1: Int, path2: Int, tween: Float) {
