@@ -25,17 +25,19 @@ Desktop hat keine `kmprc://`-Deep-Links. **Auswahl via `main(args)`** → `RcRou
 
 ---
 
-## 2. 🔴 Der eine echte Watchpoint: Maestro-Desktop-Hook-Adressierung
+## 2. Test-Vehikel für Desktop: `compose-ui-test` (Watchpoint RESOLVED)
 
-Android adressiert die testTags via `semantics { testTagsAsResourceId = true }` (Android-only API); iOS mappt testTag → a11y-id. **Desktop (Compose-Desktop/JVM) braucht das Äquivalent**, damit Maestro-Desktop `rc-canvas`/`rc-rendered`/`rc-error` per id/Tag findet. → Der `modifier`-Param an `RemoteComposeApp` muss die Desktop-korrekte Semantics-Exposition tragen. **Das ist der zu klärende Punkt** (Compose-Desktop-Semantics → Maestro-Desktop-Selector-Mechanismus): testTag direkt adressierbar? a11y-Rolle nötig? test-3 (Maestro-Desktop-Owner) verifiziert den Selektor-Pfad; falls testTag allein nicht greift, ist der Fix lokal im Desktop-`modifier` (wie Androids testTagsAsResourceId), NICHT im geteilten `RemoteComposeApp`.
+> **RESOLVED (test-3, via Maestro-Docs/context7):** **Maestro unterstützt Compose-Desktop NICHT** — Skiko-direct, keine a11y-Bridge/View-Hierarchy → kein `id:rc-canvas`-Selektor-Pfad auf Desktop. Das in-lane-Äquivalent ist **`compose-ui-test-junit4`**: dieselbe `testTag`-API, `onNodeWithTag("rc-rendered").assertExists()`, `awaitIdle()` für den post-Frame-Commit-Sync, headless jvm, reiner jvm-Test-Dep (→ §8-iOS-Regel n/a). test-3 baut den Desktop-`compose-ui-test` gegen das geteilte `RemoteComposeApp(loadRc)` — läuft unabhängig von der Window-Wiring.
+
+**Der Hook-Contract bleibt IDENTISCH** (`rc-canvas` / `rc-rendered`-nach-Frame-Commit / `rc-error` / `rc-doc`) — nur das Test-Vehikel wechselt für Desktop (compose-ui-test statt Maestro). Konsequenz: der Desktop-`modifier` braucht KEINE Maestro-spezifische Semantics-Exposition (`testTagsAsResourceId` ist Android-only und auf Desktop irrelevant); `compose-ui-test` adressiert `testTag` direkt über den Semantics-Tree. Damit ist der ursprüngliche §2-Watchpoint (Maestro-Desktop-Selektor) gegenstandslos.
 
 ---
 
 ## 3. Akzeptanz + Ownership
 
-- **Akzeptanz:** `:desktopApp` startet, lädt ein gebündeltes `.rc` → decode (L1) → L2-Player → **sichtbar auf dem Schirm**; ein Maestro-Desktop-Flow assertet `rc-rendered` + `rc-doc == <name>` (honest-render, nicht „kompiliert"). Parität (Pixel gg. Orakel) ist REM-78s Sweep, NICHT hier — hier reicht „rendert sichtbar + Hooks feuern".
-- **🔴 Review-Watchpoint (aus REM-8 übernommen):** `rc-rendered` muss nach **Frame-Commit** feuern, nicht nach Composition — das erbt die Shell automatisch von `RemoteComposeApp` (committed && drawCount>0); der Reviewer prüft nur, dass die Desktop-Wiring diesen Gate NICHT umgeht (z.B. keinen eigenen rc-rendered-Tag setzt).
-- **Ownership:** Wiring = erster freier Dev; Maestro-Desktop-Flow + Selektor-Verifikation = test-3.
+- **Akzeptanz:** `:desktopApp` startet, lädt ein gebündeltes `.rc` → decode (L1) → L2-Player → **sichtbar auf dem Schirm**; ein **Desktop-`compose-ui-test`** assertet `onNodeWithTag("rc-rendered").assertExists()` (nach `awaitIdle()`) + `rc-doc == <name>` (honest-render, nicht „kompiliert"). Parität (Pixel gg. Orakel) ist REM-78s Sweep, NICHT hier — hier reicht „rendert sichtbar + Hooks feuern".
+- **🔴 Review-Watchpoint (aus REM-8 übernommen):** `rc-rendered` muss nach **Frame-Commit** feuern, nicht nach Composition — das erbt die Shell automatisch von `RemoteComposeApp` (committed && drawCount>0); der Reviewer prüft nur, dass die Desktop-Wiring diesen Gate NICHT umgeht (z.B. keinen eigenen rc-rendered-Tag setzt). (`compose-ui-test`s `awaitIdle()` synct den post-Commit-Zustand.)
+- **Ownership:** Wiring = erster freier Dev; Desktop-`compose-ui-test` (statt Maestro — Maestro stützt Compose-Desktop nicht) = test-3.
 - **Voraussetzung für:** Epic-B-Abschluss (interaktiver Desktop neben REM-78-Headless-Sweep) + Epic-F-Live (Touch/Sensor brauchen den interaktiven Shell).
 
 ---
