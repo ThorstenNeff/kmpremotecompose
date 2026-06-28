@@ -25,11 +25,11 @@ import kotlin.test.assertContentEquals
  * KMP DSL must be **byte-identical** to the upstream-procedural oracle (`procedure_*` corpus fixtures).
  *
  * Three-stage strategy (TechSpec-REM-E §4): (1) round-trip self-consistency, (2) decode-and-inspect,
- * (3) byte-equality vs oracle. This file is the **skeleton** — stage 1 is active now (E1 lifecycle is
- * merged); stages 2/3 against the four named oracles are `@Ignore`d until the ops that build their
- * bodies land (E2–E4) **and** the E1 prolog becomes byte-faithful (flat/map-API auto-selection — see
- * the verified divergence in `docs/e5-creation-byte-conformance-prep.md §3`). Un-ignore each as its
- * dependency lands; the documented op-sequence + id-order in the prep doc is the replication target.
+ * (3) byte-equality vs oracle. Active now: stage 1 (round-trip/determinism) **and** the stage-3 prolog
+ * checkpoint (`e1Prolog_byteMatchesOracleHeaderBlock`) — green since REM-85 made `document{}` byte-faithful.
+ * The four full-fixture targets stay `@Ignore`d until E2–E4 deliver their body ops (draw/text/path/map);
+ * un-ignore each as its ops land. Op-sequence + id-order replication target: `docs/e5-creation-byte-conformance-prep.md`
+ * + the canonical `docs/TECHSPEC-E5-id-order-reference.md`.
  */
 class CreationByteConformanceTest {
 
@@ -90,14 +90,17 @@ class CreationByteConformanceTest {
 
     // ---- Stage-3 early checkpoint: E1 prolog byte-faithfulness (the smallest end-to-end byte proof) ----
 
-    @Ignore // KNOWN-RED (verified): E1 emits v1.1.0 map-API header w/ contentDesc as prop-9; oracle is
-            // v1.0.0 flat header + body DATA_TEXT(42)+ROOT_CONTENT_DESCRIPTION(42). See prep §3. Un-ignore
-            // when dev-3 lands flat/map-API auto-selection; then this is the gating E1 byte-checkpoint.
+    /**
+     * ACTIVE since REM-85 (byte-faithful prolog, develop fad13e2): an empty `document{}` emits exactly
+     * the 48-byte prolog — flat-API v1.0.0 HEADER(29) + DATA_TEXT(id42 "Clock")(14) +
+     * ROOT_CONTENT_DESCRIPTION(42)(5), byte-identical to every procedure_* oracle's first 48 bytes.
+     * ROOT_CONTENT_BEHAVIOR is intentionally NOT here — it arrives in E2 via setRootContentBehavior.
+     * This is the gating E1 byte-checkpoint; the four fixture targets build their bodies on top of it.
+     */
     @Test
     fun e1Prolog_byteMatchesOracleHeaderBlock() {
         val produced = document(width = 300, height = 300, contentDescription = "Clock") { }
-        val oracleBytes = oracle("procedure_gradient1")
-        // first 48 bytes = oracle HEADER(29) + DATA_TEXT(42)(14) + ROOT_CONTENT_DESCRIPTION(42)(5).
-        assertContentEquals(oracleBytes.copyOfRange(0, 48), produced.copyOfRange(0, minOf(48, produced.size)))
+        val oracleProlog = oracle("procedure_gradient1").copyOfRange(0, 48)
+        assertContentEquals(oracleProlog, produced, "empty document{} must equal the 48-byte flat-API prolog")
     }
 }

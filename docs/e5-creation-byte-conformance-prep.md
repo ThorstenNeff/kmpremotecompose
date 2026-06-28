@@ -49,7 +49,13 @@ Prolog identisch (id42). Schwer: **`DATA_PATH(id49, count=2141)`** (großer Path
 
 ---
 
-## 3. 🔴 VERIFIZIERTER E1-Prolog-Befund (pre-E2/E4, gegen develop `a77c6ad`) — E1 ist NOCH NICHT byte-treu
+## 3. ✅ E1-Prolog — GELÖST durch REM-85 (develop `fad13e2`), mein Checkpoint grün
+
+**Update (REM-85 gemergt):** `document(300,300,contentDescription="Clock"){}` ist jetzt **byte-treu** — emittiert exakt den **48-B flat-API-Prolog** (HEADER v1.0.0 29B + `DATA_TEXT(id42 "Clock")` 14B + `ROOT_CONTENT_DESCRIPTION(42)` 5B), byte-identisch zu den ersten 48 B jedes `procedure_*`-Orakels. Mein Stage-3-Checkpoint `e1Prolog_byteMatchesOracleHeaderBlock` ist **un-ignored + grün** (selbst verifiziert, nicht nur PO-Claim). `ROOT_CONTENT_BEHAVIOR` ist korrekt NICHT im Prolog — kommt in E2 via `setRootContentBehavior`. → **Erster echter §2-WRITE-Byte-Beweis steht.** Der ursprüngliche Befund (unten, historisch) war der GATING-Posten, den REM-85 vollendet hat.
+
+---
+
+### (Historisch) 🔴 VERIFIZIERTER E1-Prolog-Befund (pre-REM-85, gegen develop `a77c6ad`) — E1 war NOCH NICHT byte-treu
 
 Ich habe `document(300,300,contentDescription="Clock"){}` ausgeführt + decoded vs `procedure_gradient1`. **`HEADER-BYTE-MATCH = false`.** Drei Divergenzen:
 
