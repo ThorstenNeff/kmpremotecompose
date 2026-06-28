@@ -326,6 +326,10 @@ internal object LayoutMeasure {
         // REM-37 c_text: hand the CoreText its draw origin. Baseline = top − bounds.top (bounds.top is the
         // negative ascent), x = left − bounds.left — mirrors upstream mTextX=-bounds[0], mTextY=-bounds[1].
         node.coreText?.setTextDraw(node.x - node.textLeft, node.y - node.textTop)
+        // REM-74 (FC-D1): also hand over the measured box (absolute top-left + size) so CoreText can wrap
+        // multi-line text to the component width and position the complex layout. Single-line text ignores
+        // this and keeps the baseline origin above (Bein-2: non-wrapping text stays pixel-identical).
+        node.coreText?.setTextBox(node.x, node.y, node.w, node.h)
         for (c in node.children) applyBounds(c)
     }
 

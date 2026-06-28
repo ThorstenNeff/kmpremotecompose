@@ -43,17 +43,31 @@ class TextParityTest {
 
     @Test
     fun parityTable_pinsTheKnownGapClassifications() {
-        fun support(param: String): ParitySupport =
-            TEXT_PARAMETER_PARITY.first { it.parameter == param }.support
+        fun row(param: String) = TEXT_PARAMETER_PARITY.first { it.parameter == param }
+        fun support(param: String): ParitySupport = row(param).support
 
-        // Basis covers these (GAP-1 says CMP has 1:1 equivalents).
+        // CMP has 1:1 equivalents the corpus actually uses (REM-74 wrap path covers them).
         assertEquals(ParitySupport.SUPPORTED, support("maxLines"))
-        assertEquals(ParitySupport.SUPPORTED, support("letterSpacing"))
-        assertEquals(ParitySupport.SUPPORTED, support("underline"))
-        // The real deferred gaps (L2-D1, Skiko Paragraph direct).
-        assertEquals(ParitySupport.UNSUPPORTED, support("hyphenationFrequency"))
-        assertEquals(ParitySupport.UNSUPPORTED, support("justificationMode"))
+        assertEquals(ParitySupport.SUPPORTED, support("maxWidth (wrap)"))
+        assertEquals(ParitySupport.SUPPORTED, support("overflow=ellipsis(END)"))
+        // CMP-common limits (granular Android-only params).
+        assertEquals(ParitySupport.UNSUPPORTED, support("hyphenationFrequency (levels)"))
+        assertEquals(ParitySupport.UNSUPPORTED, support("justificationMode (INTER_WORD) + TextAlign.Justify"))
         // GAP-2 measure divergence is an explicit approximation.
         assertEquals(ParitySupport.APPROXIMATED, support("getTextBounds pixel parity"))
+    }
+
+    @Test
+    fun everyUnsupportedRow_isCosmetic_unexercisedByCorpus() {
+        // REM-74 / D1 thesis: rendering complex text via CMP-common (not raw Skiko Paragraph) is acceptable
+        // ONLY because no [UNSUPPORTED] CMP-limit is exercised by the corpus. The decode proof lives in
+        // Rem74WrapDecisionTest.corpusNeverExercisesCmpLimitedGranularParams; this pins the classification.
+        val exercisedGaps = TEXT_PARAMETER_PARITY
+            .filter { it.support == ParitySupport.UNSUPPORTED && it.corpusExercised }
+        assertTrue(
+            exercisedGaps.isEmpty(),
+            "an UNSUPPORTED CMP-limit is marked corpus-exercised → no longer cosmetic, escalate: " +
+                exercisedGaps.map { it.parameter },
+        )
     }
 }
