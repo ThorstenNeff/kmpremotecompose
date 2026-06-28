@@ -114,6 +114,10 @@ object RpnFloatEvaluator {
     private const val OP_A_SUM = OFFSET + 35
     private const val OP_A_AVG = OFFSET + 36
     private const val OP_A_LEN = OFFSET + 37
+    // REM-109 (slice 2e): array stats for linear_regression / pie_chart2.
+    private const val OP_A_SUM_TILL = OFFSET + 76 // [arrayId, last] → Σ array[0..last]
+    private const val OP_A_SUM_XY = OFFSET + 77 // [idX, idY] → Σ x_i·y_i
+    private const val OP_A_SUM_SQR = OFFSET + 78 // [arrayId] → Σ v_i²
 
     // upstream radian/degree conversion factors.
     private const val FP_TO_RAD = 57.29578f // 180/PI (DEG: radians → degrees)
@@ -171,6 +175,32 @@ object RpnFloatEvaluator {
             val arr = context.getFloatArray(WireTypes.fromNaN(stack[sp - 1]))
             stack[sp - 1] = if (arr != null && arr.isNotEmpty()) MonotonicSpline(null, arr).getPos(stack[sp]) else 0f
             sp - 1
+        }
+        // REM-109: [arrayId, last] → Σ array[0..last] inclusive (fail-soft: bound to the array, missing → 0).
+        OP_A_SUM_TILL -> {
+            val arr = context.getFloatArray(WireTypes.fromNaN(stack[sp - 1]))
+            val last = stack[sp].toInt()
+            var s = 0f
+            if (arr != null) for (j in 0..minOf(last, arr.size - 1)) s += arr[j]
+            stack[sp - 1] = s
+            sp - 1
+        }
+        // REM-109: [idX, idY] → Σ x_i·y_i over the overlapping length (fail-soft on missing arrays).
+        OP_A_SUM_XY -> {
+            val ax = context.getFloatArray(WireTypes.fromNaN(stack[sp - 1]))
+            val ay = context.getFloatArray(WireTypes.fromNaN(stack[sp]))
+            var s = 0f
+            if (ax != null && ay != null) for (k in 0 until minOf(ax.size, ay.size)) s += ax[k] * ay[k]
+            stack[sp - 1] = s
+            sp - 1
+        }
+        // REM-109: [arrayId] → Σ v_i² (fail-soft: missing → 0).
+        OP_A_SUM_SQR -> {
+            val arr = context.getFloatArray(WireTypes.fromNaN(stack[sp]))
+            var s = 0f
+            if (arr != null) for (v in arr) s += v * v
+            stack[sp] = s
+            sp
         }
         OP_ADD -> { stack[sp - 1] = stack[sp - 1] + stack[sp]; sp - 1 }
         OP_SUB -> { stack[sp - 1] = stack[sp - 1] - stack[sp]; sp - 1 }
