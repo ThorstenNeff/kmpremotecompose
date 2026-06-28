@@ -1,8 +1,13 @@
 #!/usr/bin/env python3
-"""parity_sweep — parity_compare über alle Docs in BEIDEN reference/{android,ios}/-Dirs.
+"""parity_sweep — parity_compare über alle Docs in BEIDEN reference-Dirs (android|desktop vs ios|...).
 Buckets: PASS (clean) / TEXT (diffuse Font/AA/thin-line) / BLANK (beide blank, nicht gerendert) /
 FAIL (struktureller Defekt) / ERROR (size). Render-Parität = (PASS+TEXT)/(comparable-BLANK).
-Usage: parity_sweep.py <android_dir> <ios_dir> [--diff-out <dir>]
+
+--no-resize (REM-78): keine Density-Resize-Heuristik (LANCZOS) — fuer den Desktop-Sweep, der bereits
+density=1.0 doc-native-px ist und gegen iOS-Goldens vergleicht, die ebenfalls native-px sind. ≤2px
+dim-Diff = beidseitig auf min-Dim croppen; >2px = ERROR.
+
+Usage: parity_sweep.py <a_dir> <b_dir> [--diff-out <dir>] [--no-resize]
 """
 import os, sys, glob
 from parity_compare import compare
@@ -10,13 +15,16 @@ from parity_compare import compare
 def main():
     a_dir, i_dir = sys.argv[1].rstrip("/"), sys.argv[2].rstrip("/")
     diff = sys.argv[sys.argv.index("--diff-out") + 1] if "--diff-out" in sys.argv else None
+    no_resize = "--no-resize" in sys.argv
     a = {os.path.basename(p) for p in glob.glob(f"{a_dir}/*.png")}
     i = {os.path.basename(p) for p in glob.glob(f"{i_dir}/*.png")}
     both = sorted(a & i); only_a, only_i = sorted(a - i), sorted(i - a)
-    print(f"PARITY-SWEEP-BEGIN android={len(a)} ios={len(i)} comparable={len(both)} ios-only={len(only_i)}")
+    label_a = os.path.basename(a_dir); label_b = os.path.basename(i_dir)
+    print(f"PARITY-SWEEP-BEGIN {label_a}={len(a)} {label_b}={len(i)} comparable={len(both)} "
+          f"{label_b}-only={len(only_i)}" + (f" (no-resize)" if no_resize else ""))
     res = {"PASS": [], "TEXT": [], "BLANK": [], "FAIL": [], "ERROR": []}
     for name in both:
-        res[compare(f"{a_dir}/{name}", f"{i_dir}/{name}", name[:-4], diff)].append(name[:-4])
+        res[compare(f"{a_dir}/{name}", f"{i_dir}/{name}", name[:-4], diff, no_resize=no_resize)].append(name[:-4])
     comp = len(both)
     rendered = comp - len(res["BLANK"])
     ok = len(res["PASS"]) + len(res["TEXT"])
