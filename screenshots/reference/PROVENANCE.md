@@ -215,3 +215,16 @@ NOT refreshed: path_demo_remote_construction (FILL_AND_STROKE golden already CUR
 matches). experimental_gmt / experimental_solar_gmt — NO golden (intentionally HELD = fallback-color pending-oracle, time-
 driven GMT hands); NOT added (would need PO/oracle sign-off, out of REM-105 scope).
 Baseline frozen count +0 (4 in-place updates; held set unchanged).
+
+## REM-112 — Mobile animated/data-doc golden refresh (develop 902c358, stale REM-69-era goldens, 2026-06-28)
+test-2's Web-sweep couldn't prove parity/defect for 4 animated/data-driven docs because the mobile goldens didn't match
+Web/Desktop. ROOT CAUSE (verify-before-route): NOT a frame-pin ambiguity — the goldens were STALE (moon_phases last frozen
+REM-69 `cd770e2`/develop 36f9d18, pre-REM-89/93/98). Current render is deterministic+reproducible (bl_a_d1[REM-93,d=1.0] ==
+pin[902c358,&t=0] = 0.0% cross-branch; &density inert for these 4 on 902c358 → plat==d=1.0=0%). Pin = &t=0/static/d=1.0.
+RE-FROZEN from fresh 902c358 renders (&t=0), both platforms, A<->iOS verified, dims unchanged:
+  • moon_phases — old golden = REM-89 density-LEAK (blown-up clipped band) → now correct half-lit moon phase (post-REM-93). 73.9%.
+  • thumb_wheel2 — old = stale green-bar + clutter → clean blue indicator. 63.2%.
+  • heart_rate_timeline — text re-sized (REM-74/density); heart element present on mobile. 15.0%. NOTE: keeps the separate
+    REM-110 wasm-only gap (heart missing on Web only; Desktop/Mobile show it) — REM-112 fixes the stale-mobile part, REM-110 the Web part.
+  • text_refresh_bug — accent green-clover + arrow now present (REM-68). 10.5%.
+A<->iOS parity 92.6–98.4% (residual = AA + REM-51 dp-round: A 500/500/475/300 · iOS 498/498/474/300). Frozen count +0 (in-place).
