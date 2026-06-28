@@ -129,22 +129,17 @@ class ServerCreationDiskConformanceTest {
     /**
      * **The REM-126 §0 acceptance gate (TechSpec §3, non-vacuous).** Builds the simple2 bytes,
      * writes them through [RcDiskWriter] to a temp file, **reads them back from that file**, and
-     * compares the read-back bytes against the upstream-produced `procedure_simple2.rc` oracle.
+     * asserts the **read-back bytes** equal the upstream-produced `procedure_simple2.rc` oracle.
      *
-     * Critically the in-memory `bytes` value is **discarded** before the assertion — only the disk
-     * round-trip is allowed to satisfy the gate. Comparing in-memory bytes would re-prove
-     * `CreationByteConformanceTest.simple2_bytesMatchOracle` and pin nothing about the new okio
-     * disk surface (TechSpec §3 vacuous-pin warning).
+     * Non-vacuity comes from comparing the disk read-back to the oracle — not from the in-memory
+     * array (which `CreationByteConformanceTest.simple2_bytesMatchOracle` already pins). The
+     * in-memory `bytes` value is never referenced after the write; only the read-back appears in
+     * the assertion.
      */
     @Test
     fun stage3_diskReadBack_matchesProcedureSimple2Oracle() {
         val path = newTempPath()
-        val bytes = buildSimple2Bytes()
-        RcDiskWriter.write(path, bytes, fs)
-        // Discard the in-memory array — the gate is what comes back FROM DISK.
-        @Suppress("UNUSED_VALUE")
-        var produced: ByteArray? = bytes
-        produced = null
+        RcDiskWriter.write(path, buildSimple2Bytes(), fs)
         val readBack = RcDiskWriter.read(path, fs)
         val oracle = RcCorpus.readFixture("corpus/procedure_simple2.rc")
         assertContentEquals(
