@@ -161,8 +161,9 @@ class EvalE2Test {
     @Test
     fun floatExpression_nonMvpOperator_degradesToZero_noCrash() {
         val ctx = RemoteContext()
-        // LERP (OFFSET+49) is still outside the subset (E-D3b) → evaluator throws → apply falls back to 0f.
-        FloatExpression(id = 101, value = floatArrayOf(2f, 3f, op(49))).apply(ctx)
+        // CBRT (OFFSET+28) is still outside the implemented subset → evaluator throws → apply falls back to 0f.
+        // (LERP/op49 used to play this role but is now implemented in REM-109.)
+        FloatExpression(id = 101, value = floatArrayOf(2f, op(28))).apply(ctx)
         assertEquals(0f, ctx.getFloat(101))
     }
 
