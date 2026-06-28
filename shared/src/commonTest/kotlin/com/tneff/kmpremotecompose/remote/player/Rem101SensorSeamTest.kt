@@ -51,6 +51,37 @@ class Rem101SensorSeamTest {
         override fun stop() { stopped = true }
     }
 
+    /**
+     * Records the geometry + matrix draw stream so two renders can be compared for byte-for-byte identity.
+     * Sensor values drive coordinates / rotations / translations, so an identical stream proves the sensor
+     * input had no effect on the render (the static==baseline conformance pin).
+     */
+    private class RecordingDrawPaintContext(context: RemoteContext) : NoOpPaintContext(context) {
+        val log = mutableListOf<String>()
+        override fun drawRect(left: Float, top: Float, right: Float, bottom: Float) { log += "rect($left,$top,$right,$bottom)" }
+        override fun drawCircle(centerX: Float, centerY: Float, radius: Float) { log += "circle($centerX,$centerY,$radius)" }
+        override fun drawLine(x1: Float, y1: Float, x2: Float, y2: Float) { log += "line($x1,$y1,$x2,$y2)" }
+        override fun drawOval(left: Float, top: Float, right: Float, bottom: Float) { log += "oval($left,$top,$right,$bottom)" }
+        override fun drawArc(left: Float, top: Float, right: Float, bottom: Float, startAngle: Float, sweepAngle: Float) { log += "arc($left,$top,$right,$bottom,$startAngle,$sweepAngle)" }
+        override fun drawSector(left: Float, top: Float, right: Float, bottom: Float, startAngle: Float, sweepAngle: Float) { log += "sector($left,$top,$right,$bottom,$startAngle,$sweepAngle)" }
+        override fun drawRoundRect(left: Float, top: Float, right: Float, bottom: Float, radiusX: Float, radiusY: Float) { log += "roundRect($left,$top,$right,$bottom,$radiusX,$radiusY)" }
+        override fun drawPath(id: Int, start: Float, end: Float) { log += "path($id,$start,$end)" }
+        override fun drawTweenPath(path1Id: Int, path2Id: Int, tween: Float, start: Float, end: Float) { log += "tweenPath($path1Id,$path2Id,$tween,$start,$end)" }
+        override fun drawTextRun(textId: Int, start: Int, end: Int, contextStart: Int, contextEnd: Int, x: Float, y: Float, rtl: Boolean) { log += "text($textId,$x,$y)" }
+        override fun matrixTranslate(translateX: Float, translateY: Float) { log += "mTranslate($translateX,$translateY)" }
+        override fun matrixRotate(rotate: Float, pivotX: Float, pivotY: Float) { log += "mRotate($rotate,$pivotX,$pivotY)" }
+        override fun matrixScale(scaleX: Float, scaleY: Float, centerX: Float, centerY: Float) { log += "mScale($scaleX,$scaleY,$centerX,$centerY)" }
+        override fun matrixSkew(skewX: Float, skewY: Float) { log += "mSkew($skewX,$skewY)" }
+    }
+
+    private fun drawStream(name: String, live: Boolean, source: SensorSource): List<String> {
+        val ctx = RemoteContext()
+        ctx.animationEnabled = live
+        val rec = RecordingDrawPaintContext(ctx)
+        RemoteComposePlayer(ctx).paint(doc(name), rec, frameTimeSeconds = if (live) 1f else 0f, sensorSource = source)
+        return rec.log
+    }
+
     private fun doc(name: String): RemoteComposeDocument {
         Builtins.register()
         return DocumentReader.inflate(RcCorpus.readFixture("corpus/$name"))
@@ -89,6 +120,26 @@ class Rem101SensorSeamTest {
         // A non-sensor doc reads no sensor ids.
         assertFalse(RemoteComposePlayer.isSensorDriven(doc("procedure_simple1.rc")))
         assertEquals(emptySet(), RemoteComposePlayer.sensorIdsUsed(doc("procedure_simple1.rc")))
+    }
+
+    @Test fun staticRender_identicalRegardlessOfSource_conformancePin() {
+        // assist TechSpec addition (a): the design-(F) guarantee at RENDER level — a sensor doc in static
+        // mode draws an identical geometry/matrix stream whether the source offers live values or nothing.
+        // This pins that goldens / the REM-78 desktop sweep / the 173-doc conformance corpus are immune to
+        // sensors (they only ever run static). Sensor values drive coords/rotations, so an identical stream
+        // is the byte-for-byte determinism proof.
+        val liveValued = FakeSensorSource(
+            mapOf(17 to 7f, 18 to -3f, 19 to 9.8f, 20 to 1f, 21 to -1f, 22 to 0.5f, 23 to 40f, 24 to -10f, 25 to 5f, 26 to 500f),
+        )
+        for (name in listOf(
+            "sensor_demo_acc_sensor1.rc", "sensor_demo_gyro_sensor1.rc", "sensor_demo_mag_sensor1.rc",
+            "sensor_demo_compass.rc", "sensor_demo_light_sensor1.rc",
+        )) {
+            val baseline = drawStream(name, live = false, source = NoOpSensorSource)
+            val withLiveSource = drawStream(name, live = false, source = liveValued)
+            assertTrue(baseline.isNotEmpty(), "$name should draw something (guard vs vacuous equality)")
+            assertEquals(baseline, withLiveSource, "static render of $name must be identical regardless of sensor source")
+        }
     }
 
     @Test fun staticMode_ignoresSensorSource_keepsZero() {
