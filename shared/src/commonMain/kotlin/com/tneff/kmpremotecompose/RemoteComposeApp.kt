@@ -118,7 +118,9 @@ fun RemoteComposeApp(loadRc: (String) -> ByteArray, modifier: Modifier = Modifie
 
     // Read frameTime at COMPOSITION level (live only) so each advance recomposes → the Canvas redraws.
     val renderTime = if (live) frameTime else 0f
-    val density = LocalDensity.current.density
+    // REM-91: a deep-link `&density=<f>` overrides the platform density for cross-target parity
+    // (iOS-Sim is fixed @3x); absent ⇒ the real platform density (untouched behavior).
+    val density = RcRouter.forcedDensity ?: LocalDensity.current.density
     // The CMP font resolver for the text half (REM-37 c_text / all text docs): without it the text
     // renderer is null and getTextBounds/drawTextRun no-op → text never renders. Supplied from composition.
     val fontResolver = LocalFontFamilyResolver.current
