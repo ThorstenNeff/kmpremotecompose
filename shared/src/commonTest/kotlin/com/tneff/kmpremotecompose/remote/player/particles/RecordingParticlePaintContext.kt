@@ -44,7 +44,14 @@ class RecordingParticlePaintContext(context: RemoteContext) : NoOpPaintContext(c
     private var a = 1f; private var b = 0f; private var c = 0f; private var d = 1f; private var e = 0f; private var f = 0f
     private val stack = ArrayDeque<FloatArray>()
 
-    private fun record() { draws += Draw(e, f) }
+    /**
+     * Record a draw's anchor = the current matrix applied to the draw's local reference point [(x,y)].
+     * MUST be position-dependent on the draw coords: a matrix-translate body draws a LOCAL shape (point
+     * ~origin) so its anchor is the translate (the particle pos); a direct-coordinate body (maze
+     * `drawCircle(particleX, particleY)`, identity matrix) carries the particle pos in (x,y) itself.
+     * Recording only the origin (e,f) would be position-INDEPENDENT for the latter → vacuous match.
+     */
+    private fun record(x: Float, y: Float) { draws += Draw(a * x + c * y + e, b * x + d * y + f) }
 
     private fun mulTranslate(tx: Float, ty: Float) { e += a * tx + c * ty; f += b * tx + d * ty }
     private fun mulScale(sx: Float, sy: Float) { a *= sx; b *= sx; c *= sy; d *= sy }
@@ -67,18 +74,18 @@ class RecordingParticlePaintContext(context: RemoteContext) : NoOpPaintContext(c
     override fun scale(scaleX: Float, scaleY: Float) { mulScale(scaleX, scaleY) }
     override fun translate(translateX: Float, translateY: Float) { mulTranslate(translateX, translateY) }
 
-    // --- body draws: record the transformed local origin (the particle anchor). ---
-    override fun drawCircle(centerX: Float, centerY: Float, radius: Float) { record() }
-    override fun drawLine(x1: Float, y1: Float, x2: Float, y2: Float) { record() }
-    override fun drawPath(id: Int, start: Float, end: Float) { record() }
-    override fun drawTweenPath(path1Id: Int, path2Id: Int, tween: Float, start: Float, end: Float) { record() }
-    override fun drawRoundRect(left: Float, top: Float, right: Float, bottom: Float, radiusX: Float, radiusY: Float) { record() }
-    override fun drawOval(left: Float, top: Float, right: Float, bottom: Float) { record() }
-    override fun drawBitmap(id: Int, left: Float, top: Float, right: Float, bottom: Float) { record() }
+    // --- body draws: record the transformed draw anchor (circle centre, line start, path/shape origin). ---
+    override fun drawCircle(centerX: Float, centerY: Float, radius: Float) { record(centerX, centerY) }
+    override fun drawLine(x1: Float, y1: Float, x2: Float, y2: Float) { record(x1, y1) }
+    override fun drawPath(id: Int, start: Float, end: Float) { record(0f, 0f) }
+    override fun drawTweenPath(path1Id: Int, path2Id: Int, tween: Float, start: Float, end: Float) { record(0f, 0f) }
+    override fun drawRoundRect(left: Float, top: Float, right: Float, bottom: Float, radiusX: Float, radiusY: Float) { record((left + right) / 2f, (top + bottom) / 2f) }
+    override fun drawOval(left: Float, top: Float, right: Float, bottom: Float) { record((left + right) / 2f, (top + bottom) / 2f) }
+    override fun drawBitmap(id: Int, left: Float, top: Float, right: Float, bottom: Float) { record((left + right) / 2f, (top + bottom) / 2f) }
     override fun drawBitmap(
         imageId: Int,
         srcLeft: Int, srcTop: Int, srcRight: Int, srcBottom: Int,
         dstLeft: Int, dstTop: Int, dstRight: Int, dstBottom: Int,
         cdId: Int,
-    ) { record() }
+    ) { record((dstLeft + dstRight) / 2f, (dstTop + dstBottom) / 2f) }
 }

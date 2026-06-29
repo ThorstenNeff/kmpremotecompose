@@ -22,13 +22,27 @@ class Rem143EvolutionGateTest {
 
     private val DT = ParticleFrameSchedule.DT
 
-    /** Run a system's body ops with reconstruction vars for frame [k] → the expected per-particle anchors. */
-    private fun expectedAnchors(system: ParticleSystemDecoder.System, frames: List<Array<FloatArray>>): List<List<RecordingParticlePaintContext.Draw>> {
+    /**
+     * Run a system's body ops with reconstruction vars for frame [k] → the expected per-particle anchors.
+     * The body's matrix ops reference DOC-level vars (sizes, scales), so the context is seeded exactly as
+     * the player does — system vars + the doc's variable phase — then MY independent particle vars are
+     * overlaid (the doc Phase-A is generic setup, not the particle orchestration → independence holds).
+     */
+    private fun expectedAnchors(
+        doc: com.tneff.kmpremotecompose.remote.core.document.RemoteComposeDocument,
+        system: ParticleSystemDecoder.System,
+        frames: List<Array<FloatArray>>,
+        schedule: ParticleFrameSchedule.Schedule,
+    ): List<List<RecordingParticlePaintContext.Draw>> {
+        val docW = doc.width.toFloat(); val docH = doc.height.toFloat()
         return frames.mapIndexed { k, frame ->
+            val ctx = RemoteContext().also { it.setDensity(1f); it.animationEnabled = true; it.seedHostPalette() }
+            ctx.seedSystemVariables(docW, docH, schedule.times[k], 1f)
+            ctx.loadFloat(RemoteContext.ID_ANIMATION_DELTA_TIME, if (k == 0) 0f else DT)
+            // doc variable phase (generic doc vars; particle ops are seeded-once → harmless no-op here).
+            for (op in doc.operations) if (op is VariableSupport) { op.updateVariables(ctx); op.apply(ctx) }
             val anchors = mutableListOf<RecordingParticlePaintContext.Draw>()
             for (p in 0 until system.create.particleCount) {
-                val ctx = RemoteContext().also { it.setDensity(1f); it.animationEnabled = true; it.seedHostPalette() }
-                ctx.loadFloat(RemoteContext.ID_ANIMATION_DELTA_TIME, if (k == 0) 0f else DT)
                 for (v in system.create.varIds.indices) ctx.loadFloat(system.create.varIds[v], frame[p][v])
                 val rec = RecordingParticlePaintContext(ctx)
                 for (op in system.body) {
@@ -57,7 +71,7 @@ class Rem143EvolutionGateTest {
             val frames = system.reconstruction.evolve(schedule.frameCount) { k, ctx ->
                 ctx.loadFloat(RemoteContext.ID_ANIMATION_DELTA_TIME, if (k == 0) 0f else DT)
             }
-            val expected = expectedAnchors(system, frames)
+            val expected = expectedAnchors(doc, system, frames, schedule)
             for (k in expected.indices) {
                 val u = unmatched(expected[k], captured.getOrElse(k) { emptyList() }, tol = 0.1f)
                 if (k == 0) seedUnmatched += u
