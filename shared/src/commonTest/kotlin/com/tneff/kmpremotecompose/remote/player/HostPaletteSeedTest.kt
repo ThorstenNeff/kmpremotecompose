@@ -17,6 +17,7 @@ package com.tneff.kmpremotecompose.remote.player
 
 import com.tneff.kmpremotecompose.remote.core.operations.NamedVariable
 import com.tneff.kmpremotecompose.remote.player.core.RemoteContext
+import com.tneff.kmpremotecompose.remote.player.core.baselineHostPalette
 import com.tneff.kmpremotecompose.remote.player.core.seedHostPalette
 import kotlin.test.Test
 import kotlin.test.assertEquals
@@ -49,5 +50,18 @@ class HostPaletteSeedTest {
         val ctx = RemoteContext()
         NamedVariable(varId = 72, varType = 0, name = "color.system_accent1_100").apply(ctx)
         assertEquals(0, ctx.getColor(72), "no seed ⇒ no override")
+    }
+
+    @Test fun default_seedsTheDeterministicBaseline_notTheLivePalette() {
+        // The no-arg default MUST be the deterministic baseline (capture determinism), so a harness that
+        // calls seedHostPalette() gets the same palette on every target — incl. Android, deliberately
+        // overriding its live Material-You accent (analog to the density=1.0 capture pin).
+        val ctx = RemoteContext()
+        ctx.seedHostPalette() // default
+        val explicit = RemoteContext().also { it.seedHostPalette(baselineHostPalette()) }
+        NamedVariable(varId = 73, varType = 0, name = "color.system_accent1_500").apply(ctx)
+        NamedVariable(varId = 73, varType = 0, name = "color.system_accent1_500").apply(explicit)
+        assertEquals(explicit.getColor(73), ctx.getColor(73), "default == explicit baseline")
+        assertEquals(0xFF6476A5.toInt(), ctx.getColor(73), "baseline accent1_500 (deterministic)")
     }
 }
