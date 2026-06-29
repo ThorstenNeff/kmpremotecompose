@@ -171,6 +171,53 @@ class LayoutModifierByteTest {
     }
 
     @Test
+    fun backgroundColorRef_emitsFlags2_andStoresColorIdAndZeroRgba() {
+        // REM-144 S1 — dynamic-color form (flags=2 / colorId / rgba=0). Mirror upstream
+        // addModifierBackground(colorId, shape) overload:
+        // BackgroundModifierOperation.apply(buffer, 2, colorId, 0, 0, 0, 0, 0, 0, shape).
+        val mod = emit { backgroundColorRef(colorId = 1, shape = 0) }
+        val b = mod.first { it is BackgroundModifier } as BackgroundModifier
+        assertEquals(2, b.flags, "backgroundColorRef → flags=2 (resolve-by-colorId switch)")
+        assertEquals(1, b.colorId)
+        assertEquals(0, b.reserve1)
+        assertEquals(0, b.reserve2)
+        assertEquals(0f, b.r); assertEquals(0f, b.g); assertEquals(0f, b.b); assertEquals(0f, b.a)
+        assertEquals(0, b.shapeType)
+    }
+
+    @Test
+    fun backgroundColorRef_fullByteEquality_vsCorpusFixture_backgroundId() {
+        // REM-144 S1 — Stage-2 sub-span byte-anchor: the MODIFIER_BACKGROUND 37-byte op on
+        // `c_modifier_background_id.rc` carries `flags=2, colorId=1` (system colour id, NOT a
+        // region-0 ColorExpression — empirical decode finding, REM-144 scoping). Build a
+        // synthetic procedural-DSL document carrying the same `backgroundColorRef(colorId=1)`,
+        // extract the MODIFIER_BACKGROUND op span, assert byte-equal against the corpus span.
+        // **Direct corpus byte-anchor** — the op is ID-decoupled at the wire level (colorId is a
+        // plain int the caller writes; no allocator coupling at the op itself).
+        val corpus = com.tneff.kmpremotecompose.conformance.RcCorpus
+            .readFixture("corpus/c_modifier_background_id.rc")
+        val corpusOps = DocumentReader.inflateWithTrace(corpus).second
+        val bgOpcode = com.tneff.kmpremotecompose.remote.core.operations.Operations.MODIFIER_BACKGROUND
+        val corpusBgSpan = corpusOps.first { it.opcode == bgOpcode }
+        // 1 opcode + 4 ints(flags, colorId, res1, res2) + 4 floats(r, g, b, a) + 1 int(shapeType) = 37 B.
+        assertEquals(37, corpusBgSpan.byteEnd - corpusBgSpan.byteStart, "MODIFIER_BACKGROUND wire = 37 B")
+        val corpusBgBytes = corpus.copyOfRange(corpusBgSpan.byteStart, corpusBgSpan.byteEnd)
+
+        val emitted = document(width = 100, height = 100) {
+            box(modifier = LayoutModifier().backgroundColorRef(colorId = 1, shape = 0)) {}
+        }
+        val emittedOps = DocumentReader.inflateWithTrace(emitted).second
+        val emittedBgSpan = emittedOps.first { it.opcode == bgOpcode }
+        val emittedBgBytes = emitted.copyOfRange(emittedBgSpan.byteStart, emittedBgSpan.byteEnd)
+        assertTrue(
+            corpusBgBytes.contentEquals(emittedBgBytes),
+            "MODIFIER_BACKGROUND 37-byte op sub-span emitted by LayoutModifier.backgroundColorRef " +
+                "must byte-match c_modifier_background_id.rc — direct §2 corpus anchor for the " +
+                "dynamic-color background wire shape (parallel to REM-141 S1 borderColorRef).",
+        )
+    }
+
+    @Test
     fun borderColorRef_fullByteEquality_vsCorpusFixture_dynamicBorder() {
         // REM-141 S1 — Stage-2 sub-span byte-anchor: the MODIFIER_BORDER 45-byte op on
         // `c_modifier_dynamic_border.rc` is ID-decoupled at the op level (`colorId` is a plain
