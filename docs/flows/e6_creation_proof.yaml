@@ -1,0 +1,49 @@
+# RC Conformance — E6 Compose-Creation §6 End-to-End Proof (REM-144 S4)
+# Owner: test-1 (QA). Create-side: dev-3 (E6CreationProofLoader.kt + MainActivity dispatch).
+#
+# Zweck: der PROJECT §6 "done means Maestro-proven"-Bar fuer die GANZE E6-Compose-Creation-DSL-Linie.
+# Der Deep-Link `kmprc://render?rc=e6_creation_proof` laesst die App zur LAUFZEIT ueber die
+# Compose-Creation-DSL ein .rc bauen (buildE6ProofDocument: Row mit 3x BoxLeaf 100x100, rot/gruen/blau,
+# 300x100) und durch die existierende RemoteComposePlayer-Decode+Render-Pipeline rendern. Gruener Flow
+# == create-Seite speist render-Seite in einer echten App (create -> render end-to-end).
+#
+# ORACLE (coarse-grain, W9-Flakiness-Guard — NICHT pixel-perfekt):
+#   - rc-rendered sichtbar  = Frame committed (post-frame-commit honesty anchor).
+#   - rc-error NICHT sichtbar = kein Decode-/Render-Fehler.
+#   - rc-doc == "e6_creation_proof" = das gerenderte Doc IST das create-seitig erzeugte (kein Fallback).
+#   - rc-draw-count == "3" = genau die 3 BoxLeaf-Rects wurden gezeichnet (Struktur-Oracle der 3 Farb-Rects).
+# Die FARBEN (rot|gruen|blau an 3 bekannten Positionen) liegen in einem opaken Canvas (kein per-Rect-
+# Test-id) → coarse 3-Region-Farb-Sampling als test-1-Evidenz (großzuegige Toleranz, kein pixel-Golden):
+#   Canvas [78,153]-[378,253]; Zentren (128,203)=rot (228,203)=gruen (328,203)=blau. Verifiziert 2026-06-29.
+#
+# Lauf:  maestro test docs/flows/e6_creation_proof.yaml   (Android; emulator-5554 / Pixel_8a)
+
+appId: com.tneff.kmpremotecompose.android
+name: "E6 create->render §6 proof"
+tags:
+  - e6
+  - conformance
+  - render
+---
+- launchApp:
+    clearState: true
+- openLink:
+    link: "kmprc://render?rc=e6_creation_proof"
+    autoVerify: true
+- assertVisible:
+    id: "rc-canvas"
+- extendedWaitUntil:
+    visible:
+      id: "rc-rendered"
+    timeout: 10000
+    label: "post-frame-commit honesty anchor — erst dann asserten"
+- assertNotVisible:
+    id: "rc-error"
+- assertVisible:
+    id: "rc-doc"
+    text: "e6_creation_proof"
+    label: "gerendertes Doc == create-seitig erzeugtes (kein Resource-Fallback)"
+- assertVisible:
+    id: "rc-draw-count"
+    text: "3"
+    label: "genau 3 Rects gezeichnet (3-Farb-Row Struktur-Oracle)"
