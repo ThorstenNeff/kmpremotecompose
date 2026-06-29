@@ -33,8 +33,12 @@ REM-109)**. Berührt **NICHT** LayoutMeasure — reine Paint-Walk + Eval + Op-Fe
 - **ImpulseStart** (`IMPULSE_START`, Container; duration/startAt) + **ImpulseProcess** (`IMPULSE_PROCESS`,
   Container): Timeline-Block — re-evaluiert seine Kinder pro Frame über `[startAt, startAt+duration]`. Treibt
   die zeit-basierte Animation; bindet an den continuous-repaint-Clock (REM-36 E-D1, `wakeIn`).
-- **PARTICLE_COMPARE** (op 194): opcode existiert, keine Klasse — vermutl. Conditional im Loop-Body. Bei
-  S2-Impl prüfen; falls in keinem der 7 Docs aktiv → loud-guard/deferred (D1-Disziplin).
+- **PARTICLE_COMPARE** (op 194; **decode-aufgelöst — NICHT loud-guard, korpus-AKTIV**): Klasse
+  `ParticlesCompare(id, flags, min, max, compare[], equations1[], equations2[])` = ein **per-Partikel-
+  Conditional**: wertet `compare` (+ min/max-Range) pro Partikel aus → wendet `equations1` ODER `equations2`
+  auf den Partikel-State an (Branch). **Aktiv in `maze`/`maze1`/`maze2` (4× je, zusammen mit
+  `ConditionalOperations`)** = die Maze-Per-Partikel-Branch-Logik; confetti/hearts/particle: 0. → **S2-Scope**
+  (gehört zur Evolution; S1-Seed-Frame rendert maze ohne es). NICHT defer-loud-guard.
 
 ## 3. Design (normativ)
 
@@ -161,5 +165,7 @@ baut es, test-3 fährt es. Gepinnter Contract:
      **entfällt** → **Partikel-RNG-Seed-Pin** (RenderTimePins/REM-57-analog, reine Capture-Config, §2-irrelevant)
      für deterministische Goldens. Korrektheits-Gate in BEIDEN Fällen = **Daten-Orakel** (N Partikel an Soll-Seed-
      Positionen, REM-123-Klasse), NICHT Pixel-Match. (Seed-Pin-Owner: Tester-Config.)
-  2. **PARTICLE_COMPARE:** defer-S2, **loud-guard falls korpus-absent** (D1) — approved.
+  2. **PARTICLE_COMPARE (decode-aufgelöst):** korpus-AKTIV in maze/maze1/maze2 (4× je) — **NICHT loud-guard.**
+     Klasse `ParticlesCompare` (per-Partikel-Conditional, compare→equations1/2-Branch) → **S2-Scope** (Maze-
+     Evolution); confetti/hearts/particle nutzen es nicht. S1-Seed-Frame braucht es nicht (s. §2).
   3. **Multi-Frame-Orakel-Harness:** **dev-1** baut das Tooling, **test-3** fährt das Gate.
