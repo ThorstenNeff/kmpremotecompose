@@ -323,8 +323,18 @@ internal object LayoutMeasure {
             for (child in node.children) measureSizes(child, contentW, contentH, context, depth + 1)
         }
 
-        if (node.width?.type == DimensionType.WRAP) node.w = aggregate(node, horizontal = true) + padW
-        if (node.height?.type == DimensionType.WRAP) node.h = aggregate(node, horizontal = false) + padH
+        // WRAP either when the modifier says so, or — REM-134 — when a flex container (Row/Column) has NO
+        // modifier on that axis: Compose's default is wrap-content, not fill. (resolveDim defaulted a
+        // missing modifier to parent-avail, which made attribute_string's height-less Rows each FILL the
+        // column height → the 6 rows stacked off-screen, only line 1 visible.) An explicit FILL/EXACT is
+        // untouched; only the no-modifier flex case flips to wrap.
+        val flex = node.kind == Kind.ROW || node.kind == Kind.COLUMN
+        if (node.width?.type == DimensionType.WRAP || (flex && node.width == null)) {
+            node.w = aggregate(node, horizontal = true) + padW
+        }
+        if (node.height?.type == DimensionType.WRAP || (flex && node.height == null)) {
+            node.h = aggregate(node, horizontal = false) + padH
+        }
     }
 
     /** Pass 2 — positions: assign each node an absolute (x,y); arrange layout children; recurse. */

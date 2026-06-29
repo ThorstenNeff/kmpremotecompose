@@ -112,8 +112,9 @@ class Rem134ComponentContentTest {
         val bigRow = rows(render().draws).first { row -> row.any { it.text == "Big" } }
         val sizes = bigRow.map { it.size }.toSet()
         assertTrue(sizes.size > 1, "precondition: the Big row mixes font sizes, got $sizes")
-        val baselines = bigRow.map { it.baseline }.toSet()
-        assertEquals(1, baselines.size, "all spans on a row must share a single text baseline (AlignBy)")
+        // Tolerance compare (not exact Float set): float-rounded baseline math can differ by ~1 ULP.
+        val spread = bigRow.maxOf { it.baseline } - bigRow.minOf { it.baseline }
+        assertTrue(spread < 1f, "all spans on a row must share one baseline (AlignBy); spread=${spread}px")
     }
 
     @Test
@@ -122,6 +123,19 @@ class Rem134ComponentContentTest {
         for (i in 1 until rowBaselines.size) {
             assertTrue(rowBaselines[i] > rowBaselines[i - 1], "row $i must sit below row ${i - 1}")
         }
+    }
+
+    @Test
+    fun allRows_fitWithinCanvasHeight() {
+        // REM-134 regression guard for the test-3 RED (rows had no height modifier → each FILLED the column
+        // → 6 rows stacked ~492px apart → only line 1 on the 500px canvas). With Row/Column wrap-content the
+        // last row's baseline must sit inside the canvas. (This is the class an all-zero-metrics fake misses,
+        // so the fake here uses non-trivial per-span metrics.)
+        val draws = render().draws
+        val maxBaseline = draws.maxOf { it.baseline }
+        assertTrue(maxBaseline < 500f, "all 6 rows must fit in the 500px canvas; max baseline was $maxBaseline")
+        // And there must be ≥6 distinct row baselines actually rendered (not collapsed to one line).
+        assertTrue(rows(draws).size >= 6, "all 6 AttributedString lines must render, got ${rows(draws).size}")
     }
 
     @Test
