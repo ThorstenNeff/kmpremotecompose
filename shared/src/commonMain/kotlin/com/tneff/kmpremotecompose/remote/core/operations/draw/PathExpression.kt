@@ -18,6 +18,11 @@ package com.tneff.kmpremotecompose.remote.core.operations.draw
 import com.tneff.kmpremotecompose.remote.core.operations.Operation
 import com.tneff.kmpremotecompose.remote.core.operations.OperationReader
 import com.tneff.kmpremotecompose.remote.core.operations.Operations
+import com.tneff.kmpremotecompose.remote.player.core.PathGenerator
+import com.tneff.kmpremotecompose.remote.player.core.RemoteContext
+import com.tneff.kmpremotecompose.remote.player.core.RpnFloatEvaluator
+import com.tneff.kmpremotecompose.remote.player.core.VariableSupport
+import com.tneff.kmpremotecompose.remote.player.core.resolveCoord
 import com.tneff.kmpremotecompose.remote.wire.WireBuffer
 
 /**
@@ -27,6 +32,11 @@ import com.tneff.kmpremotecompose.remote.wire.WireBuffer
  * Wire layout (mirrors upstream `PathExpression.apply`/`read`): opcode byte + int `id` + int `flags` +
  * float `min` + float `max` + float `count` + int `lenX` + `lenX`×float (X) + int `lenY` + `lenY`×float (Y).
  * Float values may carry NaN-encoded ids; raw bits preserved.
+ *
+ * **REM-127 render-apply:** upstream `PathExpression implements VariableSupport` — a PRODUCER. In
+ * [apply] it samples `X(t)`/`Y(t)` over `[min,max]` (`t` injected as the RPN `VAR1`) via [PathGenerator]
+ * into cubic-marker path-data and loads it under [id]; the existing `DrawPath#id` (REM-121) renders it.
+ * Render-only: [write]/[read] and the raw fields are untouched → 173-byte-conformance intact (§2/§6).
  */
 class PathExpression(
     val id: Int,
@@ -36,9 +46,36 @@ class PathExpression(
     val count: Float,
     val expressionX: FloatArray,
     val expressionY: FloatArray,
-) : Operation {
+) : Operation, VariableSupport {
 
     override val opcode: Int get() = Operations.PATH_EXPRESSION
+
+    /**
+     * REM-127 — evaluate the path and load it into the store (producer side). MVP re-evaluates every
+     * frame (no dirty tracking, mirrors the E1 eval MVP). Flags: `LOOP=0x1`, mode `=(flags & 0x6)`
+     * (0=SPLINE/2=MONOTONIC/4=LINEAR), `POLAR=0x8`, `winding=(flags & 0x3000000) >> 24`.
+     */
+    override fun apply(context: RemoteContext) {
+        val rCount = context.resolveCoord(count).toInt()
+        if (rCount < 2) return // upstream throws on 0; fail-soft (a degenerate count renders nothing)
+        val rMin = context.resolveCoord(min)
+        val rMax = context.resolveCoord(max)
+        val mode = flags and 0x6
+        val loop = (flags and 0x1) == LOOP
+        val winding = (flags and WINDING_MASK) ushr 24
+        // Our RpnFloatEvaluator resolves a NaN var-ref inline (getFloat) AND substitutes VAR1=t, so the
+        // raw expression arrays can be evaluated directly per sample — no pre-resolve pass needed.
+        val eval: (FloatArray, Float) -> Float = { expr, t -> RpnFloatEvaluator.eval(expr, expr.size, context, t) }
+        val path = if ((flags and POLAR) == POLAR) {
+            // POLAR: r = X(t), angle = t, centre = the (resolved) 2-element Y array (upstream getPolarPath).
+            val center = FloatArray(expressionY.size) { context.resolveCoord(expressionY[it]) }
+            PathGenerator.getPolarPath(expressionX, center, rMin, rMax, rCount, mode, loop, eval)
+        } else {
+            PathGenerator.getPath(expressionX, expressionY, rMin, rMax, rCount, mode, loop, eval)
+        }
+        context.putPathData(id, path)
+        context.putPathWinding(id, winding)
+    }
 
     override fun write(buffer: WireBuffer) {
         buffer.writeByte(opcode)
@@ -78,6 +115,11 @@ class PathExpression(
     }
 
     companion object : OperationReader {
+        // REM-127 flag bits (upstream PathExpression): mode = flags & 0x6 (0=SPLINE/2=MONOTONIC/4=LINEAR).
+        private const val LOOP = 1
+        private const val POLAR = 8
+        private const val WINDING_MASK = 0x3000000
+
         /** NaN-safe float-array equality on raw bits (the wire carries NaN-encoded ids). */
         private fun rawEquals(a: FloatArray, b: FloatArray): Boolean {
             if (a.size != b.size) return false
