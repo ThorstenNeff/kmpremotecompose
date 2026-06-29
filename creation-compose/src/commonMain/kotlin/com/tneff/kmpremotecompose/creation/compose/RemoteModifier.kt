@@ -176,6 +176,22 @@ open class RemoteModifier private constructor(internal val elements: List<Remote
         RemoteModifier(elements + AlignByElement(line.toFloat(), flags))
 
     /**
+     * REM-130 T2 — `spacedBy` (modifier-chain setter on the procedural `LayoutModifier`, NOT a
+     * separate wire op). Stored on the container's open-op (e.g. `LAYOUT_COLUMN`'s `spacedBy`
+     * field). Required to byte-match Column/Row corpus docs where `spacedBy != 0`
+     * (e.g. `c_modifier_border.rc` Column.spacedBy=20). [value] may carry a NaN-encoded id-ref
+     * for dynamic spacing — float bits preserved.
+     *
+     * **Modifier-chain, not context-method:** mirrors REM-96 `LayoutModifier.spacedBy(value)`
+     * (`LayoutContainerHelpers.kt:107`) — applied via the standard `applyToLayoutModifier(lm)`
+     * hook by setting `lm.spacedBy`. No new wire op; no new emitter. The container helper
+     * (`column()` / `row()`) reads `modifier.spacedBy` from the procedural-DSL LayoutModifier
+     * when emitting the open-op.
+     */
+    fun spacedBy(value: Number): RemoteModifier =
+        RemoteModifier(elements + SpacedByElement(value.toFloat()))
+
+    /**
      * Convert to a REM-96 [LayoutModifier] for emission. Each element registers itself via the
      * public chain API of [LayoutModifier] — no `@PublishedApi internal` access, no separate
      * code path: the bytes the procedural helpers produce here are byte-identical to bytes a
@@ -292,5 +308,11 @@ internal data class ScrollElement(val direction: Int) : RemoteModifierElement {
 internal data class AlignByElement(val line: Float, val flags: Int) : RemoteModifierElement {
     override fun applyToLayoutModifier(lm: LayoutModifier) {
         lm.alignBy(line, flags)
+    }
+}
+
+internal data class SpacedByElement(val value: Float) : RemoteModifierElement {
+    override fun applyToLayoutModifier(lm: LayoutModifier) {
+        lm.spacedBy(value)
     }
 }

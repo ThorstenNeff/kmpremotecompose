@@ -254,9 +254,10 @@ class LayoutModifier {
     }
 
     /**
-     * `MODIFIER_SCROLL` — scroll wrapper. Emits the **full upstream op group** (verified against
-     * `c_modifier_vertical_scroll.rc` + `c_modifier_horizontal_scroll.rc` corpus fixtures via
-     * a full-byte assertContentEquals over the scroll-region — NOT just MODIFIER_SCROLL).
+     * `MODIFIER_SCROLL` — scroll wrapper. Emits the **full upstream op group** — verified
+     * byte-for-byte against both scroll-direction corpus fixtures by
+     * `LayoutModifierByteTest.scroll_fullByteEquality_vsCorpusFixture_{vertical,horizontal}Scroll`
+     * (the horizontal test was added in REM-130; the docstring previously over-claimed it).
      *
      * **Wire group, mirror upstream:**
      *  - `ScrollModifier.write()` (`creation/modifiers/ScrollModifier.java:42-46`) — when

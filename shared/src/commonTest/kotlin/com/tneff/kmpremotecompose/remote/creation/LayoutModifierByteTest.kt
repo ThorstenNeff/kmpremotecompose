@@ -354,6 +354,81 @@ class LayoutModifierByteTest {
     }
 
     /**
+     * REM-130 — Mirror of [scroll_fullByteEquality_vsCorpusFixture_verticalScroll] for
+     * `SCROLL_HORIZONTAL`. Was previously asserted in the `scroll()` docstring ("verified against
+     * `c_modifier_vertical_scroll.rc` + `c_modifier_horizontal_scroll.rc`") but the H test never
+     * existed — assist (REM-130 corpus-anchor confirm, 2026-06-29) flagged the overclaim. This
+     * test closes that gap so the docstring is now truthful.
+     *
+     * Difference from the V test: `direction=1` (instead of 0) at the MODIFIER_SCROLL operand,
+     * and TOUCH_EXPRESSION `exp[0] = asNan(13) = FLOAT_TOUCH_POS_X` (instead of `asNan(14) = POS_Y`).
+     * All other bytes — id-allocator values (positionId=42, maxId=43, notchMaxId=44 at virgin
+     * pool), value/min/max NaN-id-refs, MUL marker, stop logic, expected lengths — are identical.
+     */
+    @Test
+    fun scroll_fullByteEquality_vsCorpusFixture_horizontalScroll() {
+        // The expected 76-byte scroll-region for SCROLL_HORIZONTAL (direction=1, exp[0]=POS_X).
+        val expectedScrollRegion = byteArrayOf(
+            // DATA_FLOAT(id=42, value=0f)
+            0x50,
+            0x00, 0x00, 0x00, 0x2A,
+            0x00, 0x00, 0x00, 0x00,
+            // MODIFIER_SCROLL(direction=1, asNan(42), asNan(43), asNan(44))
+            0xE2.toByte(),
+            0x00, 0x00, 0x00, 0x01, // direction = 1 (horizontal)
+            0xFF.toByte(), 0x80.toByte(), 0x00, 0x2A,
+            0xFF.toByte(), 0x80.toByte(), 0x00, 0x2B,
+            0xFF.toByte(), 0x80.toByte(), 0x00, 0x2C,
+            // TOUCH_EXPRESSION(id=42, value=0f, min=0f, max=asNan(43), velocityId=0f, touchEff=3,
+            //                  exp=[asNan(13)=FLOAT_TOUCH_POS_X, -1f, asNan(0x310003)=MUL],
+            //                  stopLogic=STOP_GENTLY<<16=0, stops=[], easing=[])
+            0x9D.toByte(),
+            0x00, 0x00, 0x00, 0x2A, // id
+            0x00, 0x00, 0x00, 0x00, // value
+            0x00, 0x00, 0x00, 0x00, // min
+            0xFF.toByte(), 0x80.toByte(), 0x00, 0x2B, // max=asNan(43)
+            0x00, 0x00, 0x00, 0x00, // velocityId
+            0x00, 0x00, 0x00, 0x03, // touchEffects=3
+            0x00, 0x00, 0x00, 0x03, // exp.length=3
+            0xFF.toByte(), 0x80.toByte(), 0x00, 0x0D, // exp[0]=FLOAT_TOUCH_POS_X=asNan(13)
+            0xBF.toByte(), 0x80.toByte(), 0x00, 0x00, // exp[1]=-1f
+            0xFF.toByte(), 0xB1.toByte(), 0x00, 0x03, // exp[2]=MUL=asNan(0x310003)
+            0x00, 0x00, 0x00, 0x00, // stopLogic = 0
+            0x00, 0x00, 0x00, 0x00, // easing.length = 0
+            // CONTAINER_END
+            0xD6.toByte(),
+        )
+
+        // (a) DSL-produced scroll region.
+        val dslBytes = document(width = 200, height = 200) {
+            box(modifier = LayoutModifier().scroll(direction = LayoutModifier.SCROLL_HORIZONTAL)) {}
+        }
+        val dslStart = findScrollRegionStart(dslBytes)
+        val dslRegion = dslBytes.copyOfRange(dslStart, dslStart + expectedScrollRegion.size)
+        assertTrue(
+            expectedScrollRegion.contentEquals(dslRegion),
+            "DSL-produced horizontal-scroll bytes diverge from the hand-computed expected sequence",
+        )
+
+        // (b) Corpus-fixture scroll region (Gold-Oracle).
+        val fixtureBytes = com.tneff.kmpremotecompose.conformance.RcCorpus
+            .readFixture("corpus/c_modifier_horizontal_scroll.rc")
+        val fixStart = findScrollRegionStart(fixtureBytes)
+        val fixRegion = fixtureBytes.copyOfRange(fixStart, fixStart + expectedScrollRegion.size)
+        assertTrue(
+            expectedScrollRegion.contentEquals(fixRegion),
+            "Fixture c_modifier_horizontal_scroll.rc scroll-region diverges from the expected " +
+                "sequence — either upstream changed or the audit was wrong",
+        )
+
+        // (c) Triple-pin: DSL and fixture must agree byte-for-byte at the scroll region.
+        assertTrue(
+            dslRegion.contentEquals(fixRegion),
+            "DSL horizontal-scroll-region bytes ≠ fixture scroll-region bytes (§2-divergence)",
+        )
+    }
+
+    /**
      * Find the start of the scroll-region by scanning for the DATA_FLOAT(id=42, value=0f) byte
      * signature — that's the first op of the scroll group at the virgin allocator state.
      * Returns the offset of the leading DATA_FLOAT opcode byte (0x50).
@@ -494,13 +569,43 @@ class LayoutModifierByteTest {
     }
 
     @Test
-    fun alignBy_writesLineFloat_andZeroFlagsByDefault() {
-        // Upstream addModifierAlignBy(line): AlignByModifierOperation.apply(buffer, line, 0).
-        // RemoteComposeBuffer.java:1782-1784.
+    fun alignBy_fullByteEquality_vsCorpusFixture_alignByBaseline() {
+        // REM-130 — Replaces the prior `alignBy_writesLineFloat_andZeroFlagsByDefault` test, which
+        // pinned a fictional `line=12.5f` value that appears in no corpus document (assist flagged
+        // the fictional anchor in the REM-130 corpus-anchor confirm, 2026-06-29). The fix lifts
+        // the line value from the real corpus fixture (raw NaN bits — the corpus encodes line as
+        // a NaN-id-ref to an auto-resolved baseline reference), so the byte-anchor is grounded
+        // against the upstream oracle rather than a literal we wrote ourselves.
+        //
         // MODIFIER_ALIGN_BY (237) lives in the ANDROIDX_EXPERIMENTAL_OVERLAY (Operations.kt:413-417);
-        // NOT valid under baseline/flat-form documents. The test bypasses document() to use the
-        // map-form (api 7) writer with PROFILE_ANDROIDX | PROFILE_EXPERIMENTAL — the same pattern
-        // REM-92's namedVariable_byteAnchor test used for experimental-only ops.
+        // requires PROFILE_ANDROIDX | PROFILE_EXPERIMENTAL, map-form api=7. `c_modifier_align_by_baseline.rc`
+        // matches that profile (header `props=[5=500,6=500,9=DemoModifierAlignByBaseline,14=513]`).
+        val corpus = com.tneff.kmpremotecompose.conformance.RcCorpus
+            .readFixture("corpus/c_modifier_align_by_baseline.rc")
+        // Locate the MODIFIER_ALIGN_BY op (opcode 237 = 0xED) in the corpus byte stream and lift
+        // its 4-byte big-endian `line` payload. (Doing it from raw bytes — not via the inflated
+        // op — preserves the exact NaN payload; `Float == Float` semantics drop NaN identity but
+        // raw-bit lifting via `Float.fromBits(int)` is byte-faithful.)
+        val alignByOpcode = com.tneff.kmpremotecompose.remote.core.operations.Operations.MODIFIER_ALIGN_BY
+        val corpusOps = DocumentReader.inflateWithTrace(corpus).second
+        val alignBySpan = corpusOps.first { it.opcode == alignByOpcode }
+        // Wire: 1B opcode + 4B float(line) + 4B int(flags) = 9 bytes.
+        assertEquals(9, alignBySpan.byteEnd - alignBySpan.byteStart, "MODIFIER_ALIGN_BY wire = 9 B")
+        val lineBits = ((corpus[alignBySpan.byteStart + 1].toInt() and 0xff) shl 24) or
+            ((corpus[alignBySpan.byteStart + 2].toInt() and 0xff) shl 16) or
+            ((corpus[alignBySpan.byteStart + 3].toInt() and 0xff) shl 8) or
+            (corpus[alignBySpan.byteStart + 4].toInt() and 0xff)
+        val corpusLine = Float.fromBits(lineBits)
+        // flags is at offset +5..+9 (big-endian int).
+        val corpusFlags = ((corpus[alignBySpan.byteStart + 5].toInt() and 0xff) shl 24) or
+            ((corpus[alignBySpan.byteStart + 6].toInt() and 0xff) shl 16) or
+            ((corpus[alignBySpan.byteStart + 7].toInt() and 0xff) shl 8) or
+            (corpus[alignBySpan.byteStart + 8].toInt() and 0xff)
+        assertEquals(0, corpusFlags, "corpus alignBy flags must be 0 (default)")
+
+        // Emit our own MODIFIER_ALIGN_BY with the corpus-derived line value and assert the 9-byte
+        // op span is byte-identical (raw-NaN preservation is the §2-critical property — signaling
+        // NaN payloads can be repacked silently in some toolchains).
         val profile = Profile(
             operationsProfiles = com.tneff.kmpremotecompose.remote.core.operations.Operations.PROFILE_ANDROIDX or
                 com.tneff.kmpremotecompose.remote.core.operations.Operations.PROFILE_EXPERIMENTAL,
@@ -514,12 +619,23 @@ class LayoutModifierByteTest {
             ),
             profile = profile,
         )
-        ctx.box(modifier = LayoutModifier().alignBy(line = 12.5f)) {}
-        val ops = com.tneff.kmpremotecompose.remote.core.document.DocumentReader
-            .inflate(ctx.encodeToByteArray()).operations
-        val a = ops.first { it is AlignByModifier } as AlignByModifier
-        assertEquals(12.5f, a.line)
-        assertEquals(0, a.flags, "flags default = 0 per addModifierAlignBy contract")
+        ctx.box(modifier = LayoutModifier().alignBy(line = corpusLine, flags = corpusFlags)) {}
+        val emitted = ctx.encodeToByteArray()
+        val emittedOps = DocumentReader.inflateWithTrace(emitted).second
+        val emittedSpan = emittedOps.first { it.opcode == alignByOpcode }
+        val emittedBytes = emitted.copyOfRange(emittedSpan.byteStart, emittedSpan.byteEnd)
+        val corpusBytes = corpus.copyOfRange(alignBySpan.byteStart, alignBySpan.byteEnd)
+        assertTrue(
+            corpusBytes.contentEquals(emittedBytes),
+            "MODIFIER_ALIGN_BY 9-byte op sub-span emitted by LayoutModifier.alignBy(line=Float.fromBits, " +
+                "flags=0) must byte-match c_modifier_align_by_baseline.rc — NaN raw-bit preservation pin.",
+        )
+        // Belt-and-suspenders: the inflated AlignByModifier must round-trip the raw NaN bits
+        // exactly (some toolchains repack signaling NaN silently; this catches that explicitly).
+        val inflatedAlignBy = DocumentReader.inflate(emitted).operations
+            .first { it is AlignByModifier } as AlignByModifier
+        assertEquals(lineBits, inflatedAlignBy.line.toRawBits(), "raw NaN bits preserved through round-trip")
+        assertEquals(corpusFlags, inflatedAlignBy.flags, "flags preserved through round-trip")
     }
 
     @Test

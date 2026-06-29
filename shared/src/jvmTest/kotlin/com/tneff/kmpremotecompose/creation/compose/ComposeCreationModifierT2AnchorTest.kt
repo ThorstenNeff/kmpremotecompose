@@ -33,35 +33,40 @@ import kotlin.test.assertContentEquals
 import kotlin.test.assertEquals
 
 /**
- * REM-130 — T2 Modifier-Extension anchors (Pfad A: 3 full-doc Stage-2 + 1 corpus sub-span Stage-2 +
- * 3 Stage-1 compose==procedural, gated on assist's REM-96 transitive-corpus-confirm).
+ * REM-130 — T2 Modifier-Extension anchors (post-assist-correction Pfad A**: 4 full-doc Stage-2 + 1
+ * corpus sub-span Stage-2 + 1 Stage-1-transitive (scroll-V, REM-96-anchored) + 1 deferred to T3).
  *
  * **Bug #2 lesson pre-applied:** properties-table empirically decoded from each fixture via
  * transient probe before this file was written — every fixture verified for profile (PROFILE_ANDROIDX
  * 0x200 or 0x201 = +PROFILE_EXPERIMENTAL), w/h dims, contentDescription, container shape, and
  * modifier-bytes layout.
  *
- * **Anchor strategy per T2 modifier:**
+ * **Assist-correction (msg 1521041913241931928):** the original Stage-1 plan for scroll-H,
+ * alignBy, visibility claimed transitive §2 via REM-96; assist NO-GO'd that because REM-96 only
+ * actually anchors scroll-V byte-for-byte (the others land at decode/source/literal anchors, not
+ * corpus). Replaced with direct corpus anchors where the fixtures permit; visibility full-doc
+ * remains deferred to T3 (needs ANIMATED_FLOAT primitive composable).
  *
- * | Modifier            | Strategy           | Why                                                              |
- * |---------------------|--------------------|------------------------------------------------------------------|
- * | `padding`           | Stage-2 full-doc   | `c_modifier_padding.rc` = Column + 2× BoxLeaf, fully buildable. |
- * | `clipRect`          | Stage-2 full-doc   | `c_modifier_clip_rect.rc` = single BoxLeaf, fully buildable.    |
- * | `roundedClipRect`   | Stage-2 full-doc   | `c_modifier_clip_rounded_rect.rc` = single BoxLeaf.             |
- * | `border`            | Stage-2 sub-span   | Corpus uses Column.spacedBy=20 (out of T2 scope). Sub-span:     |
- * |                     |                    | MODIFIER_BORDER op bytes have no ID coupling → byte-stable.     |
- * | `scroll` (h/v)      | Stage-1            | Scroll group uses NaN-id-ref-coupling (FloatConstant id) →      |
- * |                     |                    | sub-span not stable across docs. Transitive via REM-96.         |
- * | `alignBy`           | Stage-1 (+ probe)  | Corpus shows `line=NaN` (likely id-ref) + `flags=0`. Stage-1    |
- * |                     |                    | compose==procedural; gated on assist REM-96 confirm.            |
- * | `visibility`        | Stage-1 (+ id-ref) | Corpus needs ANIMATED_FLOAT primitive (out of T2 scope) →       |
- * |                     |                    | full-doc Stage-2 deferred to T3. Stage-1 compose==procedural    |
- * |                     |                    | + explicit raw-int-id-ref byte check (5-byte op).               |
+ * **Anchor strategy per T2 modifier (corrected mapping):**
  *
- * The Stage-1 tests do not on their own constitute a §2 gate (two of our own writers agreeing on
- * bytes is a circular guarantee). They become §2 only when transitively chained to the corpus via
- * REM-96 `LayoutModifierByteTest.{scroll,alignBy,visibility}_*` — that completeness claim is
- * routed to assist for parallel confirmation per the PO dispatch.
+ * | Modifier            | Strategy                          | Why                                                                |
+ * |---------------------|-----------------------------------|--------------------------------------------------------------------|
+ * | `padding`           | Stage-2 full-doc                  | `c_modifier_padding.rc` = Column + 2× BoxLeaf, fully buildable.   |
+ * | `clipRect`          | Stage-2 full-doc                  | `c_modifier_clip_rect.rc` = single BoxLeaf, fully buildable.      |
+ * | `roundedClipRect`   | Stage-2 full-doc                  | `c_modifier_clip_rounded_rect.rc` = single BoxLeaf.               |
+ * | `border` (static)   | Stage-2 full-doc                  | `c_modifier_border.rc` reproducible with Column(spacedBy(20)) +   |
+ * |                     |                                   | 2× BoxLeaf (width/height/border). Dynamic-color (colorId-ref)     |
+ * |                     |                                   | path is T3.                                                       |
+ * | `scroll-V`          | Stage-1 transitive (REM-96 V-anchor) | REM-96 has a full-byte corpus anchor for scroll-V; transitivity   |
+ * |                     |                                   | is real here. Compose-DSL == procedural-DSL byte-for-byte.        |
+ * | `scroll-H`          | Stage-1 transitive (NEW REM-96 H-anchor) | This PR adds REM-96 scroll-H full-byte test against              |
+ * |                     |                                   | `c_modifier_horizontal_scroll.rc` to close the previously         |
+ * |                     |                                   | over-claimed-but-untested docstring.                              |
+ * | `alignBy`           | Stage-2 sub-span (NaN raw-bits)   | `c_modifier_align_by_baseline.rc` MODIFIER_ALIGN_BY 9-byte op     |
+ * |                     |                                   | bytes; `line.toRawBits()` = corpus NaN bits (NOT 12.5f);           |
+ * |                     |                                   | experimental profile.                                              |
+ * | `visibility`        | Stage-1 + int-id-ref byte check   | Full-doc Stage-2 against corpus deferred to T3 — needs            |
+ * |                     |                                   | ANIMATED_FLOAT primitive composable.                              |
  */
 class ComposeCreationModifierT2AnchorTest {
 
@@ -175,46 +180,55 @@ class ComposeCreationModifierT2AnchorTest {
     }
 
     // -------------------------------------------------------------------------------------------
-    // Stage-2 SUB-SPAN anchor (border — ID-decoupled op bytes from `c_modifier_border.rc`)
+    // Stage-2 FULL-DOC anchor (border — corpus has Column.spacedBy=20 + padding(20); modifier-chain
+    // additions in this PR (RemoteModifier.spacedBy + .padding) make full-doc reproducible)
     // -------------------------------------------------------------------------------------------
 
     /**
-     * `c_modifier_border.rc` (262 B) full-doc reproduction is blocked by Column.spacedBy=20
-     * (container-API extension, out of T2 scope). The MODIFIER_BORDER op itself is ID-decoupled
-     * (`flags=0, colorId=0, reserve1=0, reserve2=0, borderWidth, roundedCorner, r/g/b/a, shape`)
-     * → byte-identical regardless of surrounding container shape. Extract the corpus MODIFIER_BORDER
-     * op bytes (the inner 4×4=45-byte run), build a small Compose-DSL doc carrying the same border
-     * modifier on a BoxLeaf, extract the same op span, assert byte-equal.
+     * `c_modifier_border.rc` (262 B, PROFILE_ANDROIDX, 400×400, contentDescription="") —
+     * `ColumnLayout(POS_START/POS_TOP/spacedBy=20)` + padding(20,20,20,20) → LayoutContent → 2×
+     * childless BoxLayout(POS_CENTER/POS_CENTER) each with width(100)/height(100)/border(4f,
+     * 0.1f, color, shape=2). First border = red 0xffff0000, second = blue 0xff0000ff.
      *
-     * **Direct corpus anchor**: this is the strongest form for ID-decoupled ops — Compose-emit
-     * bytes = corpus bytes, no transitivity needed. Bypasses the "two-of-our-writers-agreeing"
-     * concern flagged in the PO dispatch.
+     * **Switched from sub-span to full-doc** per assist correction (msg 1521041913241931928):
+     * `c_modifier_border.rc` IS a dedicated single-modifier fixture and full-doc Stage-2 is the
+     * stronger gate. spacedBy(20) is now part of the T2 modifier-chain API (mirrors REM-96
+     * `LayoutModifier.spacedBy`) — same data-class-element pattern.
+     *
+     * **Dynamic-color border (colorId-ref) is T3:** the corpus `c_modifier_dynamic_border.rc`
+     * carries `colorId=42` and a ColorExpression op; the procedural-DSL `border()` only accepts
+     * `color: Int`, can't emit the dynamic form. Out of T2 scope.
      */
     @Test
-    fun stage2_subSpan_border_matchesCModifierBorderOpBytes() = runBlocking {
-        val corpus = RcCorpus.readFixture("corpus/c_modifier_border.rc")
-        val corpusBorderBytes = extractFirstOpBytes(corpus, Operations.MODIFIER_BORDER)
-        assertEquals(45, corpusBorderBytes.size, "MODIFIER_BORDER wire-size on c_modifier_border.rc = 45 B")
-
+    fun stage2_border_matchesCModifierBorderOracle_byteForByte() = runBlocking {
         val produced = captureSingleRemoteDocument(
             width = 400, height = 400, profile = androidx, contentDescription = "",
         ) {
             RemoteRoot {
-                RemoteBoxLeaf(
+                RemoteColumn(
                     modifier = RemoteModifier
-                        .width(DimensionType.EXACT, 100f)
-                        .height(DimensionType.EXACT, 100f)
-                        // First border in the corpus: 4 px, roundedCorner 0.1, red, shape=2 (CIRCLE).
-                        .border(borderWidth = 4f, roundedCorner = 0.1f, color = 0xffff0000.toInt(), shape = 2),
-                )
+                        .spacedBy(20f)
+                        .padding(20f),
+                ) {
+                    RemoteBoxLeaf(
+                        modifier = RemoteModifier
+                            .width(DimensionType.EXACT, 100f)
+                            .height(DimensionType.EXACT, 100f)
+                            .border(borderWidth = 4f, roundedCorner = 0.1f, color = 0xffff0000.toInt(), shape = 2),
+                    )
+                    RemoteBoxLeaf(
+                        modifier = RemoteModifier
+                            .width(DimensionType.EXACT, 100f)
+                            .height(DimensionType.EXACT, 100f)
+                            .border(borderWidth = 4f, roundedCorner = 0.1f, color = 0xff0000ff.toInt(), shape = 2),
+                    )
+                }
             }
         }
-        val producedBorderBytes = extractFirstOpBytes(produced, Operations.MODIFIER_BORDER)
         assertContentEquals(
-            corpusBorderBytes,
-            producedBorderBytes,
-            "MODIFIER_BORDER op sub-span (45 B, no ID coupling) emitted by RemoteModifier.border " +
-                "must byte-match the upstream-corpus bytes — direct §2 anchor.",
+            RcCorpus.readFixture("corpus/c_modifier_border.rc"),
+            produced,
+            "RemoteModifier.border + Column.spacedBy(20)/padding(20) must byte-match c_modifier_border.rc.",
         )
     }
 
@@ -322,47 +336,49 @@ class ComposeCreationModifierT2AnchorTest {
     }
 
     /**
-     * `MODIFIER_ALIGN_BY` is profile-experimental (PROFILE_ANDROIDX | PROFILE_EXPERIMENTAL, map-form
-     * api=7). Stage-1 compose==procedural. The corpus `line=NaN` is empirically the procedural
-     * helper's NaN-id-ref encoding for the auto-resolved baseline reference — Stage-2 sub-span is
-     * therefore deferred to REM-96 transitive confirm (assist).
+     * `MODIFIER_ALIGN_BY` Stage-2 corpus sub-span anchor vs `c_modifier_align_by_baseline.rc`.
+     * **Replaces the prior Stage-1 anchor that pinned line=12.5f** (fictional value — no corpus
+     * doc carries that). Reads the 4 line-bytes (big-endian float) from the corpus MODIFIER_ALIGN_BY
+     * sub-span, passes `Float.fromBits(corpusBits)` to `RemoteModifier.alignBy(line, flags=0)`,
+     * and asserts the emitted sub-span byte-equals the corpus sub-span (raw NaN bits intact —
+     * critical because `Float.NaN != Float.NaN` and any signaling-NaN repack would diverge).
+     *
+     * **Profile:** PROFILE_ANDROIDX | PROFILE_EXPERIMENTAL, map-form api=7 — `MODIFIER_ALIGN_BY`
+     * lives in the AndroidX-experimental overlay (REM-96 [LayoutModifier.alignBy] docstring).
+     * `c_modifier_align_by_baseline.rc` header property `9=DemoModifierAlignByBaseline` is part
+     * of the header (no separate TEXT_DATA op) — `contentDescription=""` keeps the body ops
+     * untouched.
      */
     @Test
-    fun stage1_alignBy_composeEqualsProcedural() = runBlocking {
+    fun stage2_subSpan_alignBy_matchesCModifierAlignByBaselineOpBytes() = runBlocking {
+        val corpus = RcCorpus.readFixture("corpus/c_modifier_align_by_baseline.rc")
+        val corpusAlignBySpan = extractFirstOpSpan(corpus, Operations.MODIFIER_ALIGN_BY)
+        // Corpus MODIFIER_ALIGN_BY wire = 1B opcode + 4B float(line) + 4B int(flags) = 9 bytes.
+        assertEquals(9, corpusAlignBySpan.size, "MODIFIER_ALIGN_BY wire-size = 9 B (opcode + line + flags)")
+        // Extract the corpus `line` raw float bits (big-endian, bytes 1..5). Float.fromBits
+        // preserves the exact NaN payload — including any signaling-NaN id-ref encoding.
+        val corpusLineBits = ((corpusAlignBySpan[1].toInt() and 0xff) shl 24) or
+            ((corpusAlignBySpan[2].toInt() and 0xff) shl 16) or
+            ((corpusAlignBySpan[3].toInt() and 0xff) shl 8) or
+            (corpusAlignBySpan[4].toInt() and 0xff)
+        val corpusLine = Float.fromBits(corpusLineBits)
+
         val produced = captureSingleRemoteDocument(
             width = 400, height = 400, profile = androidxExperimental, contentDescription = "",
         ) {
             RemoteRoot {
-                RemoteRow(
-                    modifier = RemoteModifier.width(DimensionType.FILL, Float.NaN),
-                ) {
-                    RemoteBoxLeaf(
-                        modifier = RemoteModifier
-                            .width(DimensionType.EXACT, 50f)
-                            .height(DimensionType.EXACT, 50f)
-                            .alignBy(line = 12.5f, flags = 0),
-                    )
-                }
+                RemoteBoxLeaf(
+                    modifier = RemoteModifier.alignBy(line = corpusLine, flags = 0),
+                )
             }
         }
-        val procedural = document(
-            width = 400, height = 400, profile = androidxExperimental, contentDescription = "",
-        ) {
-            root {
-                row(modifier = LayoutModifier().width(DimensionType.FILL, Float.NaN)) {
-                    boxLeaf(
-                        modifier = LayoutModifier()
-                            .width(DimensionType.EXACT, 50f)
-                            .height(DimensionType.EXACT, 50f)
-                            .alignBy(line = 12.5f, flags = 0),
-                    )
-                }
-            }
-        }
+        val producedAlignBySpan = extractFirstOpSpan(produced, Operations.MODIFIER_ALIGN_BY)
         assertContentEquals(
-            procedural,
-            produced,
-            "Compose-DSL RemoteModifier.alignBy(12.5, 0) full doc must byte-match procedural-DSL.",
+            corpusAlignBySpan,
+            producedAlignBySpan,
+            "MODIFIER_ALIGN_BY 9-byte op sub-span must byte-match c_modifier_align_by_baseline.rc — " +
+                "Float.fromBits/toBits must preserve the raw NaN payload (signaling-NaN-id-ref " +
+                "preservation is the classic §2 trap; this pins it).",
         )
     }
 
@@ -428,7 +444,7 @@ class ComposeCreationModifierT2AnchorTest {
                 RemoteBoxLeaf(modifier = RemoteModifier.visibility(valueId = 42))
             }
         }
-        val visBytes = extractFirstOpBytes(produced, Operations.MODIFIER_VISIBILITY)
+        val visBytes = extractFirstOpSpan(produced, Operations.MODIFIER_VISIBILITY)
         assertContentEquals(
             byteArrayOf(0xD3.toByte(), 0, 0, 0, 42),
             visBytes,
@@ -447,7 +463,7 @@ class ComposeCreationModifierT2AnchorTest {
      * (inclusive opcode byte, end-exclusive). Used for ID-decoupled sub-span comparisons against
      * corpus oracles when full-doc reproduction is blocked by out-of-scope machinery.
      */
-    private fun extractFirstOpBytes(docBytes: ByteArray, opcode: Int): ByteArray {
+    private fun extractFirstOpSpan(docBytes: ByteArray, opcode: Int): ByteArray {
         val (_, spans) = DocumentReader.inflateWithTrace(docBytes)
         val span = spans.firstOrNull { it.opcode == opcode }
             ?: error("opcode $opcode (${Operations.name(opcode)}) not found in document")
