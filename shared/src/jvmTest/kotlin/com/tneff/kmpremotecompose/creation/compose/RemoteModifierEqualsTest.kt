@@ -240,4 +240,61 @@ class RemoteModifierEqualsTest {
         val d = RemoteModifier.border(5f, 1f, slot, shape = 1, useLegacy = false)
         assertNotEquals(c, d, "useLegacy (=reserve1 flip) is part of equality")
     }
+
+    // -------------------------------------------------------------------------------------------
+    // REM-144 S3 — backgroundColorRef (raw-int + slot) equality
+    // -------------------------------------------------------------------------------------------
+
+    @Test
+    fun backgroundColorRef_rawInt_sameIdAndShape_isEqual() {
+        val a = RemoteModifier.backgroundColorRef(colorId = 1, shape = 0)
+        val b = RemoteModifier.backgroundColorRef(colorId = 1, shape = 0)
+        assertEquals(a, b)
+        assertEquals(a.hashCode(), b.hashCode())
+    }
+
+    @Test
+    fun backgroundColorRef_rawInt_differentColorId_notEqual() {
+        assertNotEquals(
+            RemoteModifier.backgroundColorRef(colorId = 1),
+            RemoteModifier.backgroundColorRef(colorId = 2),
+            "Different system colorIds → different wire bytes → different elements",
+        )
+    }
+
+    @Test
+    fun backgroundColorRef_isDistinctFromStaticBackground() {
+        // backgroundColorRef(Int) (flags=2 / colorId / rgba=0) is structurally distinct from
+        // background(Int) (flags=0 / colorId=0 / decomposed rgba) — element types differ even
+        // when the int values happen to be equal.
+        val viaColorRef = RemoteModifier.backgroundColorRef(colorId = 1)
+        val viaStatic = RemoteModifier.background(color = 1)
+        assertNotEquals(viaColorRef, viaStatic, "backgroundColorRef and static background are structurally distinct elements")
+    }
+
+    @Test
+    fun backgroundColorRef_slotForm_sameSlot_isEqual() {
+        val slot = RemoteColorSlot()
+        val a = RemoteModifier.background(colorIdSlot = slot)
+        val b = RemoteModifier.background(colorIdSlot = slot)
+        assertEquals(a, b)
+        assertEquals(a.hashCode(), b.hashCode())
+    }
+
+    @Test
+    fun backgroundColorRef_slotForm_differentSlots_notEqual() {
+        assertNotEquals(
+            RemoteModifier.background(colorIdSlot = RemoteColorSlot()),
+            RemoteModifier.background(colorIdSlot = RemoteColorSlot()),
+            "Different slot instances → different elements (distinct wire byte sources)",
+        )
+    }
+
+    @Test
+    fun backgroundColorRef_slotForm_isDistinctFromRawIntForm() {
+        val slot = RemoteColorSlot()
+        val viaSlot = RemoteModifier.background(colorIdSlot = slot)
+        val viaInt = RemoteModifier.backgroundColorRef(colorId = 42)
+        assertNotEquals(viaSlot, viaInt, "Slot-form and raw-int form are structurally distinct elements")
+    }
 }

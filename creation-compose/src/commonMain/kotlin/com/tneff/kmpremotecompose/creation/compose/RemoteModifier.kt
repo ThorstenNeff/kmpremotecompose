@@ -229,6 +229,34 @@ open class RemoteModifier private constructor(internal val elements: List<Remote
     )
 
     /**
+     * REM-144 S3 — `MODIFIER_BACKGROUND` **dynamic-color slot form**: colour drawn from a region-0
+     * [colorIdSlot] previously bound by one of the `RemoteColorExpression*` composables.
+     * Symmetric to [border]`(.., colorIdSlot)` (REM-141 T3). Routes through the REM-144 S1
+     * procedural helper [LayoutModifier.backgroundColorRef] at apply time. See [visibility] for
+     * the slot-binding / W4-misuse contract — same shape.
+     *
+     * **Disambiguation note (W8):** distinct from the literal-ARGB form `background(color: Int)`
+     * via the `RemoteColorSlot` parameter type — no Kotlin overload-resolution ambiguity. The
+     * raw-int system-id form is exposed via the separately-named [backgroundColorRef] below.
+     */
+    fun background(colorIdSlot: RemoteColorSlot, shape: Int = 0): RemoteModifier =
+        RemoteModifier(elements + BackgroundColorRefFromSlotElement(colorIdSlot, shape))
+
+    /**
+     * REM-144 S3 — `MODIFIER_BACKGROUND` **dynamic-color raw-int form**: colour drawn from a
+     * known [colorId] (e.g. a system theme colour id like `1` per `c_modifier_background_id.rc`,
+     * or a colour id known to the caller from external context). Closes the REM-130-T3-deferred
+     * dynamic-background full-doc Stage-2 anchor (the corpus uses a system colour id, NOT a
+     * region-0 ColorExpression — REM-144 scoping empirical-decode finding).
+     *
+     * **Separate name (NOT an overload of `background`)** — `(Int)` signature would be ambiguous
+     * with `background(color: Int)`. Matches the procedural-side
+     * [LayoutModifier.backgroundColorRef] name (REM-144 S1) — Q2 lesson / W8 close.
+     */
+    fun backgroundColorRef(colorId: Int, shape: Int = 0): RemoteModifier =
+        RemoteModifier(elements + BackgroundColorRefElement(colorId, shape))
+
+    /**
      * Convert to a REM-96 [LayoutModifier] for emission. Each element registers itself via the
      * public chain API of [LayoutModifier] — no `@PublishedApi internal` access, no separate
      * code path: the bytes the procedural helpers produce here are byte-identical to bytes a
@@ -378,5 +406,24 @@ internal data class BorderColorRefFromSlotElement(
                 "slot must execute BEFORE the consumer modifier in tree order."
         }
         lm.borderColorRef(borderWidth, roundedCorner, slot.id, shape, useLegacy)
+    }
+}
+
+internal data class BackgroundColorRefElement(val colorId: Int, val shape: Int) : RemoteModifierElement {
+    override fun applyToLayoutModifier(lm: LayoutModifier) {
+        lm.backgroundColorRef(colorId, shape)
+    }
+}
+
+internal data class BackgroundColorRefFromSlotElement(
+    val slot: RemoteColorSlot,
+    val shape: Int,
+) : RemoteModifierElement {
+    override fun applyToLayoutModifier(lm: LayoutModifier) {
+        check(slot.id >= 0) {
+            "RemoteColorSlot is unbound — a RemoteColorExpression* composable that owns this " +
+                "slot must execute BEFORE the consumer modifier in tree order."
+        }
+        lm.backgroundColorRef(slot.id, shape)
     }
 }
