@@ -36,10 +36,23 @@ class MainActivity : ComponentActivity() {
             // §5) so live sensor docs (sensor_demo_*) read real device sensors; remembered so it survives
             // recomposition. The shared player only seeds in live mode → static/golden render is untouched.
             val sensorSource = remember { AndroidSensorSource(applicationContext) }
-            RemoteComposeApp(
-                sensorSource = sensorSource,
-                modifier = Modifier.semantics { testTagsAsResourceId = true },
-            )
+            // REM-144 S4 — route `rc=e6_creation_proof` to the Compose-Creation-DSL E6 §6 proof
+            // loader; anything else flows through the default resource loader unchanged. Branching
+            // at the screen level (rather than wrapping the loadRc) so the non-proof path retains
+            // its exact default behaviour (Res.readBytes lives `internal` in :shared — can't be
+            // composed from :androidApp).
+            if (RcRouter.docName == E6CreationProofLoader.DOC_NAME) {
+                RemoteComposeApp(
+                    loadRc = { _ -> E6CreationProofLoader.buildE6ProofDocument() },
+                    sensorSource = sensorSource,
+                    modifier = Modifier.semantics { testTagsAsResourceId = true },
+                )
+            } else {
+                RemoteComposeApp(
+                    sensorSource = sensorSource,
+                    modifier = Modifier.semantics { testTagsAsResourceId = true },
+                )
+            }
         }
     }
 
