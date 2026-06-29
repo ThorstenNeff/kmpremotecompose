@@ -328,6 +328,17 @@ class RemoteContext {
     var visualDebug: Boolean = false
     var animationEnabled: Boolean = true
 
+    /**
+     * REM-143 (S3b) — the host haptic actuator (capability-floor default [NoOpHapticActuator]). Set per
+     * live paint by [RemoteComposePlayer.paint]; [hapticEffect] mirrors upstream `RemoteContext.hapticEffect`
+     * and is invoked by the impulse lifecycle on its initial pass (the trigger frame). Render-invariant; no
+     * serialized bytes (§2 safe).
+     */
+    var hapticActuator: HapticActuator = NoOpHapticActuator
+
+    /** Perform the doc's haptic effect [hapticFeedbackType] via the host [hapticActuator] (upstream parity). */
+    fun hapticEffect(hapticFeedbackType: Int) { hapticActuator.perform(hapticFeedbackType) }
+
     /** Document major/minor/patch version, used by [supportsVersion]. Defaults to api-7 base. */
     var versionMajor: Int = 7
     var versionMinor: Int = 0

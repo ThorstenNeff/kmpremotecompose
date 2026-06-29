@@ -41,6 +41,8 @@ import com.tneff.kmpremotecompose.remote.core.document.RemoteComposeDocument
 import com.tneff.kmpremotecompose.remote.core.operations.Builtins
 import com.tneff.kmpremotecompose.remote.player.compose.ComposePaintContext
 import com.tneff.kmpremotecompose.remote.player.compose.GeometryPaintDelegate
+import com.tneff.kmpremotecompose.remote.player.core.HapticActuator
+import com.tneff.kmpremotecompose.remote.player.core.NoOpHapticActuator
 import com.tneff.kmpremotecompose.remote.player.core.NoOpSensorSource
 import com.tneff.kmpremotecompose.remote.player.core.RemoteComposePlayer
 import com.tneff.kmpremotecompose.remote.player.core.renderOpaque
@@ -79,6 +81,7 @@ import kmpremotecompose.shared.generated.resources.Res
 fun RemoteComposeApp(
     loadRc: suspend (String) -> ByteArray = { name -> Res.readBytes("files/rc/$name.rc") },
     sensorSource: SensorSource = NoOpSensorSource,
+    hapticActuator: HapticActuator = NoOpHapticActuator,
     modifier: Modifier = Modifier,
 ) {
     // The selected bundled doc (REM-34): default, or a deep-link `kmprc://render?rc=<name>` via RcRouter.
@@ -263,6 +266,9 @@ fun RemoteComposeApp(
                                 sensorSource = sensorSource,
                                 // REM-108 (S2b): live pointer gesture (consumed LIVE-only; null ⇒ no touch).
                                 touchState = if (live) touchState else null,
+                                // REM-143 (S3b): host haptic actuator (live-only; impulse fires on its
+                                // initial pass). NoOp on desktop/web (capability-floor) → no buzz.
+                                hapticActuator = hapticActuator,
                             )
                         }
                         // Draw-phase writes: read only outside this lambda → one settling recompose.
