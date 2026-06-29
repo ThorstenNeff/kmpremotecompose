@@ -1,7 +1,7 @@
 # TechSpec — Feature-Completeness-Audit (gegen die Mensch-Definition)
 
 > **Autor:** PO-Assistent (Reviewer) · **Status:** Audit/Analyse (KEIN Code) · **Datum:** 2026-06-29 (Refresh; Erst-Audit 2026-06-28)
-> **Audit-Basis:** echte Klon-Kopie `KmpRemoteCompose` @ develop `7e2f9b8` (87+ Merges, 2026-06-29). Zellen am Code/git + Jira (REM 1–141) verifiziert, reconciled gegen die gemergte git-Realität (NICHT nur Jira-Labels — s. Jira-Lag-Hinweis §9).
+> **Audit-Basis:** echte Klon-Kopie `KmpRemoteCompose` @ develop `19bc0b5` (96 Merges, 2026-06-29). Zellen am Code/git + Jira (REM 1–144) verifiziert, reconciled gegen die gemergte git-Realität (NICHT nur Jira-Labels — s. Jira-Lag-Hinweis §9).
 > **Feature-complete (Mensch):** (a) ALLE Korpus-Docs rendern auf **iOS, Android, Desktop, WASM** + (b) Docs lassen sich auf einem **Server (JVM, headless)** erstellen (volle prozedurale Creation-DSL + Compose-Creation-DSL).
 
 ---
@@ -10,9 +10,12 @@
 
 - **🟢 FC ist SUBSTANZIELL ERREICHT.** Der am 28.06. geschätzte Rest-Backlog (~3–7 Tage) ist
   weitgehend abgearbeitet: **Desktop + WASM rendern real**, **Server-Creation komplett**, **Creation-DSL
-  korpus-komplett + deklarative Compose-Creation-DSL (E6)**, die **Deferred-Render-Features** (Komplex-
-  Text, Shader, Texture, PathEffect, FILL_AND_STROKE) sind gebaut, und die **Color-/Component-Content-
-  Welle** (REM-131…140) ist zu.
+  korpus-komplett + deklarative Compose-Creation-DSL (E6: MVP + T2 + T3 + T4)**, die **Deferred-Render-
+  Features** (Komplex-Text, Shader, Texture, PathEffect, FILL_AND_STROKE) sind gebaut, und die
+  **Color-/Component-Content-Welle** (REM-131…140) + die **compute/lookup-Familie** (REM-139/142) sind zu.
+- **Seit 7e2f9b8 (96 Merges): REM-139 (compute/lookup S1+S2) · REM-140 · REM-142 · E6-T3/REM-141 ·
+  E6-T4/REM-144 (S1+S2) alle DONE.** Damit ist die Compose-Creation-DSL inkl. Variablen-Primitive
+  (visibility-full/dynamic-color-border, T3) + RPN-Expr-DSL (T4) komplett.
 - **Layer-1 (.rc Reader+Writer, 173 Ops) byte-bewiesen, rein commonMain** — unverändert die durch-
   gezogene §2-Kern-Invariante.
 - **Render läuft auf allen 4 Mensch-Targets** (Android · iOS · Desktop(jvm) · WASM(wasmJs)) via dem
@@ -22,9 +25,11 @@
   DSL (REM-119 korpus-komplett) + Disk-Writer + Executable + CI.
 - **Live-Interaktivität** capability-gestaffelt: Touch on-device (REM-108 S2b Android+iOS), Sensor
   Sim-Scope (Mensch-akzeptiert), Web-Live = Real-Browser-bewiesen (REM-114, Headless-Capture-Artefakt).
-- **Verbleibend = kurzer Schwanz** (§6): E6-T3 (Variablen-Primitive, in flight) · REM-139 compute/
-  lookup · Render-Backlog-Reste (Impulse/Particles-Subsystem deferred) · ein paar offene Tester-Render-
-  Gates auf gerade gemergten Wellen. **Kein großer L-Brocken mehr offen außer Particles (Mensch-Scope).**
+- **Verbleibend = kurzer Schwanz** (§6): **Particles/Impulse-Subsystem (REM-143) ist jetzt FULL
+  Mensch-GO** (NICHT mehr deferred — TechSpec kanonisch, S1 in Arbeit, LIVE-Multi-Frame-Gate-Contract
+  gepinnt) · Render-Backlog-Reste (VarFont/AlignBy/DrawBitmap-Tail) · ein paar offene Tester-Render-
+  Gates auf gerade gemergten Wellen. **Particles ist der einzige verbliebene L-Brocken — jetzt
+  beauftragt + in flight, nicht mehr eine offene Scope-Frage.**
 
 ---
 
@@ -109,7 +114,7 @@ Measure-Changes auf den TextLayout-Span-Fall. Verankert als Merge-Gate-Pflicht.
 - **AttributedString / Component-Content** ✅ **REM-134** (24 Spans voll-styled, DrawContent-Delegation).
 - **Variable-Fonts (FONT_AXIS)**: 🟡 Skiko-Interop, wenige Docs — Rest-Schwanz (FALLBACK_TYPEFACE REM-106 offen).
 - **Sensoren/Touch/Interaktiv**: ✅ Touch on-device (REM-108) + Sensor Sim-Scope; **live-animiertes
-  Impulse/Particles-Subsystem** (confetti/hearts/maze) = deferred (§6, Mensch-Richtung offen).
+  Impulse/Particles-Subsystem** (confetti/hearts/maze) = jetzt FULL Mensch-GO, in flight (REM-143, §6 #1).
 
 ---
 
@@ -117,27 +122,28 @@ Measure-Changes auf den TextLayout-Span-Fall. Verankert als Merge-Gate-Pflicht.
 
 | # | Posten | Status | Aufwand | Anm. |
 |---|---|---|---|---|
-| 1 | **E6-T3** Variablen-Primitive (visibility-full + dynamic-color-border) | **IN FLIGHT** (REM-141, S1 gemergt, S2/S3 laufen) | S–M | dev-3, byte-gegated |
-| 2 | **compute/lookup** Render-Apply-Gap (procedure_look_up1) | **IN FLIGHT** (REM-139, S1 im Gate) | S–M | dev-2; S2 LayoutCompute danach |
-| 3 | **Offene Tester-Render-Gates** auf gemergten Wellen (REM-131/132/134-Voll-Render) | OFFEN | S | test-3; REM-134 4-TextLayout-Docs Voll-Render-Confirm |
-| 4 | **Impulse/Particles-Subsystem** (live-animiert) | DEFERRED | L | Mensch-Richtung offen |
-| 5 | **Render-Backlog-Tail** (AlignBy/DrawBitmap-Folge, paths_demos-Seed-Gap, VarFont/FALLBACK_TYPEFACE) | DEFERRED low/med | M | datenbasiert |
-| 6 | **Creation-DSL-Long-Tail** (G3/G6–9, 0-Korpus-Konsument) | DEPRIORISIERT | — | optional, kein Korpus-Bedarf |
-| 7 | **Cleanup/Hardening** (redundante rc-Kopien REM-100, Registry-Concurrency REM-11, CI-wasm-Guard, OFL.txt) | LOW | S | non-blocking |
+| 1 | **Particles/Impulse-Subsystem (REM-143)** stateful Per-Frame-Sim, LIVE | **IN FLIGHT** (FULL Mensch-GO; TechSpec kanonisch, S1 in Arbeit) | L | dev-2/dev-1; LIVE-Multi-Frame-Gate · assist-§5b-Harden (RAND-Order spec-grounded) vor S2 |
+| 2 | **E6-T3** Variablen-Primitive (visibility-full + dynamic-color-border) | ✅ **DONE** (REM-141) | — | gemergt |
+| 3 | **E6-T4** RPN-Expr-DSL (RemoteFloatExpression) | ✅ **DONE** (REM-144 S1+S2) | — | gemergt |
+| 4 | **compute/lookup** Render-Apply-Gap | ✅ **DONE** (REM-139 S1+S2 + REM-142 Golden) | — | gemergt |
+| 5 | **Offene Tester-Render-Gates** auf gemergten Wellen (REM-131/132/134-Voll-Render) | OFFEN | S | test-3; REM-134 4-TextLayout-Docs Voll-Render-Confirm |
+| 6 | **Render-Backlog-Tail** (AlignBy/DrawBitmap-Folge, paths_demos-Seed-Gap, VarFont/FALLBACK_TYPEFACE) | DEFERRED low/med | M | datenbasiert |
+| 7 | **Creation-DSL-Long-Tail** (G3/G6–9, 0-Korpus-Konsument) | DEPRIORISIERT | — | optional, kein Korpus-Bedarf |
+| 8 | **Cleanup/Hardening** (redundante rc-Kopien REM-100, Registry-Concurrency REM-11, CI-wasm-Guard, OFL.txt) | LOW | S | non-blocking |
 
-**Kein großer L-Brocken außer #4 (Particles, Mensch-Scope-Entscheidung).** Der 28.06.-Rest (~40–70
-Ticket-Äquiv.) ist auf einen kurzen Schwanz geschrumpft.
+**Der einzige große L-Brocken (#1 Particles) ist jetzt beauftragt + in flight** (nicht mehr eine offene
+Scope-Frage). Der 28.06.-Rest (~40–70 Ticket-Äquiv.) ist auf Particles + einen kurzen Schwanz geschrumpft.
 
 ---
 
 ## 7. Gemessene Velocity (empirisch aus git, Refresh)
 
-| Metrik | 28.06. | **29.06. (jetzt)** |
+| Metrik | 28.06. | **29.06. @ `19bc0b5`** |
 |---|---|---|
-| Commits gesamt | 267 | **544** |
-| distinkte REM-Tickets (git-Subjects) | 52 | **121** (REM-2 … REM-141) |
-| develop-Merges | 86 | **87+** |
-| commonMain Kotlin LOC | ~15 494 | **~21 873** |
+| Commits gesamt | 267 | **565** |
+| distinkte REM-Tickets (git-Subjects) | 52 | **125** (REM-2 … REM-144) |
+| develop-Merges | 86 | **96** |
+| commonMain Kotlin LOC | ~15 494 | **~22 070** |
 | Zeitspanne (Author-Dates) | ~2,8 Tage | **2026-06-25 → 2026-06-29 ≈ 4 Kalendertage** |
 
 **Rate gehalten:** ~277 Commits + ~69 REM-Tickets in ~1,2 weiteren Kalendertagen (5–7 Agenten parallel)
@@ -152,16 +158,18 @@ Velocity robust nur als Tickets-pro-aktivem-Tag / pro-Merge-Welle; Wall-Clock h�
 ## 8. Zeit-Schätzung (Refresh — der Rest ist klein)
 
 Die 28.06.-Spanne (~3–7 aktive Tage Rest) ist eingelöst. **Verbleibend, konservativ:**
-- **E6-T3 (#1)** + **compute/lookup (#2)** + offene Render-Gates (#3): **~0,5–1 aktiver Tag** (in flight, byte-gegated, kleine Slices).
-- **Impulse/Particles (#4)**: eigener L-Brocken **nur falls Mensch es in FC-Scope zieht** — sonst deferred. ~1–2 aktive Tage wenn beauftragt.
-- **Render-Backlog-Tail + VarFont-Rest (#5)** + Cleanup (#7): **~0,5–1 aktiver Tag**, datenbasiert/non-blocking.
+- **Particles/Impulse (#1)**: der einzige große L-Brocken, **beauftragt + in flight** (S1 läuft); LIVE-
+  Multi-Frame-Gate + assist-§5b-Härtung vor S2. ~1–2 aktive Tage.
+- **Offene Render-Gates (#5)** + **Render-Backlog-Tail/VarFont (#6)** + Cleanup (#8): **~0,5–1 aktiver
+  Tag**, datenbasiert/non-blocking. (E6-T3/T4 + compute/lookup sind DONE.)
 
-→ **Kern-FC (a)+(b) der Mensch-Definition ist erreicht.** Was bleibt, ist Schwanz + eine
-Scope-Entscheidung (Particles). **Grob ~1–2 aktive Tage** für den non-Particles-Rest bei gehaltener Intensität.
+→ **Kern-FC (a)+(b) der Mensch-Definition ist erreicht.** Was bleibt, ist Particles (in flight) + ein
+kurzer Schwanz. **Grob ~1–2 aktive Tage** für den non-Particles-Rest bei gehaltener Intensität.
 
 **Dominante Unsicherheit jetzt:** (i) die offenen Tester-Render-Gates könnten echte Render-Bugs
-aufdecken (REM-140-Klasse — ein Voll-Sweep fand schon 2 Regresse); (ii) Particles ist die einzige große
-offene Scope-Frage.
+aufdecken (REM-140-Klasse — ein Voll-Sweep fand schon 2 Regresse); (ii) Particles ist der größte
+verbleibende Brocken (LIVE-Sim) — jetzt in flight, mit dem §5b-Gate als Schlüsselrisiko (False-Green-
+Vektor, s. assist-Review).
 
 ---
 
@@ -169,14 +177,15 @@ offene Scope-Frage.
 
 1. **FC-Kern als erreicht ratifizieren** (a: 4-Target-Render via Sweeps · b: Server-Creation + DSLs) —
    nach Abschluss der offenen Tester-Render-Gates (#3) als formaler Abnahme-Schritt.
-2. **Eine offene Scope-Entscheidung:** Impulse/Particles-Subsystem (live-animiert) in FC-Scope, oder
-   bewusst deferred? Das ist der einzige verbleibende L-Brocken.
-3. **In flight zu Ende führen:** REM-141 (E6-T3) + REM-139 (compute/lookup) per byte-gegateten Slices.
-4. **Render-Gate-Disziplin halten** (REM-140-Lehre): Shared-Render-Path-Changes → Voll-173-Render-Sweep,
+2. **Particles (REM-143) zu Ende führen** — der einzige verbleibende L-Brocken, jetzt beauftragt + in
+   flight (S1). **Schlüssel-Gate: die §5b-LIVE-Multi-Frame-Härtung (assist-NO-GO auf #4 bis spec-grounded)
+   vor S2** — sonst zirkuläres False-Green-Gate (Gate-Referenz = Sim statt Spec).
+3. **Render-Gate-Disziplin halten** (REM-140-Lehre): Shared-Render-Path-Changes → Voll-173-Render-Sweep,
    nicht DrawLine-Fingerprint; REM-123-Daten-Orakel am Golden-Promote.
 5. **Jira-Hygiene:** mehrere gemergte Tickets stehen wegen des dev-2/dev-3-Jira-Auth-Lochs noch auf
    „Zu erledigen" (z. B. REM-133/137/138) — bei gelöstem Auth einen Transition-Sync-Pass; bis dahin ist
    git-`develop` die Quelle der Wahrheit, nicht die Jira-Labels.
 
-**Offene Mensch-Flags:** Particles-Scope · dev-2-Jira-Auth (Access, out-of-band). **Ratifiziert (29.06.):**
-iOS-Sensor-Sim-Scope · REM-114/S4 (Headless-Artefakt, kein Bug) · §6-Daten-Orakel-Gate + §8 · E6-T2/T3.
+**Offene Mensch-Flags:** dev-2-Jira-Auth (Access, out-of-band). **Ratifiziert (29.06.):** Particles-FC-Scope
+(= FULL GO, REM-143) · iOS-Sensor-Sim-Scope · REM-114/S4 (Headless-Artefakt, kein Bug) · §6-Daten-Orakel-Gate
++ §8 · E6-T2/T3/T4.
