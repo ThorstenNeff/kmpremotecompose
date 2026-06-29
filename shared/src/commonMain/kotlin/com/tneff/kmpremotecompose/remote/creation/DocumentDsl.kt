@@ -59,7 +59,15 @@ fun document(
         apiLevel = if (flatForm) 6 else 7,
     )
     val context = RemoteComposeContext(writer = writer, profile = profile)
-    if (contentDescription != null) {
+    // REM-141 — empirical-empty-description rule (corpus-grounded against
+    // `c_modifier_visibility.rc` / `c_modifier_dynamic_border.rc`): upstream reserves id 42 for the
+    // content-description ONLY when the description carries text. An empty string still encodes the
+    // `DOC_CONTENT_DESCRIPTION` header property (zero-length STRING in map-form; null skips the
+    // property entirely — Bug #2-Lehre, REM-130) but does NOT pull an id. This matters in map-form
+    // because the first region-0 allocation lands at id 42 (e.g. the FloatExpression in
+    // `c_modifier_visibility.rc`); reserving for an empty string would push the user's first id to
+    // 43 and break the byte-anchor.
+    if (contentDescription != null && contentDescription.isNotEmpty()) {
         val descId = context.ids.nextId() // pins id 42 to the content-description per the id-order reference
         if (flatForm) {
             context.add(TextData(descId, contentDescription))
