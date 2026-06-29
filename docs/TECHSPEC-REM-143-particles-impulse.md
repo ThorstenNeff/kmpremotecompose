@@ -33,8 +33,12 @@ REM-109)**. Berührt **NICHT** LayoutMeasure — reine Paint-Walk + Eval + Op-Fe
 - **ImpulseStart** (`IMPULSE_START`, Container; duration/startAt) + **ImpulseProcess** (`IMPULSE_PROCESS`,
   Container): Timeline-Block — re-evaluiert seine Kinder pro Frame über `[startAt, startAt+duration]`. Treibt
   die zeit-basierte Animation; bindet an den continuous-repaint-Clock (REM-36 E-D1, `wakeIn`).
-- **PARTICLE_COMPARE** (op 194): opcode existiert, keine Klasse — vermutl. Conditional im Loop-Body. Bei
-  S2-Impl prüfen; falls in keinem der 7 Docs aktiv → loud-guard/deferred (D1-Disziplin).
+- **PARTICLE_COMPARE** (op 194; **decode-aufgelöst — NICHT loud-guard, korpus-AKTIV**): Klasse
+  `ParticlesCompare(id, flags, min, max, compare[], equations1[], equations2[])` = ein **per-Partikel-
+  Conditional**: wertet `compare` (+ min/max-Range) pro Partikel aus → wendet `equations1` ODER `equations2`
+  auf den Partikel-State an (Branch). **Aktiv in `maze`/`maze1`/`maze2` (4× je, zusammen mit
+  `ConditionalOperations`)** = die Maze-Per-Partikel-Branch-Logik; confetti/hearts/particle: 0. → **S2-Scope**
+  (gehört zur Evolution; S1-Seed-Frame rendert maze ohne es). NICHT defer-loud-guard.
 
 ## 3. Design (normativ)
 
@@ -49,6 +53,9 @@ REM-109)**. Berührt **NICHT** LayoutMeasure — reine Paint-Walk + Eval + Op-Fe
   KEIN persistenter-State-Map-Fallback nötig** (kein Player-State-Arch-Touch). Auch das Multi-Frame-Gate-Harness
   MUSS decode-once-paint-N (dasselbe inflated Doc N× painten, NICHT pro Frame re-inflaten) — sonst evolviert der
   State im Orakel nicht → §6-Akkumulierungs-Falle (REM-89/121). Harness-Contract: §5b.
+  **⚠️ Scope der Vorbedingung (assist):** decode-once→paint-N beweist nur die Instanz-**PERSISTENZ** (mParticles
+  überlebt Frames), NICHT die Akkumulations-**KORREKTHEIT** (evolviert der State richtig) — letztere ist genau
+  das S2-Daten-Orakel-Gate (§5b), nicht durch die Persistenz-Verifikation abgedeckt.
 - **(Verworfen) Fallback** (reset-exempter Player-State-Map) = Player-State-Arch-Touch mit Risk-Posture-Δ —
   **nicht nötig** (Vorbedingung hält); falls je gebraucht = eigene PO-/Mensch-Entscheidung, nicht still.
 - **S1 ist von dieser Frage ohnehin UNABHÄNGIG:** S1 = ein einziger paint() (Seed + Draw @t=0).
@@ -104,17 +111,31 @@ baut es, test-3 fährt es. Gepinnter Contract:
   erwartete Partikel-Position **außerhalb des Players** (separater Recompute, NICHT die Sim aufrufen): Seed =
   init-Eqs @ k=0 (mit gepinntem RNG, #4) → dann k× die ParticlesLoop-Update-Eqs (+ Restart) anwenden → die
   Positions-Vars → erwartete Draw-(cx,cy) (Body-Placement-Transform angewandt). **Prüfbare Felder pro Frame:**
-  die Menge der N Partikel-Draw-Positionen (cx,cy) je Frame (Float-Toleranz). Die Rekonstruktion teilt die
-  Equations (decodiert) aber NICHT den Player-Sim-Pfad → bug-unabhängig.
+  die Menge der N Partikel-Draw-Positionen (cx,cy) je Frame (Float-Toleranz).
+  **🔒 Orchestrierungs-Grenze (assist):** die Rekonstruktion DARF `RpnFloatEvaluator` (REM-109/127) + die
+  byte-dekodierten Equations reusen (geteilte Eval-Primitive, kein Sim-Logik-Teilen), MUSS aber
+  **Seed/Loop/Restart/VAR1-Index-Injektion/RAND-Sequencing UNABHÄNGIG aus dem Upstream-SPEC reimplementieren**
+  (NICHT die Sim-Orchestrierung aufrufen/spiegeln) → bug-unabhängig.
 - **#5 Vergleichs-Mechanismus = DRAW-CAPTURE (black-box), NICHT op-State-Readback:** ein Recording-PaintContext
   fängt die Per-Partikel-Draw-Primitive (`drawCircle` cx/cy bzw. `drawBitmap`-dst, je nach Body) pro Frame →
   verglichen gg. die #3-Rekonstruktion. **KEIN `op.mParticles`-Readback** — der teilt den Sim-Pfad (falsche
   mParticles + Readback liest dieselben falschen mParticles = falsch-grün, REM-89/121-Klasse). Draw-Capture
   testet was tatsächlich GEMALT wird (Output, sim-bug-unabhängig). **dev-1+PO-Lean bestätigt, dev-2 stimmt zu.**
-- **#4 RNG-Determinismus (= OQ1, gelöst):** Docs tragen kein `RAND_SEED` → **Partikel-RNG-Seed-Pin** (fixe
-  documented Konstante, Capture-Config). Harness reseedet den RNG auf den Pin VOR Frame 0; die #3-Rekonstruktion
-  nutzt **denselben Seed + dieselbe RAND-Konsum-Reihenfolge** (partikel-major, var-major = Sim-Eval-Order) →
-  RAND-Sequenz matchbar. Seed-Pin-Owner: Tester-Config (§2-irrelevant).
+- **#4 RNG-Determinismus (= OQ1; assist-v2-Fix: SPEC-Order, nicht Sim-Order):** Docs tragen kein `RAND_SEED` →
+  **Partikel-RNG-Seed-Pin** (fixe documented Konstante, Capture-Config). **🔴 Die RAND-Konsum-Order ist gegen den
+  UPSTREAM-SPEC definiert, NICHT „= Sim-Eval-Order" (das wäre zirkulär → falsch-grün bei künftigem Sim-Order-
+  Edit, dieselbe Klasse wie der vermiedene op-Readback):**
+  - `ParticlesCreate.initializeParticle` (upstream Z.251/257-264): **partikel-major × var-major × within-eval**,
+    VAR1-Index-Injektion **VOR jedem eval**.
+  - `ParticlesLoop` (upstream Z.127-134): **partikel-major**, `restart>0` → re-seed via Create-Init.
+  - **Der SIM MUSS diesen Spec matchen** (assist verifiziert: aktuelle Order stimmt zufällig mit Upstream →
+    Sim wahrsch. korrekt); die Rekonstruktion leitet ihre Order ebenfalls aus dem Spec ab → beide gg. Spec, nicht
+    gegeneinander.
+  - **RNG reseed-before-BOTH:** der Harness reseedet den RNG auf den Pin VOR BEIDEN Pfaden (Sim-Capture UND
+    #3-Rekonstruktion); `OP_RAND` muss **per-Run-reseedbar** sein (kein geteilter persistenter globaler RNG über
+    Runs) — **verify + pin bei Impl** (heute: `RpnFloatEvaluator.rng` ist ein geteiltes `private var`, via
+    `OP_RAND_SEED` reseedbar; ein Capture-externer Reseed-Hook ist für den Harness nötig → Impl-Item).
+  Seed-Pin-Owner: Tester-Config (§2-irrelevant).
 
 ## 6. Slicing
 - **S1 — Seed-Frame** (klein-mittel; etablierte Muster): ParticlesCreate-Seed (Init-Eqs, `mParticles` füllen) +
@@ -144,5 +165,7 @@ baut es, test-3 fährt es. Gepinnter Contract:
      **entfällt** → **Partikel-RNG-Seed-Pin** (RenderTimePins/REM-57-analog, reine Capture-Config, §2-irrelevant)
      für deterministische Goldens. Korrektheits-Gate in BEIDEN Fällen = **Daten-Orakel** (N Partikel an Soll-Seed-
      Positionen, REM-123-Klasse), NICHT Pixel-Match. (Seed-Pin-Owner: Tester-Config.)
-  2. **PARTICLE_COMPARE:** defer-S2, **loud-guard falls korpus-absent** (D1) — approved.
+  2. **PARTICLE_COMPARE (decode-aufgelöst):** korpus-AKTIV in maze/maze1/maze2 (4× je) — **NICHT loud-guard.**
+     Klasse `ParticlesCompare` (per-Partikel-Conditional, compare→equations1/2-Branch) → **S2-Scope** (Maze-
+     Evolution); confetti/hearts/particle nutzen es nicht. S1-Seed-Frame braucht es nicht (s. §2).
   3. **Multi-Frame-Orakel-Harness:** **dev-1** baut das Tooling, **test-3** fährt das Gate.
