@@ -418,6 +418,42 @@ inline fun RemoteComposeContext.box(
     standardContainer(modifier, { id -> add(BoxLayout(id, -1, horizontal, vertical)) }, block)
 }
 
+/**
+ * `LAYOUT_BOX` content-less leaf — mirrors upstream `box(modifier, h, v)` (no-content overload)
+ * at `RemoteComposeWriter.java:4043-4051`. Emits **`BoxLayout` + modifiers + a single
+ * `ContainerEnd`** — no `LayoutContent` op, no second `ContainerEnd` (the upstream "lazy
+ * LAYOUT_CONTENT" pattern). Used for corpus reproductions where a Box has no children
+ * (e.g. `c_box.rc`); the standard [box] helper, which always emits `LayoutContent` + two
+ * `ContainerEnd`s (mirror of the content overload at line 3537), is **byte-divergent** for those
+ * cases.
+ *
+ * Default positioning = `POS_CENTER` / `POS_CENTER`, matching upstream's no-content overload
+ * default (`RemoteComposeWriter.java:4061` → `BoxLayout.CENTER, BoxLayout.CENTER`). This differs
+ * from the content overload's `START` / `TOP` default — deliberately, because the no-content
+ * variant in upstream has its own different default.
+ *
+ * Modifier emission order = upstream: open BoxLayout first, then walk the modifier list, then
+ * close with a single ContainerEnd (no LayoutContent in between). Component-id resolution uses
+ * the same negative-counter path as the content variant ([RemoteComposeContext.resolveComponentId]).
+ *
+ * Additive-only: this is a NEW helper. The existing [box] helper is unchanged — its
+ * `LayoutContent`+dual-end shape is the **correct** byte-mirror of upstream's content overload
+ * (`RemoteComposeWriter.java:3551-3555`), pinned by `LayoutContainerHelpersTest`. Callers that
+ * need byte-equality with content-bearing corpus oracles continue to use [box]; callers that
+ * need byte-equality with childless-Box corpus oracles use [boxLeaf]. (REM-128 S2's
+ * `RemoteBox`-Compose-DSL routes to [boxLeaf] when the node has no children, [box] otherwise.)
+ */
+fun RemoteComposeContext.boxLeaf(
+    modifier: LayoutModifier = LayoutModifier(),
+    horizontal: Int = POS_CENTER,
+    vertical: Int = POS_CENTER,
+) {
+    val componentId = resolveComponentId(modifier.explicitComponentId)
+    add(BoxLayout(componentId, -1, horizontal, vertical))
+    for (e in modifier.emitters) e(this)
+    add(ContainerEnd())
+}
+
 /** `LAYOUT_FIT_BOX` container (`startFitBox`/`endFitBox`). */
 inline fun RemoteComposeContext.fitBox(
     modifier: LayoutModifier = LayoutModifier(),
