@@ -20,7 +20,9 @@ import com.tneff.kmpremotecompose.remote.player.compose.composePaintContextWithG
 import com.tneff.kmpremotecompose.remote.player.compose.deferredPaintTagsOf
 import com.tneff.kmpremotecompose.remote.player.core.RemoteComposePlayer
 import com.tneff.kmpremotecompose.remote.player.core.RemoteContext
+import com.tneff.kmpremotecompose.remote.player.core.RenderRngPins
 import com.tneff.kmpremotecompose.remote.player.core.RenderTimePins
+import com.tneff.kmpremotecompose.remote.player.core.RpnFloatEvaluator
 import com.tneff.kmpremotecompose.remote.player.core.renderOpaque
 import com.tneff.kmpremotecompose.remote.player.core.seedHostPalette
 import org.jetbrains.skia.EncodedImageFormat
@@ -135,6 +137,19 @@ private fun renderOne(rcBytes: ByteArray, staticTime: Float, density: Float): Re
     } catch (t: Throwable) {
         return RenderResult(0, 0, 0, emptySet(), null, "decode: ${t.message ?: t::class.simpleName}")
     }
+    // REM-143 S1 — reseed the shared RpnFloatEvaluator RNG to RenderRngPins.PARTICLE_SEED BEFORE every
+    // doc's paint. The 6 particle docs (confetti/hearts/particle/maze×3) call OP_RAND without RAND_SEED
+    // for ParticlesCreate.apply's seed-positions — without this pin captures are non-deterministic AND the
+    // static-RNG state drifts across docs within a sweep (proven empirically pre-pin: run-1 vs run-2 6/6
+    // byte-DIFF; with pin: 6/6 byte-IDENT). The pin is applied to ALL 173 docs (not just particles) so the
+    // RNG state is identical at every doc's paint-start regardless of sweep order — non-particle docs
+    // ignore the reseed (don't call OP_RAND), particle docs get deterministic seed-positions. Single source
+    // of truth: RenderRngPins.PARTICLE_SEED. Cross-target-shared (dev-1 multi-frame S2-harness uses same).
+    // NOTE (assist hardening, PO `1521190611812880525`): currently relies on the corpus invariant that all
+    // particle startAt values resolve to 0 at static-t=0 (Seed-Frame = t=startAt = 0). Robust under future
+    // non-zero startAt would pin staticTime per particle-doc to its resolved startAt; deferred until a
+    // corpus doc exhibits non-zero startAt (currently none do per dev-2 decode-verification).
+    RpnFloatEvaluator.seedRngForCapture(RenderRngPins.PARTICLE_SEED)
     val w = if (doc.width > 0) doc.width else 500
     val h = if (doc.height > 0) doc.height else 500
     val ctx = RemoteContext().apply {
