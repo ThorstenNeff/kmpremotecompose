@@ -86,6 +86,111 @@ open class RemoteModifier private constructor(internal val elements: List<Remote
     fun background(r: Number, g: Number, b: Number, a: Number, shape: Int = 0): RemoteModifier =
         RemoteModifier(elements + BackgroundElement(r.toFloat(), g.toFloat(), b.toFloat(), a.toFloat(), shape))
 
+    /** REM-130 T2 — `MODIFIER_PADDING` uniform on all four sides. */
+    fun padding(all: Number): RemoteModifier {
+        val v = all.toFloat()
+        return RemoteModifier(elements + PaddingElement(v, v, v, v))
+    }
+
+    /** REM-130 T2 — `MODIFIER_PADDING` per-side, mirror upstream `padding(start, top, end, bottom)`. */
+    fun padding(start: Number, top: Number, end: Number, bottom: Number): RemoteModifier =
+        RemoteModifier(elements + PaddingElement(start.toFloat(), top.toFloat(), end.toFloat(), bottom.toFloat()))
+
+    /** REM-130 T2 — `MODIFIER_CLIP_RECT` (no operands). */
+    fun clipRect(): RemoteModifier =
+        RemoteModifier(elements + ClipRectElement)
+
+    /**
+     * REM-130 T2 — `MODIFIER_ROUNDED_CLIP_RECT`. Per-corner radii floats. Any may be NaN-encoded
+     * id refs (raw float bits preserved through [Float.toFloat] identity).
+     */
+    fun roundedClipRect(
+        topStart: Number,
+        topEnd: Number,
+        bottomStart: Number,
+        bottomEnd: Number,
+    ): RemoteModifier = RemoteModifier(
+        elements + RoundedClipRectElement(
+            topStart.toFloat(), topEnd.toFloat(), bottomStart.toFloat(), bottomEnd.toFloat(),
+        ),
+    )
+
+    /**
+     * REM-130 T2 — `MODIFIER_BORDER` (ARGB-int form). Mirrors REM-96
+     * `LayoutModifier.border(borderWidth, roundedCorner, color, shape, useLegacy)`. Decomposes
+     * [color] into normalised r/g/b/a floats and stores the element in canonical float form, so
+     * `border(..., color=0xFF…)` compares equal across the Int/Color paths (parallel to background).
+     */
+    fun border(
+        borderWidth: Number,
+        roundedCorner: Number,
+        color: Int,
+        shape: Int = 0,
+        useLegacy: Boolean = true,
+    ): RemoteModifier = RemoteModifier(
+        elements + BorderElement(
+            borderWidth.toFloat(), roundedCorner.toFloat(), color, shape, useLegacy,
+        ),
+    )
+
+    /** REM-130 T2 — `MODIFIER_BORDER` CMP [Color] convenience overload — Q1 sRGB round-trip via [toArgb]. */
+    fun border(
+        borderWidth: Number,
+        roundedCorner: Number,
+        color: Color,
+        shape: Int = 0,
+        useLegacy: Boolean = true,
+    ): RemoteModifier = border(borderWidth, roundedCorner, color.toArgb(), shape, useLegacy)
+
+    /**
+     * REM-130 T2 — `MODIFIER_VISIBILITY`. [valueId] is a **raw int** id-ref (region-0 plain id),
+     * NOT a NaN-encoded float — `MODIFIER_VISIBILITY` is a 5-byte op (`opcode + 4-byte int`).
+     * The component is invisible when the referenced int evaluates to zero. The caller is
+     * responsible for emitting a primitive that defines [valueId] (e.g. ANIMATED_FLOAT, FloatConstant)
+     * — that primitive is outside T2-modifier scope (see REM-130 NOTES: visibility full-doc Stage-2
+     * anchor is deferred to T3 once the primitive composables land).
+     */
+    fun visibility(valueId: Int): RemoteModifier =
+        RemoteModifier(elements + VisibilityElement(valueId))
+
+    /**
+     * REM-130 T2 — `MODIFIER_SCROLL`. [direction] is [LayoutModifier.SCROLL_VERTICAL] (0) or
+     * [LayoutModifier.SCROLL_HORIZONTAL] (1) — mirrors REM-96 `LayoutModifier.scroll(direction)`.
+     * The procedural side emits the **full upstream op group** (FloatConstant + ScrollModifier +
+     * TouchExpression + ContainerEnd, with id-allocations from the writer's id pool); this element
+     * just routes to that — the IDs are not part of element state (allocator-driven at emit time).
+     * Two `scroll(SCROLL_HORIZONTAL)` calls compare equal even though they would allocate distinct
+     * id-spans when applied (the IDs are part of writer state, not modifier identity).
+     */
+    fun scroll(direction: Int): RemoteModifier =
+        RemoteModifier(elements + ScrollElement(direction))
+
+    /**
+     * REM-130 T2 — `MODIFIER_ALIGN_BY`. **Profile-gated:** lives in the AndroidX-experimental overlay
+     * (`Operations.kt:413-417`); the document must be opened with
+     * `PROFILE_ANDROIDX | PROFILE_EXPERIMENTAL` (map-form api=7). [line] is the baseline / arbitrary
+     * line offset; may carry a NaN-encoded id-ref (raw float bits preserved). [flags] = 0 by default
+     * per upstream contract.
+     */
+    fun alignBy(line: Number, flags: Int = 0): RemoteModifier =
+        RemoteModifier(elements + AlignByElement(line.toFloat(), flags))
+
+    /**
+     * REM-130 T2 — `spacedBy` (modifier-chain setter on the procedural `LayoutModifier`, NOT a
+     * separate wire op). Stored on the container's open-op (e.g. `LAYOUT_COLUMN`'s `spacedBy`
+     * field). Required to byte-match Column/Row corpus docs where `spacedBy != 0`
+     * (e.g. `c_modifier_border.rc` Column.spacedBy=20). [value] may carry a NaN-encoded id-ref
+     * for dynamic spacing — float bits preserved.
+     *
+     * **Modifier-chain, not context-method:** mirrors REM-96 `LayoutModifier.spacedBy(value)`
+     * (`LayoutContainerHelpers.kt:107`) — applied via the standard `applyToLayoutModifier(lm)`
+     * hook by setting `lm.spacedBy`. No new wire op; no new emitter. The container helper
+     * (`column()` / `row()`) reads `modifier.spacedBy` from the procedural-DSL LayoutModifier
+     * when emitting the open-op.
+     */
+    fun spacedBy(value: Number): RemoteModifier =
+        RemoteModifier(elements + SpacedByElement(value.toFloat()))
+
     /**
      * Convert to a REM-96 [LayoutModifier] for emission. Each element registers itself via the
      * public chain API of [LayoutModifier] — no `@PublishedApi internal` access, no separate
@@ -145,5 +250,69 @@ internal data class BackgroundElement(
 ) : RemoteModifierElement {
     override fun applyToLayoutModifier(lm: LayoutModifier) {
         lm.background(r, g, b, a, shape)
+    }
+}
+
+internal data class PaddingElement(
+    val start: Float,
+    val top: Float,
+    val end: Float,
+    val bottom: Float,
+) : RemoteModifierElement {
+    override fun applyToLayoutModifier(lm: LayoutModifier) {
+        lm.padding(start, top, end, bottom)
+    }
+}
+
+internal data object ClipRectElement : RemoteModifierElement {
+    override fun applyToLayoutModifier(lm: LayoutModifier) {
+        lm.clipRect()
+    }
+}
+
+internal data class RoundedClipRectElement(
+    val topStart: Float,
+    val topEnd: Float,
+    val bottomStart: Float,
+    val bottomEnd: Float,
+) : RemoteModifierElement {
+    override fun applyToLayoutModifier(lm: LayoutModifier) {
+        lm.roundedClipRect(topStart, topEnd, bottomStart, bottomEnd)
+    }
+}
+
+internal data class BorderElement(
+    val borderWidth: Float,
+    val roundedCorner: Float,
+    val argbColor: Int,
+    val shape: Int,
+    val useLegacy: Boolean,
+) : RemoteModifierElement {
+    override fun applyToLayoutModifier(lm: LayoutModifier) {
+        lm.border(borderWidth, roundedCorner, argbColor, shape, useLegacy)
+    }
+}
+
+internal data class VisibilityElement(val valueId: Int) : RemoteModifierElement {
+    override fun applyToLayoutModifier(lm: LayoutModifier) {
+        lm.visibility(valueId)
+    }
+}
+
+internal data class ScrollElement(val direction: Int) : RemoteModifierElement {
+    override fun applyToLayoutModifier(lm: LayoutModifier) {
+        lm.scroll(direction)
+    }
+}
+
+internal data class AlignByElement(val line: Float, val flags: Int) : RemoteModifierElement {
+    override fun applyToLayoutModifier(lm: LayoutModifier) {
+        lm.alignBy(line, flags)
+    }
+}
+
+internal data class SpacedByElement(val value: Float) : RemoteModifierElement {
+    override fun applyToLayoutModifier(lm: LayoutModifier) {
+        lm.spacedBy(value)
     }
 }
