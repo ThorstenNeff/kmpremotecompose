@@ -85,6 +85,11 @@ object RpnFloatEvaluator {
     // REM-109 (slice 2): the remaining E-D3 operators by impact. PINGPONG = triangle wave (used by
     // text-transform / paths_demos for back-and-forth animation phase).
     private const val OP_PINGPONG = OFFSET + 54 // [v, max] → triangle wave in [0, max]
+
+    // REM-127: the path-sample parameter. PathExpression's X(t)/Y(t) RPN arrays reference the current
+    // sample `t` via VAR1; the t-parameterized [eval] overload pushes the supplied `t` for it. VAR2+ (71+)
+    // are unused by the corpus → they fall through to opEval's loud `else` throw (no silent gap).
+    private const val OP_VAR1 = OFFSET + 70
     private const val OP_TAN = OFFSET + 20
     private const val OP_ACOS = OFFSET + 22
     private const val OP_ATAN2 = OFFSET + 24 // [y, x] → atan2(y, x)
@@ -127,7 +132,16 @@ object RpnFloatEvaluator {
      * Evaluate the first [len] elements of [exp] against the [context] variable store. Returns the
      * single remaining stack value, or `0f` for an empty expression.
      */
-    fun eval(exp: FloatArray, len: Int, context: RemoteContext): Float {
+    fun eval(exp: FloatArray, len: Int, context: RemoteContext): Float =
+        eval(exp, len, context, Float.NaN)
+
+    /**
+     * REM-127: t-parameterized eval — like [eval] but the `VAR1` operator resolves to [t] (the current
+     * path sample). Used by `PathExpression` to evaluate `X(t)`/`Y(t)` per sample. The 3-arg [eval]
+     * delegates with `t = NaN` (non-path expressions never reference VAR1). Additive (§2-safe): the raw
+     * expression bits are untouched; only evaluation reads [t]. VAR2+ stay unimplemented → loud throw.
+     */
+    fun eval(exp: FloatArray, len: Int, context: RemoteContext, t: Float): Float {
         if (len <= 0) return 0f
         val stack = FloatArray(len)
         var sp = -1
@@ -135,7 +149,9 @@ object RpnFloatEvaluator {
             val v = exp[i]
             if (v.isNaN()) {
                 val id = WireTypes.fromNaN(v)
-                if (id > OFFSET) { // upstream `pos > OFFSET` (operators start at OFFSET+1; OFFSET itself is undefined)
+                if (id == OP_VAR1) { // REM-127: the path sample parameter
+                    stack[++sp] = t
+                } else if (id > OFFSET) { // upstream `pos > OFFSET` (operators start at OFFSET+1; OFFSET itself is undefined)
                     sp = opEval(stack, sp, id, context)
                 } else if (WireTypes.isDataVariable(v) && context.getFloatArray(WireTypes.fromNaN(v)) != null) {
                     // an array-id with a stored FLOAT_LIST (region 2) — push the RAW NaN so an array op
