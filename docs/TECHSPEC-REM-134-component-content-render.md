@@ -137,6 +137,29 @@ proportional ist: minimaler Paint-Mechanismus auf vorhandener Measure-Infrastruk
   Komponenten-Content-Typen (generische `component.drawContent`) ist **deferred** (0 Docs) →
   loud-guard/no-op, dokumentiert. Kein Anspruch auf generische Component-Content-Rekursion.
 
+### 4.4 Decoration-Position (Underline/Strike) via transienten Matrix-Bracket — AMENDMENT 2026-06-29
+> Reconciliation-Ruling (assist, nachdem dev-2 (a) korrekt re-scopt hat). Behebt eine zu-breite
+> Formulierung in §4.3 + die §4.3↔§6-Spannung um die Decoration-Position.
+
+- **Intent-Klarstellung zu §4.3:** „kein per-Component-Translate" war zu wörtlich formuliert. Der
+  tatsächliche Intent von §1/§4.3 war, den **persistenten Component-Tree + `setComponent`-im-Player-
+  Walk + stateful flat-walk** (Full-Option-A) zu vermeiden. Ein **transienter, stack-scoped
+  Matrix-Bracket** ist davon NICHT erfasst — er ist bereits präzedenzierte Infrastruktur (REM-108
+  Scroll-Bracket: `matrixSave`/`translate`/`restore`, in `walkGated` geöffnet und am matchenden
+  `CONTAINER_END` geschlossen). §4.3-Intent bleibt mit so einem Bracket intakt.
+- **Mechanismus (gewählt, statt Decoration-Follow-up):** der Span-Content wird in einen transienten
+  `matrixSave → translate(span.x, span.y) → [Span-Content: Text + Decoration-DrawLines] → matrixRestore`
+  gebrackt — ein span-LOKALER Koordinatenraum, der GENAU der `.rc`-Encodierung entspricht (span-lokale
+  Line-Coords ab 0). Damit rendern Text UND Underline/Strike kohärent korrekt. DrawContent malt dann
+  auf LOKALEN Coords (statt absolut) — visuell äquivalent, Baseline-Math unverändert (cy+maxAscent,
+  nur Referenzrahmen verschoben).
+- **§6-Decoration-Bar bleibt in REM-134** (NICHT descopt): das volle Daten-Orakel (≥24 Text-Draws +
+  2 Decoration-DrawLines an Soll-Span-Bounds) ist der Korrektheits-Gate; EIN Golden-Re-Baseline nach
+  dem Vollfix (kein deferred-partial-poisoned-Golden).
+- **Bracket-Scope-Lock (Review-Gate):** Bracket öffnet/schließt sauber am Span-`CONTAINER_END`, KEIN
+  Leak in Geschwister-Spans (REM-129-Klasse, matrix UND clip scoped — wie REM-108). Kein Regress auf
+  andere Bracket-/CanvasOps-tragende Docs (test-3-Voll-Sweep).
+
 ---
 
 ## 5. §2 / Byte-Invariante (HARD GATE)
