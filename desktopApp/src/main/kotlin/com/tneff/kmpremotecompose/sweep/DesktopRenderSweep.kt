@@ -20,6 +20,7 @@ import com.tneff.kmpremotecompose.remote.player.compose.composePaintContextWithG
 import com.tneff.kmpremotecompose.remote.player.compose.deferredPaintTagsOf
 import com.tneff.kmpremotecompose.remote.player.core.RemoteComposePlayer
 import com.tneff.kmpremotecompose.remote.player.core.RemoteContext
+import com.tneff.kmpremotecompose.remote.player.core.RenderTimePins
 import com.tneff.kmpremotecompose.remote.player.core.renderOpaque
 import com.tneff.kmpremotecompose.remote.player.core.seedHostPalette
 import org.jetbrains.skia.EncodedImageFormat
@@ -82,7 +83,13 @@ fun main(args: Array<String>) {
             error++
             continue
         }
-        val result = renderOne(rcFile.readBytes(), cfg.staticTime, cfg.density)
+        // REM-138 Per-Doc-Time-Pin: zeit-sensitive Docs (clock/digital_clock1 + 14 weitere
+        // analog/fancy/gmt-clocks per test-3-Census) kollabieren am Default t=0 zu 12:00 →
+        // RenderTimePins liefert den cross-target-safe Pin (CLOCK_SAFE_TIME_SECONDS=36630), sonst
+        // fällt sie auf den user/cfg-Wert (default 0) zurück. Eliminiert explizit-`--t`-Workaround
+        // (REM-137-Successor: shared seam, kein per-target-Drift). Capture-Determinismus.
+        val pinnedTime = RenderTimePins.timeFor(name, default = cfg.staticTime)
+        val result = renderOne(rcFile.readBytes(), pinnedTime, cfg.density)
         val status = when {
             result.throwMsg != null -> "ERROR"
             result.drawCount == 0   -> "BLANK"
