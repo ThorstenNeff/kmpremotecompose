@@ -65,11 +65,62 @@ class ParticleReconstruction(
     /** One frame of reconstructed state: `[particle][var]`. */
     private fun snapshot(state: Array<FloatArray>): Array<FloatArray> = Array(particleCount) { state[it].copyOf() }
 
+    /** Mutable per-particle state `[particle][var]`, advanced by [seedAllParticles]/[stepFrame]. */
+    private var state: Array<FloatArray> = Array(particleCount) { FloatArray(varCount) }
+
+    /** An immutable snapshot of the current state. */
+    fun snapshotState(): Array<FloatArray> = snapshot(state)
+
     /**
-     * Reconstruct the particle state for frames 0..[frameCount] (frame 0 = seed). Reseeds the pinned RNG
-     * once before frame 0, then advances it continuously across frames — exactly the capture run's contract.
-     * [seedFrame] is invoked before each frame so the caller can seed system vars (e.g. time = startAt+k·dt)
-     * into [ctx] the same way the player does; it defaults to a no-op for self-contained (synthetic) systems.
+     * Seed every particle (frame 0): particle-major outer, var inner; VAR1 = particle index (no inter-var
+     * load). Does NOT pin the RNG — a multi-system doc must pin ONCE in the driver so its single continuous
+     * RNG is consumed frame-major across systems (sys0-seed, sys1-seed, …), exactly like the sim. [ctx] must
+     * already carry the doc-var env + this frame's Δt.
+     */
+    fun seedAllParticles(ctx: RemoteContext) {
+        state = Array(particleCount) { FloatArray(varCount) }
+        for (p in 0 until particleCount) seedParticle(p, state, ctx)
+    }
+
+    /**
+     * Advance one evolution frame: per particle, update var-major in-place (later var sees earlier via ctx)
+     * then the restart eq (`>0` ⇒ re-seed/recycle), then the conditional compares. Draws RAND in the spec
+     * order; does NOT touch the RNG pin (the driver owns it). [ctx] must carry this frame's Δt.
+     */
+    fun stepFrame(ctx: RemoteContext) {
+        for (p in 0 until particleCount) {
+            for (v in 0 until varCount) ctx.loadFloat(varIds[v], state[p][v])
+            for (v in 0 until varCount) {
+                state[p][v] = RpnFloatEvaluator.eval(updateEqs[v], updateEqs[v].size, ctx)
+                ctx.loadFloat(varIds[v], state[p][v])
+            }
+            if (restart != null && RpnFloatEvaluator.eval(restart, restart.size, ctx) > 0f) {
+                seedParticle(p, state, ctx)
+            }
+        }
+        // PARTICLE_COMPARE (condition1Body): after the loop update, each compare conditionally mutates a
+        // particle's vars (maze wall collision). Runs per-compare in doc order, like the sim's walk.
+        for (cmp in compares) {
+            val start = if (cmp.min < 0f) 0 else cmp.min.toInt()
+            val end = if (cmp.max < 0f) particleCount else cmp.max.toInt()
+            for (p in start until minOf(end, particleCount)) {
+                for (v in 0 until varCount) ctx.loadFloat(varIds[v], state[p][v])
+                if (RpnFloatEvaluator.eval(cmp.expr, cmp.expr.size, ctx) > 0f) {
+                    for (v in cmp.eq1.indices) {
+                        if (v >= varCount) break
+                        state[p][v] = RpnFloatEvaluator.eval(cmp.eq1[v], cmp.eq1[v].size, ctx)
+                        ctx.loadFloat(varIds[v], state[p][v])
+                    }
+                }
+            }
+        }
+    }
+
+    /**
+     * Single-system convenience: pin the RNG, seed frame 0, then step [frameCount] frames. Multi-system
+     * docs must instead use [seedAllParticles]/[stepFrame] via a driver that pins the RNG ONCE across all
+     * systems (see Rem143EvolutionGateTest) — otherwise a per-system re-pin desyncs the shared RAND order.
+     * [seedFrame] is invoked before each frame so the caller can seed Δt / env into [ctx] like the player.
      */
     fun evolve(
         frameCount: Int,
@@ -77,43 +128,13 @@ class ParticleReconstruction(
         seedFrame: (frame: Int, ctx: RemoteContext) -> Unit = { _, _ -> },
     ): List<Array<FloatArray>> {
         RpnFloatEvaluator.seedRngForCapture(seed)
-        val state = Array(particleCount) { FloatArray(varCount) }
-
-        // SEED (frame 0): particle-major outer, var inner; VAR1 = particle index (no inter-var load).
         seedFrame(0, ctx)
-        for (p in 0 until particleCount) seedParticle(p, state, ctx)
-        val frames = mutableListOf(snapshot(state))
-
-        // EVOLUTION (frames 1..frameCount): update then restart, per particle.
+        seedAllParticles(ctx)
+        val frames = mutableListOf(snapshotState())
         for (k in 1..frameCount) {
             seedFrame(k, ctx)
-            for (p in 0 until particleCount) {
-                for (v in 0 until varCount) ctx.loadFloat(varIds[v], state[p][v])
-                for (v in 0 until varCount) {
-                    state[p][v] = RpnFloatEvaluator.eval(updateEqs[v], updateEqs[v].size, ctx)
-                    ctx.loadFloat(varIds[v], state[p][v])
-                }
-                if (restart != null && RpnFloatEvaluator.eval(restart, restart.size, ctx) > 0f) {
-                    seedParticle(p, state, ctx)
-                }
-            }
-            // PARTICLE_COMPARE (condition1Body): after the loop update, each compare conditionally mutates
-            // a particle's vars (maze wall collision). Runs per-compare in doc order, like the sim's walk.
-            for (cmp in compares) {
-                val start = if (cmp.min < 0f) 0 else cmp.min.toInt()
-                val end = if (cmp.max < 0f) particleCount else cmp.max.toInt()
-                for (p in start until minOf(end, particleCount)) {
-                    for (v in 0 until varCount) ctx.loadFloat(varIds[v], state[p][v])
-                    if (RpnFloatEvaluator.eval(cmp.expr, cmp.expr.size, ctx) > 0f) {
-                        for (v in cmp.eq1.indices) {
-                            if (v >= varCount) break
-                            state[p][v] = RpnFloatEvaluator.eval(cmp.eq1[v], cmp.eq1[v].size, ctx)
-                            ctx.loadFloat(varIds[v], state[p][v])
-                        }
-                    }
-                }
-            }
-            frames += snapshot(state)
+            stepFrame(ctx)
+            frames += snapshotState()
         }
         return frames
     }

@@ -81,22 +81,29 @@ class Rem143EvolutionGateTest {
         var injectedAllDetected = true
         var anyExpected = false
         val docW = doc.width.toFloat(); val docH = doc.height.toFloat()
-        for (system in systems) {
-            val reconCtx = RemoteContext().also { it.setDensity(1f); it.animationEnabled = true; it.seedHostPalette() }
-            // Resolve the doc-var ENVIRONMENT the particle init/update eqs reference — canvas dims (id5/6)
-            // and layout-resolved doc floats (maze start-x id43, particle.rc id58). These are computed by
-            // the doc's own (layout-aware) eval walk, so resolve them via ONE player pass at startAt rather
-            // than a flat op loop (which mis-evaluates floats nested in CanvasContent containers). Done
-            // BEFORE evolve's RNG pin (evolve reseeds the capture RNG at entry) → the particle RAND this
-            // pass draws is discarded by the re-pin, leaving the pinned PARTICLE-RAND sequence untouched
-            // (the §6/REM-123 independence boundary). id43/id58 are generic doc-float data — not the
-            // particle orchestration — so resolving them via the doc's eval is data, not sim-coupling.
-            reconCtx.seedSystemVariables(docW, docH, schedule.startAt, 1f)
-            RemoteComposePlayer(reconCtx).paint(doc, com.tneff.kmpremotecompose.remote.player.NoOpPaintContext(reconCtx), frameTimeSeconds = schedule.startAt)
-            val frames = system.reconstruction.evolve(schedule.frameCount, reconCtx) { k, ctx ->
-                ctx.loadFloat(RemoteContext.ID_ANIMATION_DELTA_TIME, if (k == 0) 0f else DT)
-            }
-            val expected = expectedAnchors(doc, system, frames, schedule)
+        // ONE reconCtx + ONE env-seed + ONE RNG pin for the WHOLE doc, then evolve all systems FRAME-MAJOR
+        // in doc order. A multi-system doc (e.g. particle.rc, 2 systems) shares the sim's single continuous
+        // RNG drawn frame-major across systems (f0: sys0-seed, sys1-seed; f1: sys0-RAND, sys1-RAND; …); a
+        // per-system re-pin (the old `for system { evolve() }`) desyncs that order → only the RAND-driven
+        // vars diverge. Resolve the doc-var env (canvas dims id5/6, layout-resolved floats id43/id58) via
+        // ONE player eval-pass at startAt — done BEFORE the RNG pin so its RAND is discarded by the re-pin,
+        // leaving the pinned PARTICLE-RAND untouched (the §6/REM-123 independence boundary; id43/id58 are
+        // generic doc-float data, not the particle orchestration).
+        val reconCtx = RemoteContext().also { it.setDensity(1f); it.animationEnabled = true; it.seedHostPalette() }
+        reconCtx.seedSystemVariables(docW, docH, schedule.startAt, 1f)
+        RemoteComposePlayer(reconCtx).paint(doc, com.tneff.kmpremotecompose.remote.player.NoOpPaintContext(reconCtx), frameTimeSeconds = schedule.startAt)
+        com.tneff.kmpremotecompose.remote.player.core.RpnFloatEvaluator.seedRngForCapture(com.tneff.kmpremotecompose.remote.player.core.RenderRngPins.PARTICLE_SEED)
+        val framesPerSystem: List<MutableList<Array<FloatArray>>> = systems.map { mutableListOf() }
+        reconCtx.loadFloat(RemoteContext.ID_ANIMATION_DELTA_TIME, 0f) // seed frame (Δt=0)
+        for (system in systems) system.reconstruction.seedAllParticles(reconCtx)
+        systems.forEachIndexed { si, system -> framesPerSystem[si].add(system.reconstruction.snapshotState()) }
+        for (k in 1..schedule.frameCount) {
+            reconCtx.loadFloat(RemoteContext.ID_ANIMATION_DELTA_TIME, DT)
+            for (system in systems) system.reconstruction.stepFrame(reconCtx)
+            systems.forEachIndexed { si, system -> framesPerSystem[si].add(system.reconstruction.snapshotState()) }
+        }
+        systems.forEachIndexed { si, system ->
+            val expected = expectedAnchors(doc, system, framesPerSystem[si], schedule)
             for (k in expected.indices) {
                 val cap = captured.getOrElse(k) { emptyList() }
                 totalUnmatched += unmatched(expected[k], cap, tol = 0.1f)
