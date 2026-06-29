@@ -104,12 +104,21 @@ REM-109)**. Berührt **NICHT** LayoutMeasure — reine Paint-Walk + Eval + Op-Fe
   Desktop/Web sensor/statisch) + `haptic_demo` (Impulse-only, Haptik-Feedback-Timing). **Akzeptanz:** Maestro-
   Live-Flow (Touch→Animation) auf ≥1 Target.
 
-## 7. Locks & Offene Fragen
+## 7. Locks & aufgelöste Fragen (PO-approved)
 - **Locks:** §2-render-only (5 Ops Wire unangetastet); Op-Feld-State (kein Context-Persist); runLoop-Reuse
   (kein paralleler Loop-Mechanismus); RpnFloatEvaluator-Reuse; PARTICLE_COMPARE loud-guard falls korpus-absent;
   Voll-173-Render-Sweep (kein Fingerprint-Proxy); LIVE-Gate = Multi-Frame-Orakel+Maestro (kein headless-Screenshot).
-- **Offene Fragen (für PO/assist):**
-  1. **Partikel-RNG-Seed-Determinismus** für Goldens — Doc-self-`RAND_SEED` vs ein Partikel-Seed-Pin (RenderTimePins-
-     analog)? (S1-Blocker für stabilen Golden, falls Docs nicht selbst seeden — bei S1-Start decode-prüfen.)
-  2. PARTICLE_COMPARE — in den 7 Docs aktiv? (decode bei S2.)
-  3. Multi-Frame-Daten-Orakel-Harness-Owner (test-3/dev-1) für S2/S3.
+- **🔒 Precondition-Lock (dev-1, VOR S2):** Op-Feld-State UND das Multi-Frame-Harness brauchen BEIDE
+  **decode-once→paint-N** (Op-Instanzen über Frames wiederverwendet). dev-1 verifiziert read-only; bis dahin steht
+  §3.1 auf der unverifizierten Annahme. **Falls re-inflate-pro-Frame → der Fallback (persistenter reset-exempter
+  Player-State-Map) ist ein Player-State-Architektur-Touch mit Risk-Posture-Δ → eigene PO-/ggf-Mensch-Design-
+  Entscheidung, NICHT still einbauen.**
+- **Aufgelöste Fragen (PO):**
+  1. **Seed-Determinismus (S1-Decode-Befund):** die Partikel-Docs nutzen `OP_RAND` in den Init-Eqs, setzen aber
+     **KEIN `RAND_SEED`** (decode-verifiziert: confetti 100 / hearts 50 / particle 10×2 / maze 1 Partikel; Init-Eqs
+     durchgängig `rand=true seed=false`; Init referenziert auch `VAR1`=op70 = Partikel-Index). → Doc-self-seed-Pfad
+     **entfällt** → **Partikel-RNG-Seed-Pin** (RenderTimePins/REM-57-analog, reine Capture-Config, §2-irrelevant)
+     für deterministische Goldens. Korrektheits-Gate in BEIDEN Fällen = **Daten-Orakel** (N Partikel an Soll-Seed-
+     Positionen, REM-123-Klasse), NICHT Pixel-Match. (Seed-Pin-Owner: Tester-Config.)
+  2. **PARTICLE_COMPARE:** defer-S2, **loud-guard falls korpus-absent** (D1) — approved.
+  3. **Multi-Frame-Orakel-Harness:** **dev-1** baut das Tooling, **test-3** fährt das Gate.
