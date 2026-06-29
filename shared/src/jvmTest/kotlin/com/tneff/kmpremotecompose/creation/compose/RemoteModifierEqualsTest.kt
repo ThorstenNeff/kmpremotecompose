@@ -17,6 +17,7 @@ package com.tneff.kmpremotecompose.creation.compose
 
 import androidx.compose.ui.graphics.Color
 import com.tneff.kmpremotecompose.remote.core.operations.layout.DimensionType
+import com.tneff.kmpremotecompose.remote.creation.LayoutModifier
 import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertNotEquals
@@ -86,5 +87,100 @@ class RemoteModifierEqualsTest {
         // base must NOT have height appended (immutable chain) — proves the .height() call
         // returned a NEW RemoteModifier instead of mutating the shared one.
         assertNotEquals(base, extended, "Chain calls return a new RemoteModifier (immutable).")
+    }
+
+    // -------------------------------------------------------------------------------------------
+    // REM-130 T2 — equals / hashCode for the 7 new modifier elements
+    // -------------------------------------------------------------------------------------------
+
+    @Test
+    fun padding_sameValues_equal_differentValues_notEqual() {
+        val a = RemoteModifier.padding(20f)
+        val b = RemoteModifier.padding(start = 20f, top = 20f, end = 20f, bottom = 20f)
+        // Both forms must produce the same PaddingElement (all-sides constructor == per-side with
+        // identical floats) — caller convenience must not split element identity.
+        assertEquals(a, b, "padding(all) must produce the same element as padding(s,t,e,b) with equal floats")
+        assertEquals(a.hashCode(), b.hashCode())
+        assertNotEquals(a, RemoteModifier.padding(start = 10f, top = 20f, end = 20f, bottom = 20f))
+    }
+
+    @Test
+    fun clipRect_isSingleton_equalsItself() {
+        val a = RemoteModifier.clipRect()
+        val b = RemoteModifier.clipRect()
+        assertEquals(a, b, "clipRect() has no params — equality is unconditional")
+        assertEquals(a.hashCode(), b.hashCode())
+    }
+
+    @Test
+    fun roundedClipRect_perCornerValues_compared() {
+        val a = RemoteModifier.roundedClipRect(40f, 40f, 40f, 40f)
+        val b = RemoteModifier.roundedClipRect(40f, 40f, 40f, 40f)
+        assertEquals(a, b)
+        assertNotEquals(a, RemoteModifier.roundedClipRect(40f, 40f, 41f, 40f), "single-corner change breaks equality")
+    }
+
+    @Test
+    fun border_intOverload_equalsColorOverload_forSameArgb() {
+        val viaInt = RemoteModifier.border(borderWidth = 4f, roundedCorner = 0.1f, color = 0xffff0000.toInt())
+        val viaColor = RemoteModifier.border(borderWidth = 4f, roundedCorner = 0.1f, color = Color(0xffff0000.toInt()))
+        // Q1 sRGB-round-trip guard for border (parallel to background's Q1 guard) — Color.toArgb()
+        // must yield byte-identical BorderElement state.
+        assertEquals(viaInt, viaColor, "border(Color) must equal border(Int) for the same ARGB")
+        assertEquals(viaInt.hashCode(), viaColor.hashCode())
+    }
+
+    @Test
+    fun border_useLegacyFlag_breaksEquality() {
+        val legacy = RemoteModifier.border(borderWidth = 4f, roundedCorner = 0.1f, color = 0xffff0000.toInt(), useLegacy = true)
+        val nonLegacy = RemoteModifier.border(borderWidth = 4f, roundedCorner = 0.1f, color = 0xffff0000.toInt(), useLegacy = false)
+        // The useLegacy=false form writes reserve1=1 (non-legacy border drawing) — byte-different
+        // from useLegacy=true. Equality must reflect that wire-level difference.
+        assertNotEquals(legacy, nonLegacy)
+    }
+
+    @Test
+    fun visibility_differentIdRefs_notEqual() {
+        assertNotEquals(
+            RemoteModifier.visibility(valueId = 42),
+            RemoteModifier.visibility(valueId = 43),
+            "Different id-refs target different sources → different wire bytes → different element",
+        )
+    }
+
+    @Test
+    fun scroll_directionsAreDistinctElements() {
+        assertNotEquals(
+            RemoteModifier.scroll(LayoutModifier.SCROLL_HORIZONTAL),
+            RemoteModifier.scroll(LayoutModifier.SCROLL_VERTICAL),
+            "MODIFIER_SCROLL direction is part of element state — horizontal != vertical",
+        )
+    }
+
+    @Test
+    fun alignBy_lineAndFlags_bothPartOfEquality() {
+        val a = RemoteModifier.alignBy(line = 12.5f, flags = 0)
+        val b = RemoteModifier.alignBy(line = 12.5f, flags = 0)
+        assertEquals(a, b)
+        assertNotEquals(a, RemoteModifier.alignBy(line = 12.5f, flags = 1), "flags is part of equality")
+        assertNotEquals(a, RemoteModifier.alignBy(line = 13.0f, flags = 0), "line is part of equality")
+    }
+
+    @Test
+    fun elementOrder_matters_acrossT2_padding_then_border_vs_reverse() {
+        // Modifier emission order = wire order = byte-equality-sensitive (REM-130 mirrors S3a
+        // order-matters lock). Padding-then-border emits bytes [PADDING][BORDER]; the reverse
+        // emits [BORDER][PADDING] — those are NOT the same wire bytes.
+        val paddingFirst = RemoteModifier
+            .padding(20f)
+            .border(borderWidth = 4f, roundedCorner = 0.1f, color = 0xffff0000.toInt())
+        val borderFirst = RemoteModifier
+            .border(borderWidth = 4f, roundedCorner = 0.1f, color = 0xffff0000.toInt())
+            .padding(20f)
+        assertNotEquals(
+            paddingFirst,
+            borderFirst,
+            "Chain order is emit order is wire order — two orders must NOT compare equal.",
+        )
     }
 }
