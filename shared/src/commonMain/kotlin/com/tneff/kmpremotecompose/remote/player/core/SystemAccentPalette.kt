@@ -452,12 +452,40 @@ internal val ANDROID_LEGACY_ALIASES: Map<String, String> = mapOf(
 )
 
 /**
+ * REM-133: static legacy framework colors (`android.R.color.*`) that a few docs reference by their
+ * `color.<name>` form. Unlike [ANDROID_LEGACY_ALIASES] these are NOT Material-You palette tones — they
+ * are fixed public-framework constants (the canonical AOSP Holo day-tones from
+ * `frameworks/base/core/res/res/values/colors.xml`), so they carry their own ARGB rather than mapping to
+ * a `system_*` entry. Target-independent (same on every platform), which is why they live in the shared
+ * [withLegacyAliases] merge. Resolves `color_table`'s previously-unmapped swatches that otherwise fell
+ * back to the doc's green/cyan debug `ColorConstant`.
+ */
+internal val ANDROID_LEGACY_FIXED_COLORS: Map<String, Int> = mapOf(
+    "color.holo_blue_bright" to 0xFF00DDFF.toInt(),
+    "color.holo_blue_light" to 0xFF33B5E5.toInt(),
+    "color.holo_blue_dark" to 0xFF0099CC.toInt(),
+    "color.holo_green_light" to 0xFF99CC00.toInt(),
+    "color.holo_green_dark" to 0xFF669900.toInt(),
+    "color.holo_red_light" to 0xFFFF4444.toInt(),
+    "color.holo_red_dark" to 0xFFCC0000.toInt(),
+    "color.holo_orange_light" to 0xFFFFBB33.toInt(),
+    "color.holo_orange_dark" to 0xFFFF8800.toInt(),
+    "color.holo_purple" to 0xFFAA66CC.toInt(),
+    "color.background_dark" to 0xFF000000.toInt(),
+    "color.background_light" to 0xFFFFFFFF.toInt(),
+    "color.black" to 0xFF000000.toInt(),
+    "color.darker_gray" to 0xFFAAAAAA.toInt(),
+)
+
+/**
  * Merge [base] (the resolved `color.system_*` palette) with the [ANDROID_LEGACY_ALIASES] resolved
- * against it. Shared by the iOS actual and the Android pre-31 fallback so both surface the same names.
+ * against it, plus the [ANDROID_LEGACY_FIXED_COLORS] (REM-133). Shared by the iOS actual, the Android
+ * pre-31 fallback, and (via the resolved palette) Android post-31 so all targets surface the same names.
  */
 internal fun withLegacyAliases(base: Map<String, Int>): Map<String, Int> {
-    val out = LinkedHashMap<String, Int>(base.size + ANDROID_LEGACY_ALIASES.size)
+    val out = LinkedHashMap<String, Int>(base.size + ANDROID_LEGACY_ALIASES.size + ANDROID_LEGACY_FIXED_COLORS.size)
     out.putAll(base)
     for ((legacy, systemName) in ANDROID_LEGACY_ALIASES) base[systemName]?.let { out[legacy] = it }
+    out.putAll(ANDROID_LEGACY_FIXED_COLORS)
     return out
 }

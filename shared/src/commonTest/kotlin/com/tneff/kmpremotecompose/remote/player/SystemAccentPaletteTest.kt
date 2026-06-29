@@ -63,4 +63,30 @@ class SystemAccentPaletteTest {
         assertEquals(pal["color.system_background_light"], pal["android.colorBackground"], "colorBackground → background_light")
         assertEquals(pal["color.system_on_surface_light"], pal["android.textColor"], "textColor → on_surface_light")
     }
+
+    @Test
+    fun rem133_legacyFixedFrameworkColorsResolveToAospValues() {
+        // REM-133: the static AOSP Holo R.color constants color_table referenced (previously unmapped →
+        // green/cyan debug fallback). Exact public-framework day-tones, present on every target.
+        val expected = mapOf(
+            "color.holo_blue_bright" to 0xFF00DDFF.toInt(),
+            "color.holo_blue_light" to 0xFF33B5E5.toInt(),
+            "color.holo_blue_dark" to 0xFF0099CC.toInt(),
+            "color.holo_green_light" to 0xFF99CC00.toInt(),
+            "color.holo_green_dark" to 0xFF669900.toInt(),
+            "color.holo_red_light" to 0xFFFF4444.toInt(),
+            "color.holo_red_dark" to 0xFFCC0000.toInt(),
+            "color.holo_orange_light" to 0xFFFFBB33.toInt(),
+            "color.holo_orange_dark" to 0xFFFF8800.toInt(),
+            "color.holo_purple" to 0xFFAA66CC.toInt(),
+            "color.background_dark" to 0xFF000000.toInt(),
+            "color.background_light" to 0xFFFFFFFF.toInt(),
+            "color.black" to 0xFF000000.toInt(),
+            "color.darker_gray" to 0xFFAAAAAA.toInt(),
+        )
+        for ((name, argb) in expected) {
+            assertEquals(argb, pal[name], "$name must resolve to its AOSP value, not the debug fallback")
+            assertEquals(0xFF, (pal[name]!! ushr 24) and 0xFF, "$name is opaque")
+        }
+    }
 }
