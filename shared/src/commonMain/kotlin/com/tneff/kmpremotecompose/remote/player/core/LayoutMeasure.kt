@@ -18,7 +18,10 @@ package com.tneff.kmpremotecompose.remote.player.core
 import com.tneff.kmpremotecompose.remote.core.document.RemoteComposeDocument
 import com.tneff.kmpremotecompose.remote.core.operations.ComponentValue
 import com.tneff.kmpremotecompose.remote.core.operations.TextData
+import com.tneff.kmpremotecompose.remote.core.operations.draw.DrawContent
+import com.tneff.kmpremotecompose.remote.core.operations.layout.AlignByModifier
 import com.tneff.kmpremotecompose.remote.core.operations.layout.BackgroundModifier
+import com.tneff.kmpremotecompose.remote.core.operations.layout.CanvasOperations
 import com.tneff.kmpremotecompose.remote.core.operations.layout.CoreText
 import com.tneff.kmpremotecompose.remote.core.operations.layout.BorderModifier
 import com.tneff.kmpremotecompose.remote.core.operations.layout.BoxLayout
@@ -35,6 +38,7 @@ import com.tneff.kmpremotecompose.remote.core.operations.layout.ClipRectModifier
 import com.tneff.kmpremotecompose.remote.core.operations.layout.RootLayout
 import com.tneff.kmpremotecompose.remote.core.operations.layout.RowLayout
 import com.tneff.kmpremotecompose.remote.core.operations.layout.ScrollModifier
+import com.tneff.kmpremotecompose.remote.core.operations.layout.TextLayout
 import com.tneff.kmpremotecompose.remote.core.operations.layout.WidthModifier
 import com.tneff.kmpremotecompose.remote.wire.WireTypes
 
@@ -75,6 +79,21 @@ internal object LayoutMeasure {
         val scroll: ScrollModifier,
     )
 
+    /**
+     * REM-134 (a) — a measured TextLayout-span content holder the paint walk brackets: translate the
+     * canvas to the span's absolute origin [x],[y] so the span's content (DrawContent text + decoration
+     * DrawLines, both authored in span-LOCAL coords in the `.rc`) lands at the right place. Same transient
+     * stack-scoped matrix pattern as [ScrollBracket]; `DrawLine`/`DrawContent` stay coordinate-agnostic
+     * (the canvas moves, not the op). Keyed on the content holder ([contentHolderId]) like the scroll one.
+     */
+    internal class SpanBracket(val contentHolderId: Int, val x: Float, val y: Float)
+
+    /** Result of [measure]: the scroll brackets (REM-108) + the TextLayout-span brackets (REM-134 a). */
+    internal class MeasureResult(
+        val scrollBrackets: Map<Int, ScrollBracket>,
+        val spanBrackets: Map<Int, SpanBracket>,
+    )
+
     private const val MAX_DEPTH = 32 // bounded-depth guard; real docs are 2–4 deep
 
     // ComponentValue.type wire constants (upstream ComponentValue): which dimension a value exposes.
@@ -97,7 +116,7 @@ internal object LayoutMeasure {
     private const val SPACE_EVENLY = 7
     private const val SPACE_AROUND = 8
 
-    private enum class Kind { ROOT, BOX, ROW, COLUMN, CONTENT, COMPONENT, TEXT, MODIFIER }
+    private enum class Kind { ROOT, BOX, ROW, COLUMN, CONTENT, COMPONENT, TEXT, TEXT_LAYOUT, MODIFIER }
 
     private class Node(val componentId: Int, val kind: Kind, val startW: Float, val startH: Float) {
         var width: WidthModifier? = null
@@ -105,6 +124,12 @@ internal object LayoutMeasure {
         var padding: PaddingModifier? = null
         // REM-37 c_text: a CoreText component's op + its measured text-bounds offset (left/top, for baseline).
         var coreText: CoreText? = null
+        // REM-134: a TextLayout (LAYOUT_TEXT) span component + its nested DrawContent paint placeholder +
+        // baseline-alignment modifier. The text id (shared by both TEXT/TEXT_LAYOUT for getTextBounds).
+        var textLayout: TextLayout? = null
+        var drawContent: DrawContent? = null
+        var alignBy: AlignByModifier? = null
+        var textId = 0
         var textLeft = 0f
         var textTop = 0f
         var background: BackgroundModifier? = null
@@ -134,11 +159,11 @@ internal object LayoutMeasure {
         surfaceW: Float,
         surfaceH: Float,
         context: RemoteContext,
-    ): Map<Int, ScrollBracket> {
+    ): MeasureResult {
         // REM-37 c_text: pre-load DATA_TEXT so CoreText intrinsic measure (getTextBounds) sees the text —
         // mirrors upstream, which loads TextData at inflate (into mTextData) before any layout measure.
         for (op in document.operations) if (op is TextData) context.putText(op.id, op.text)
-        val root = buildTree(document) ?: return emptyMap()
+        val root = buildTree(document) ?: return MeasureResult(emptyMap(), emptyMap())
         val byId = HashMap<Int, Node>()
         index(root, byId)
 
@@ -171,7 +196,26 @@ internal object LayoutMeasure {
         // measure phase, BEFORE the eval Phase-A) so the paired TouchExpression clamps against a fresh max
         // (TechSpec §5 sequencing — in delta-mode docs `max` is the TE's own clamp id). The returned brackets
         // are applied by the paint walk (clip viewport + translate by the live offset). Empty ⇒ no scroll doc.
-        return collectScrollBrackets(root, context)
+        return MeasureResult(collectScrollBrackets(root, context), collectSpanBrackets(root))
+    }
+
+    /**
+     * REM-134 (a) — build the TextLayout-span → content-holder bracket map. For each TextLayout span that
+     * has a DrawContent placeholder, bracket its content holder (the CONTENT child) at the holder's
+     * measured absolute origin, so the paint walk translates the canvas there and the span's local-coord
+     * content (text + decoration) lands correctly. (DrawContent's draw origin is set LOCAL in [applyBounds].)
+     */
+    private fun collectSpanBrackets(root: Node): Map<Int, SpanBracket> {
+        val out = HashMap<Int, SpanBracket>()
+        fun visit(node: Node) {
+            if (node.kind == Kind.TEXT_LAYOUT && node.drawContent != null) {
+                val holder = node.children.firstOrNull { it.kind == Kind.CONTENT }
+                if (holder != null) out[holder.componentId] = SpanBracket(holder.componentId, holder.x, holder.y)
+            }
+            for (c in node.children) visit(c)
+        }
+        visit(root)
+        return out
     }
 
     /** Walk the tree, publish scroll bounds, and build the content-holder → [ScrollBracket] map. */
@@ -230,7 +274,23 @@ internal object LayoutMeasure {
                 is LayoutContent -> open(Node(op.componentId, Kind.CONTENT, Float.NaN, Float.NaN))
                 is CanvasContent -> open(Node(op.componentId, Kind.CONTENT, Float.NaN, Float.NaN))
                 is ComponentStart -> open(Node(op.componentId, Kind.COMPONENT, op.width, op.height))
-                is CoreText -> open(Node(op.textId, Kind.TEXT, Float.NaN, Float.NaN).also { it.coreText = op })
+                is CoreText -> open(Node(op.textId, Kind.TEXT, Float.NaN, Float.NaN).also { it.coreText = op; it.textId = op.textId })
+                // REM-134: a TextLayout (LAYOUT_TEXT) span is a text-bearing CONTAINER (its own content slot
+                // → CanvasOperations → DrawContent nests below). Sized intrinsically like CoreText; its
+                // content slot inherits those bounds so a ComponentValue on it (underline/strike geometry)
+                // resolves. componentId = the layout id; textId = the referenced DATA_TEXT.
+                is TextLayout -> open(Node(op.componentId, Kind.TEXT_LAYOUT, Float.NaN, Float.NaN).also {
+                    it.textLayout = op; it.textId = op.textId
+                })
+                // REM-134: baseline-alignment modifier on the current TextLayout span (line=NaN sentinel).
+                is AlignByModifier -> stack.lastOrNull()?.let { if (it.alignBy == null) it.alignBy = op }
+                // REM-134: CANVAS_OPERATIONS is a container (carries a CONTAINER_END). buildTree previously
+                // ignored it → its END over-popped a real node. Push a transparent content node so the tree
+                // balances (its draw-op children are ignored in measure anyway).
+                is CanvasOperations -> open(Node(0, Kind.CONTENT, Float.NaN, Float.NaN))
+                // REM-134: associate the DrawContent placeholder with its nearest enclosing TextLayout span
+                // (the z-order-correct paint point), so the measure pass can wire the resolved text draw.
+                is DrawContent -> stack.lastOrNull { it.kind == Kind.TEXT_LAYOUT }?.let { if (it.drawContent == null) it.drawContent = op }
                 is WidthModifier -> stack.lastOrNull()?.let { if (it.width == null) it.width = op }
                 is HeightModifier -> stack.lastOrNull()?.let { if (it.height == null) it.height = op }
                 is PaddingModifier -> stack.lastOrNull()?.let { it.padding = op }
@@ -266,20 +326,24 @@ internal object LayoutMeasure {
 
     /** Pass 1 — sizes: EXACT/EXACT_DP/FILL/inherit top-down; WRAP aggregate (over layout children) bottom-up. */
     private fun measureSizes(node: Node, availW: Float, availH: Float, context: RemoteContext, depth: Int) {
-        if (node.kind == Kind.TEXT) {
+        if (node.kind == Kind.TEXT || node.kind == Kind.TEXT_LAYOUT) {
             // Intrinsic text size via the real text renderer (mirrors upstream CoreText.computeWrapSize).
-            // node.componentId == the CoreText.textId; getTextBounds fills [left, top, right, bottom].
+            // getTextBounds fills [left, top, right, bottom]; node.textId is the DATA_TEXT id for both kinds.
             val pc = context.paintContext
             if (pc != null) {
-                // Apply the CoreText TextStyle (esp. font size) before measuring so bounds match the draw.
+                // Apply the TextStyle (esp. font size) before measuring so bounds match the draw.
                 pc.savePaint()
-                node.coreText?.applyStyle(context, pc)
+                if (node.kind == Kind.TEXT) node.coreText?.applyStyle(context, pc)
+                else node.textLayout?.applyStyle(context, pc)
                 val b = FloatArray(4)
-                pc.getTextBounds(node.componentId, 0, -1, 0, b)
+                pc.getTextBounds(node.textId, 0, -1, 0, b)
                 pc.restorePaint()
                 node.textLeft = b[0]; node.textTop = b[1]
                 node.w = b[2] - b[0]; node.h = b[3] - b[1]
             }
+            // REM-134: a TEXT_LAYOUT's content slot (LayoutContent child) inherits these bounds in
+            // assignPositions (transparent-holder rule) → ComponentValue on it resolves. No child measure
+            // needed (the slot holds only CanvasOperations → DrawContent). Both kinds are size-leaves here.
             return // text size is intrinsic — ignore children / WRAP
         }
         node.w = resolveDim(node.width?.type, node.width?.value, node.startW, availW, context)
@@ -293,8 +357,18 @@ internal object LayoutMeasure {
             for (child in node.children) measureSizes(child, contentW, contentH, context, depth + 1)
         }
 
-        if (node.width?.type == DimensionType.WRAP) node.w = aggregate(node, horizontal = true) + padW
-        if (node.height?.type == DimensionType.WRAP) node.h = aggregate(node, horizontal = false) + padH
+        // WRAP either when the modifier says so, or — REM-134 — when a flex container (Row/Column) has NO
+        // modifier on that axis: Compose's default is wrap-content, not fill. (resolveDim defaulted a
+        // missing modifier to parent-avail, which made attribute_string's height-less Rows each FILL the
+        // column height → the 6 rows stacked off-screen, only line 1 visible.) An explicit FILL/EXACT is
+        // untouched; only the no-modifier flex case flips to wrap.
+        val flex = node.kind == Kind.ROW || node.kind == Kind.COLUMN
+        if (node.width?.type == DimensionType.WRAP || (flex && node.width == null)) {
+            node.w = aggregate(node, horizontal = true) + padW
+        }
+        if (node.height?.type == DimensionType.WRAP || (flex && node.height == null)) {
+            node.h = aggregate(node, horizontal = false) + padH
+        }
     }
 
     /** Pass 2 — positions: assign each node an absolute (x,y); arrange layout children; recurse. */
@@ -349,8 +423,15 @@ internal object LayoutMeasure {
                 var x = cx + mainStart(node.horizontalPositioning, cw, total)
                 val gap = mainGap(node.horizontalPositioning, cw, kids.sumOf { it.w.toDouble() }.toFloat(), kids.size)
                 if (node.horizontalPositioning == SPACE_EVENLY || node.horizontalPositioning == SPACE_AROUND) x = cx + gap.first
+                // REM-134 S2: AlignBy(line=NaN) = align spans on a shared text baseline (AttributedString
+                // rows). A span's ascent = −textTop (textTop = bounds.top, negative-above-baseline); the row
+                // baseline = max ascent; each aligned span is pushed down so its baseline lands there:
+                // localY = maxAscent − ascent = maxAscent + textTop. Non-aligned kids keep cross-axis align.
+                // Only line=NaN is in the corpus; an explicit-line AlignBy falls back to cross-align (deferred).
+                val maxAscent = kids.filter { isBaselineAligned(it) }.maxOfOrNull { -it.textTop } ?: 0f
                 for (kid in kids) {
-                    kid.localY = crossAlign(node.verticalPositioning, ch, kid.h, vertical = true)
+                    kid.localY = if (isBaselineAligned(kid)) maxAscent + kid.textTop
+                        else crossAlign(node.verticalPositioning, ch, kid.h, vertical = true)
                     kid.localX = x - cx
                     kid.x = x
                     kid.y = cy + kid.localY
@@ -381,6 +462,9 @@ internal object LayoutMeasure {
         else -> 0f to 0f
     }
 
+    /** REM-134: true if this span requests baseline alignment (AlignBy line=NaN — the corpus sentinel). */
+    private fun isBaselineAligned(node: Node): Boolean = node.alignBy?.line?.isNaN() == true
+
     /** Cross-axis alignment of one child (START/CENTER/END or TOP/CENTER/BOTTOM). */
     private fun crossAlign(pos: Int, avail: Float, size: Float, vertical: Boolean = false): Float = when (pos) {
         CENTER -> (avail - size) / 2f
@@ -399,6 +483,13 @@ internal object LayoutMeasure {
         // multi-line text to the component width and position the complex layout. Single-line text ignores
         // this and keeps the baseline origin above (Bein-2: non-wrapping text stays pixel-identical).
         node.coreText?.setTextBox(node.x, node.y, node.w, node.h)
+        // REM-134 (a): wire the span's DrawContent with its text draw origin in SPAN-LOCAL coords
+        // (−textLeft, −textTop). The paint walk opens a [SpanBracket] that translates the canvas to the
+        // content holder's absolute origin (= the span position), so local + translate = the correct
+        // absolute baseline (node.y − textTop), while the span's decoration DrawLines (also local in the
+        // .rc) ride the same bracket. (Pre-(a) this was absolute; the bracket now owns the offset.)
+        val tl = node.textLayout
+        if (tl != null) node.drawContent?.setTextContent(tl, node.textId, -node.textLeft, -node.textTop)
         for (c in node.children) applyBounds(c)
     }
 
