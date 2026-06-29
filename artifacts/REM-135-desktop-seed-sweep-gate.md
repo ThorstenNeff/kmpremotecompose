@@ -2,9 +2,13 @@
 
 > **Adressat:** PO. **Status:** ✅ **GRÜN** (Wire + Voll-Sweep + Per-Doc-Daten-Orakel
 > resolved==Palette-Lookup + Mass-Re-Baseline-Bundle 10 PNGs).
-> **Branch:** `feature/REM-135-desktop-sweep-seed-wire` von develop `58a5714` (Helfer
-> `e99b434`/`02b91f3` + REM-133 `58a5714` integriert).
-> **PO-Routing:** `1521061806108442766` (GO-Wire, Single-Site-Fix `renderOne:132`).
+> **Branch:** `feature/REM-135-desktop-sweep-seed-wire` rebased auf develop
+> `9691c81` (REM-133 fast-follow mit 3 *_disabled-Tokens für color_table-17/17
+> Completeness integriert; Helfer `e99b434`/`02b91f3` + 14-Name-Wave `58a5714`
+> als Vorgänger).
+> **PO-Routing:** `1521061806108442766` (GO-Wire, Single-Site-Fix `renderOne:132`)
+> + `1521063753653948560` (Rebase-Anweisung + color_table-Re-Capture nach REM-133-
+> fast-follow).
 
 ## TL;DR (3 Sätze)
 
@@ -46,7 +50,7 @@ korrekt seeded und in dieser Lane out-of-scope).
 |---|---|---|---|---|---|
 | 1 | `clock` | -1625 | `#113311` (debug-grün, 75%) | `#EEF0FF` 70% + `#6476A5` 3% | `accent1_50` + `accent1_500` (primary_blue) |
 | 2 | `color_list` | +102 | `#FFF000` (debug-gelb, 4.5%) | `#7E90C0` 4.5% | `accent1_400` |
-| 3 | `color_table` | +3 | `#00FF00` (debug-grün, 98.4%) | `#B3C6F9` 98.4% | `accent1_200` |
+| 3 | `color_table` | +3 | `#00FF00` (debug-grün, 98.4%) | `#B3C6F9` 98.4% | `accent1_200` (oberes Viewport @ t=0; doc enthält 17 Namen inkl. 3 `*_disabled` nach REM-133-fast-follow `9691c81`, aber off-screen im Scroll-Bereich → static t=0 byte-identisch zu 14-Name-Render, siehe Footnote ⓘ) |
 | 4 | `digital_clock1` | +5189 | `#7AFFFF` (cyan-fallback, 86%) | `#40527D` 86% + `#9DA5BD` 3% | ≈`primary_dim_light` + variant |
 | 5 | `experimental_gmt` | +3402 | `#1A1A5E` + `#5E1A1A` (fallbacks) | `#6476A5` + `#5D5F68` | `accent1_500` + `on_surface_variant_light` |
 | 6 | `experimental_solar_gmt` | +2728 | `#1A1A5E` + `#0000FF` mix | `#4B5D8B` + `#DCE2F9` + Red `#A83836` | `accent1_600` + `accent2_100` + `error_light` |
@@ -58,6 +62,26 @@ korrekt seeded und in dieser Lane out-of-scope).
 **163/173 byte-identisch zu current Goldens** = Negativ-Kontrolle: kein Sweep-
 Overreach. Seed-Effekt beschränkt auf Docs, die NamedVariable-gebundene Theme-
 Farben verwenden.
+
+**ⓘ Footnote zu color_table (REM-133-fast-follow `9691c81` Re-Capture):** Auf
+develop `9691c81` (post-REM-133-fast-follow) ist die Host-Palette von 14 → 17
+Namen erweitert (`color.system_on_surface_disabled` `0x6130323A`,
+`color.system_outline_disabled` `0x61787A84`, `color.system_surface_disabled`
+`0x61FAF8FE` — dokumentierte 38%-Alpha-Ableitung). Re-Capture
+`/tmp/rem-135-rev/color_table.png` ist **byte-identisch** zu meinem ursprünglichen
+14-Name-Render (1871 B, MD5-Identität). Grund: `color_table.rc` enthält die 3
+`*_disabled`-Cells (per `strings` verifiziert: `color.system_on_surface_disabled`
++ `color.system_outline_disabled` + `color.system_surface_disabled` im Wire),
+aber sie liegen **off-screen im vertikalen Scroll-Bereich** bei static
+`touchPosition=0` + `computedHeight=103`. Der oberste Viewport zeigt nur die
+ersten ~4-5 `system_accent1_*`-Cells → die 3 *_disabled-Cells sind erst beim
+Scrollen sichtbar. Konsequenz: **17/17-Completeness ist im Decode/Palette-Resolve
+voll wirksam** (jede Name-Referenz im Doc findet ihren Palette-Eintrag, keine
+fail-soft Cells); der **static-t=0-Render ist beide Male der `accent1_200`-
+Background-Effekt der oberen Cells**, identisch. Re-Baseline ist also: PNG-
+unverändert vs. mein voriger Push, Census-Zeile aber semantisch upgegradet
+(„17 Namen komplett resolved, off-screen-Subset gehört dazu") für die test-1/
+test-2-Cross-Check-Erwartung.
 
 ## Per-Doc-Daten-Orakel: resolved ARGB == Palette-Lookup ✅
 
