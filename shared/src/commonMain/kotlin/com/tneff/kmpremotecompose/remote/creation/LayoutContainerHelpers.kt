@@ -718,3 +718,58 @@ inline fun RemoteComposeContext.root(block: RemoteComposeContext.() -> Unit) {
 fun RemoteComposeContext.valueIntegerChange(valueId: Int, value: Int) {
     add(ValueIntegerChangeAction(valueId, value))
 }
+
+/**
+ * REM-145 S2 — `TOUCH_EXPRESSION` standalone helper: allocate a region-0 id and emit a
+ * `TOUCH_EXPRESSION` op binding that id to a touch-driven RPN float expression. Mirrors
+ * `floatExpression`'s allocate-and-return pattern — returns the NaN-encoded id so callers can
+ * embed it into other expressions / draw helpers.
+ *
+ * The op's field layout (verified via REM-96 `scroll_fullByteEquality_vsCorpusFixture_verticalScroll`
+ * against `c_modifier_vertical_scroll.rc`):
+ *  - `value` — initial / static value (raw float bits, may be NaN-encoded id-ref)
+ *  - `min` / `max` — clamping range (NaN-encoded id-refs allowed; raw bits preserved)
+ *  - `velocityId` — id of a velocity float, 0f when unbound
+ *  - `touchEffects` — bitmask of touch-effect flags (`TouchExpression.TOUCH_*` constants upstream)
+ *  - `exp` — RPN expression `FloatArray` (mix of literal floats, NaN-encoded variable refs
+ *    `WireTypes.asNan(id)`, and NaN-encoded operator ids `RcExpression.*`). **W14 NaN-bits-
+ *    preservation** — `FloatArray` stores raw IEEE 754, no operator-on-NaN repack.
+ *  - `stopLogic` — packed `mode << 16 | stops.length` (mode = `STOP_GENTLY (0)` / `STOP_ABSOLUTE_POS (1)`)
+ *  - `stops` — `FloatArray` of stop positions; empty when no stops
+ *  - `easing` — `FloatArray` of easing parameters; empty when no easing
+ *
+ * **Profile-gating:** `TOUCH_EXPRESSION` is in DEFAULT_SET (already emitted by `scroll()` under
+ * PROFILE_ANDROIDX 0x200) — wider profile reach than the touch-event modifiers (which are
+ * EXPERIMENTAL-overlay).
+ *
+ * Returns the **NaN-encoded id** for chaining (`val touchY = touchExpression(...);
+ * floatExpression(touchY, ...)`).
+ */
+fun RemoteComposeContext.touchExpression(
+    value: Float,
+    min: Float,
+    max: Float,
+    velocityId: Float = 0f,
+    touchEffects: Int = 0,
+    exp: FloatArray,
+    stopLogic: Int = 0,
+    stops: FloatArray = floatArrayOf(),
+    easing: FloatArray = floatArrayOf(),
+): Float {
+    val id = ids.nextId()
+    add(
+        TouchExpression(
+            id = id,
+            value = value,
+            min = min,
+            max = max,
+            velocityId = velocityId,
+            touchEffects = touchEffects,
+            exp = exp,
+            stopLogic = stopLogic,
+            stops = stops,
+            easing = easing,
+        ),
+    )
+    return WireTypes.asNan(id)
+}
