@@ -152,6 +152,66 @@ class LayoutModifierByteTest {
     }
 
     @Test
+    fun borderColorRef_emitsFlags2_andStoresColorIdAndZeroRgba() {
+        // REM-141 S1 — dynamic-color form (flags=2 / colorId / rgba=0). Pin the wire shape
+        // shape independent of any corpus, then anchor against c_modifier_dynamic_border.rc
+        // below. Mirrors upstream addModifierBorder(borderWidth, roundedCorner, colorId, shape):
+        // BorderModifierOperation.apply(buffer, 2, colorId, reserve1, 0, bw, rc, 0, 0, 0, 0, shape).
+        val mod = emit {
+            borderColorRef(borderWidth = 5f, roundedCorner = 1f, colorId = 42, shape = 1)
+        }
+        val b = mod.first { it is BorderModifier } as BorderModifier
+        assertEquals(2, b.flags, "borderColorRef → flags=2 (resolve-by-colorId switch)")
+        assertEquals(42, b.colorId)
+        assertEquals(0, b.reserve1, "default useLegacy=true → reserve1=0")
+        assertEquals(0, b.reserve2)
+        assertEquals(5f, b.borderWidth); assertEquals(1f, b.roundedCorner)
+        assertEquals(0f, b.r); assertEquals(0f, b.g); assertEquals(0f, b.b); assertEquals(0f, b.a)
+        assertEquals(1, b.shapeType)
+    }
+
+    @Test
+    fun borderColorRef_fullByteEquality_vsCorpusFixture_dynamicBorder() {
+        // REM-141 S1 — Stage-2 sub-span byte-anchor: the MODIFIER_BORDER 45-byte op on
+        // `c_modifier_dynamic_border.rc` is ID-decoupled at the op level (`colorId` is a plain
+        // int field — caller passes the value, no allocator coupling). Build a synthetic
+        // procedural-DSL document carrying the same `borderColorRef(5, 1, 42, shape=1)`, extract
+        // the MODIFIER_BORDER op span, assert byte-equal against the corpus span. **Direct
+        // corpus byte-anchor** — closes assist's REM-130 §2-completeness concern transitively
+        // for the dynamic-border branch (proves the new borderColorRef helper emits exactly
+        // the upstream wire shape).
+        val corpus = com.tneff.kmpremotecompose.conformance.RcCorpus
+            .readFixture("corpus/c_modifier_dynamic_border.rc")
+        val corpusOps = DocumentReader.inflateWithTrace(corpus).second
+        val borderOpcode = com.tneff.kmpremotecompose.remote.core.operations.Operations.MODIFIER_BORDER
+        val corpusBorderSpan = corpusOps.first { it.opcode == borderOpcode }
+        // 1 opcode + 4 ints(flags,colorId,res1,res2) + 6 floats(bw,rc,r,g,b,a) + 1 int(shapeType) = 45 B.
+        assertEquals(45, corpusBorderSpan.byteEnd - corpusBorderSpan.byteStart, "MODIFIER_BORDER wire = 45 B")
+        val corpusBorderBytes = corpus.copyOfRange(corpusBorderSpan.byteStart, corpusBorderSpan.byteEnd)
+
+        // Build a synthetic doc that emits a MODIFIER_BORDER matching the corpus payload exactly:
+        // borderWidth=5, roundedCorner=1, colorId=42, shape=1, useLegacy=true (→ reserve1=0).
+        // The surrounding container is irrelevant for the sub-span — borderColorRef sets the op's
+        // own fields, independent of any prior ColorExpression (no allocator dependency at the
+        // op level — the ColorExpression that ultimately defines colorId=42 lives elsewhere on
+        // the document and is anchored separately in REM-141 S2/S3).
+        val emitted = document(width = 100, height = 100) {
+            box(modifier = LayoutModifier().borderColorRef(
+                borderWidth = 5f, roundedCorner = 1f, colorId = 42, shape = 1,
+            )) {}
+        }
+        val emittedOps = DocumentReader.inflateWithTrace(emitted).second
+        val emittedBorderSpan = emittedOps.first { it.opcode == borderOpcode }
+        val emittedBorderBytes = emitted.copyOfRange(emittedBorderSpan.byteStart, emittedBorderSpan.byteEnd)
+        assertTrue(
+            corpusBorderBytes.contentEquals(emittedBorderBytes),
+            "MODIFIER_BORDER 45-byte op sub-span emitted by LayoutModifier.borderColorRef must " +
+                "byte-match c_modifier_dynamic_border.rc — direct §2 corpus anchor for the " +
+                "dynamic-color border wire shape.",
+        )
+    }
+
+    @Test
     fun clipRect_emitsZeroFieldOp() {
         val mod = emit { clipRect() }
         assertEquals(1, mod.count { it is ClipRectModifier })

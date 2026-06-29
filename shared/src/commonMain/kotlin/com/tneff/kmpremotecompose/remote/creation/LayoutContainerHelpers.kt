@@ -209,6 +209,35 @@ class LayoutModifier {
         return this
     }
 
+    /**
+     * REM-141 S1 — `MODIFIER_BORDER` **dynamic-color form**: colour drawn from a prior `ColorExpression`
+     * (or any region-0 colour id). Emits the upstream `flags=2 / colorId / rgba=(0,0,0,0)` wire
+     * shape — distinct from [border] which hardcodes `flags=0` and decomposes a literal ARGB int.
+     *
+     * **Separate name (NOT an overload of `border`)** — same `(borderWidth, roundedCorner, Int)`
+     * signature would be ambiguous with the static `border(color: Int)` form (Q2 PO-close, REM-141
+     * scoping draft). Mirrors upstream's `flag-bit` switch in `BorderModifierOperation.apply`:
+     * `flags == 2` → resolve colour via `context.getColor(colorId)`, ignore `rgba`. The
+     * byte-faithful sub-span anchor against `c_modifier_dynamic_border.rc` (REM-141 S1) pins
+     * exactly this wire shape — see `LayoutModifierByteTest.borderColorRef_*`.
+     *
+     * `useLegacy=true` → `reserve1=0`; `useLegacy=false` → `reserve1=1` (mirrors [border]'s contract).
+     */
+    fun borderColorRef(
+        borderWidth: Number,
+        roundedCorner: Number,
+        colorId: Int,
+        shape: Int = 0,
+        useLegacy: Boolean = true,
+    ): LayoutModifier {
+        val bw = borderWidth.toFloat(); val rc = roundedCorner.toFloat()
+        val res1 = if (useLegacy) 0 else 1
+        emitters.add { ctx ->
+            ctx.add(BorderModifier(2, colorId, res1, 0, bw, rc, 0f, 0f, 0f, 0f, shape))
+        }
+        return this
+    }
+
     /** `MODIFIER_CLIP_RECT` — clip to the component's rectangular bounds (no operands). */
     fun clipRect(): LayoutModifier {
         emitters.add { ctx -> ctx.add(ClipRectModifier()) }
