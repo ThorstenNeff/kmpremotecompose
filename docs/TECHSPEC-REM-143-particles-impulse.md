@@ -42,8 +42,21 @@ REM-109)**. Berührt **NICHT** LayoutMeasure — reine Paint-Walk + Eval + Op-Fe
 - `mParticles` ist ein **render-only Op-Feld** auf ParticlesCreate (nicht serialisiert → §2-safe).
 - **Seed-once-Semantik:** ParticlesCreate seedt beim ERSTEN apply (ein `seeded`-Flag); Folge-Frames seeden
   NICHT neu (sonst keine Evolution). Statischer Render (1 paint) = Seed-Frame; Live (N paints) = Seed + Evolution.
-- Die Op-Instanzen überleben paint()-Calls solange das inflated Doc lebt (Host re-paintet dasselbe Doc) →
-  Cross-Frame-State ohne Context-Persistenz. **Kein per-Frame-Reset-Konflikt** (Context-Reset lässt Op-Felder intakt).
+
+- **🔴 LOAD-BEARING VERIFIZIERTE VORBEDINGUNG (dev-1, read-only, VOR S2) — NICHT ANGENOMMEN:** der Op-Feld-
+  State-Ansatz steht und fällt damit, dass der Player das `RemoteComposeDocument`/die Op-Instanzen über Frames
+  **wiederverwendet (decode-once → paint-N)**, NICHT pro Frame re-inflated. Wenn re-decode-pro-Frame → kein
+  `mParticles`-Op-Feld überlebt → Ansatz braucht Rethink (Fallback unten). dev-1 verifiziert den Decode-/Host-
+  Paint-Pfad read-only + flagt VOR S2; PO relayt den Befund; diese Sektion wird auf der VERIFIZIERTEN Antwort
+  finalisiert. **Doppelt load-bearing:** auch das **LIVE-Multi-Frame-Gate-Harness MUSS decode-once-paint-N**,
+  sonst evolviert der State im Orakel nicht → das Gate sieht nur Seed-Frames = die §6-Render-Golden-Gate-Falle
+  für akkumulierende Generierung (REM-89/121-Klasse). Das Harness teilt diese Vorbedingung mit der Impl.
+- **Fallback (falls re-inflate-pro-Frame):** Partikel-State NICHT als Op-Feld, sondern in einem **persistenten
+  Player-State-Map keyed nach Partikel-id**, der den per-Frame-Context-Reset überlebt (Host-gehalten oder ein
+  reset-exemptes Store-Segment). Größerer Eingriff → erst nach dev-1s Verdikt entscheiden.
+- **S1 ist von dieser Frage UNABHÄNGIG:** S1 = ein einziger paint() (Seed + Draw @t=0) → keine Cross-Frame-
+  Persistenz nötig. S1 kann fast-parallel laufen; die Vorbedingung blockt nur S2.
+
 - **Determinismus für Goldens:** Init-Eqs mit `OP_RAND` brauchen einen reproduzierbaren Seed. Wenn das Doc
   selbst `RAND_SEED` setzt → reproduzierbar. Sonst: **Partikel-RNG-Seed-Pin** (analog RenderTimePins/REM-57)
   für die Capture-Determinismus — Tester-Config, §2-irrelevant. (S1-Open-Question, s. §7.)
