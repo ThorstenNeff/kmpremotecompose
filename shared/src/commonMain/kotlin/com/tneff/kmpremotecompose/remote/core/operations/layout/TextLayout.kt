@@ -18,14 +18,23 @@ package com.tneff.kmpremotecompose.remote.core.operations.layout
 import com.tneff.kmpremotecompose.remote.core.operations.Operation
 import com.tneff.kmpremotecompose.remote.core.operations.OperationReader
 import com.tneff.kmpremotecompose.remote.core.operations.Operations
+import com.tneff.kmpremotecompose.remote.core.operations.draw.PaintData
+import com.tneff.kmpremotecompose.remote.player.core.PaintContext
+import com.tneff.kmpremotecompose.remote.player.core.RemoteContext
 import com.tneff.kmpremotecompose.remote.wire.WireBuffer
+import com.tneff.kmpremotecompose.remote.wire.WireTypes
 
 /**
- * `LAYOUT_TEXT` (opcode [Operations.LAYOUT_TEXT]) — a text layout component.
+ * `LAYOUT_TEXT` (opcode [Operations.LAYOUT_TEXT]) — a text layout component (an AttributedString span's
+ * text in the corpus). Unlike [CoreText] it carries style as explicit fields, not param bytes.
  *
  * Wire layout: opcode byte + int `componentId` + int `animationId` + int `textId` + int `color` +
  * float `fontSize` + int `fontStyle` + float `fontWeight` + int `fontFamilyId` + int `textAlign` +
  * int `overflow` + int `maxLines` (mirrors upstream `TextLayout.apply`/`read`).
+ *
+ * **REM-134:** TextLayout's content is drawn via its nested `DrawContent` placeholder (z-order-correct,
+ * after its modifiers). [applyStyle] is the render-only seam LayoutMeasure + DrawContent use to size and
+ * paint the span text through the same paint state as [CoreText]. write/read/fields untouched (§2).
  */
 class TextLayout(
     val componentId: Int,
@@ -42,6 +51,23 @@ class TextLayout(
 ) : Operation {
 
     override val opcode: Int get() = Operations.LAYOUT_TEXT
+
+    /**
+     * REM-134 — apply this span's TextStyle to the shared paint state (mirrors [CoreText.applyStyle], but
+     * from explicit fields): `fontSize`/`fontWeight` may be NaN var-refs → resolved; default-black color
+     * is left to the renderer default (upstream `isDefault` skip). Call inside save/restorePaint (caller).
+     */
+    fun applyStyle(context: RemoteContext, paint: PaintContext) {
+        val size = resolve(context, fontSize).let { if (it.isNaN()) DEFAULT_FONT_SIZE else it }
+        val weight = resolve(context, fontWeight)
+        val b = PaintData.Builder().textSize(size)
+        if (color != DEFAULT_COLOR) b.color(color)
+        paint.applyPaint(b.build())
+        paint.applyTextStyle(fontStyle, if (weight.isNaN()) 0 else weight.toInt())
+    }
+
+    private fun resolve(context: RemoteContext, v: Float): Float =
+        if (v.isNaN() && !WireTypes.isOperationVariable(v)) context.getFloat(WireTypes.idFromNan(v)) else v
 
     override fun write(buffer: WireBuffer) {
         buffer.writeByte(opcode)
@@ -91,6 +117,10 @@ class TextLayout(
     }
 
     companion object : OperationReader {
+        // Upstream TextStyle defaults (mirror CoreText): black color / 36px = "renderer default".
+        private const val DEFAULT_COLOR = 0xFF000000.toInt()
+        private const val DEFAULT_FONT_SIZE = 36f
+
         override fun read(buffer: WireBuffer, operations: MutableList<Operation>) {
             operations += TextLayout(
                 buffer.readInt(), buffer.readInt(), buffer.readInt(), buffer.readInt(), buffer.readFloat(),
