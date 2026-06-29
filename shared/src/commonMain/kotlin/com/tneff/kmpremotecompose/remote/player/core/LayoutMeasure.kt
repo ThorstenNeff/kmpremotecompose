@@ -17,9 +17,11 @@ package com.tneff.kmpremotecompose.remote.player.core
 
 import com.tneff.kmpremotecompose.remote.core.document.RemoteComposeDocument
 import com.tneff.kmpremotecompose.remote.core.operations.ComponentValue
+import com.tneff.kmpremotecompose.remote.core.operations.Operation
 import com.tneff.kmpremotecompose.remote.core.operations.TextData
 import com.tneff.kmpremotecompose.remote.core.operations.draw.DrawContent
 import com.tneff.kmpremotecompose.remote.core.operations.layout.AlignByModifier
+import com.tneff.kmpremotecompose.remote.core.operations.layout.LayoutCompute
 import com.tneff.kmpremotecompose.remote.core.operations.layout.BackgroundModifier
 import com.tneff.kmpremotecompose.remote.core.operations.layout.CanvasOperations
 import com.tneff.kmpremotecompose.remote.core.operations.layout.CoreText
@@ -129,6 +131,10 @@ internal object LayoutMeasure {
         var textLayout: TextLayout? = null
         var drawContent: DrawContent? = null
         var alignBy: AlignByModifier? = null
+        // REM-139 S2: a LayoutCompute modifier on this component + its captured child compute ops
+        // (DynamicFloatList / AnimatedFloat / UpdateDynamicFloatList) — re-run in the measure pass.
+        var layoutCompute: LayoutCompute? = null
+        val computeChildren = ArrayList<Operation>()
         var textId = 0
         var textLeft = 0f
         var textTop = 0f
@@ -169,7 +175,7 @@ internal object LayoutMeasure {
 
         // Doc-space root; surfaceW/H reserved for FILL-to-window edge cases (not the root).
         measureSizes(root, document.width.toFloat(), document.height.toFloat(), context, depth = 0)
-        assignPositions(root, absX = 0f, absY = 0f, context = context, depth = 0)
+        assignPositions(root, absX = 0f, absY = 0f, parentW = document.width.toFloat(), parentH = document.height.toFloat(), context = context, depth = 0)
 
         // Hand the measured absolute bounds to the emitting modifier ops (E-L2 draw emission).
         applyBounds(root)
@@ -248,12 +254,21 @@ internal object LayoutMeasure {
     private fun buildTree(document: RemoteComposeDocument): Node? {
         var root: Node? = null
         val stack = ArrayDeque<Node>()
+        // REM-139 S2: while inside a LayoutCompute container, capture its (flat) child compute ops onto the
+        // owning component so the measure pass can re-run them after seeding the bounds list.
+        var computeOwner: Node? = null
         fun open(node: Node) {
             stack.lastOrNull()?.children?.add(node)
             if (root == null) root = node
             stack.addLast(node)
         }
         for (op in document.operations) {
+            // REM-139 S2: capture LayoutCompute child ops (DynamicFloatList/AnimatedFloat/Update). The
+            // corpus compute blocks are flat; a CONTAINER_END closes the block (pops the sentinel).
+            if (computeOwner != null) {
+                if (op is ContainerEnd) { stack.removeLastOrNull(); computeOwner = null } else computeOwner.computeChildren.add(op)
+                continue
+            }
             when (op) {
                 is RootLayout -> open(Node(op.componentId, Kind.ROOT, Float.NaN, Float.NaN))
                 is BoxLayout -> open(Node(op.componentId, Kind.BOX, Float.NaN, Float.NaN).also {
@@ -304,6 +319,16 @@ internal object LayoutMeasure {
                 is ScrollModifier -> {
                     stack.lastOrNull()?.let { if (it.scroll == null) it.scroll = op }
                     stack.addLast(Node(0, Kind.MODIFIER, Float.NaN, Float.NaN))
+                }
+                // REM-139 S2: LayoutCompute is a CONTAINER-modifier on the current component. Attach it +
+                // push a stack sentinel (balances its CONTAINER_END); subsequent child ops are captured into
+                // computeOwner.computeChildren (the block above) until that END.
+                is LayoutCompute -> stack.lastOrNull()?.let {
+                    if (it.layoutCompute == null) {
+                        it.layoutCompute = op
+                        stack.addLast(Node(0, Kind.MODIFIER, Float.NaN, Float.NaN))
+                        computeOwner = it
+                    }
                 }
                 is ContainerEnd -> if (stack.isNotEmpty()) stack.removeLast()
                 else -> {}
@@ -370,18 +395,25 @@ internal object LayoutMeasure {
         if (node.height?.type == DimensionType.WRAP || (spanFlex && node.height == null)) {
             node.h = aggregate(node, horizontal = false) + padH
         }
+        // REM-139 S2: a LayoutCompute(type=MEASURE) modifier computes this component's w/h from the bounds
+        // list (seeded with its current measure). availW/availH are the parent content box. POSITION-type
+        // runs later (assignPositions) once x/y are known.
+        if (node.layoutCompute?.type == LC_MEASURE) runCompute(node, availW, availH, context)
     }
 
     /** Pass 2 — positions: assign each node an absolute (x,y); arrange layout children; recurse. */
-    private fun assignPositions(node: Node, absX: Float, absY: Float, context: RemoteContext, depth: Int) {
+    private fun assignPositions(node: Node, absX: Float, absY: Float, parentW: Float, parentH: Float, context: RemoteContext, depth: Int) {
         node.x = absX
         node.y = absY
+        // REM-139 S2: a LayoutCompute(type=POSITION) modifier computes this component's x/y from the bounds
+        // list (seeded with its measured x/y/w/h + parent dims). Runs here, once x/y are assigned.
+        if (node.layoutCompute?.type == LC_POSITION) runCompute(node, parentW, parentH, context)
         val p = node.padding
         val padLeft = if (p != null) resolveValue(p.left, context) else 0f
         val padTop = if (p != null) resolveValue(p.top, context) else 0f
         val (padW, padH) = paddingWH(node, context)
-        val contentX = absX + padLeft
-        val contentY = absY + padTop
+        val contentX = node.x + padLeft // node.x may have been moved by a LayoutCompute(POSITION) above
+        val contentY = node.y + padTop
         val contentW = (node.w - padW).coerceAtLeast(0f)
         val contentH = (node.h - padH).coerceAtLeast(0f)
 
@@ -395,7 +427,32 @@ internal object LayoutMeasure {
         val kids = layoutChildren(node)
         if (kids.isNotEmpty()) arrange(node, kids, contentX, contentY, contentW, contentH, context)
         if (depth < MAX_DEPTH) {
-            for (kid in kids) assignPositions(kid, kid.x, kid.y, context, depth + 1)
+            for (kid in kids) assignPositions(kid, kid.x, kid.y, contentW, contentH, context, depth + 1)
+        }
+    }
+
+    // REM-139 S2 LayoutCompute types (upstream LayoutComputeOperation.TYPE_*).
+    private const val LC_MEASURE = 0
+    private const val LC_POSITION = 1
+
+    /**
+     * REM-139 S2 — run a [Node.layoutCompute] modifier: seed its 6-slot bounds list `[x,y,w,h,parentW,
+     * parentH]` with the component's current measure, re-run the captured child compute ops (Updates
+     * overwrite slots from expressions), then apply the result — `w/h` for MEASURE, `x/y` for POSITION
+     * (upstream `LayoutComputeOperation.applyToMeasure`). The seed allocation makes [DataDynamicListFloat]'s
+     * Phase-A apply a no-op (allocate-if-absent) → the computed list survives to paint.
+     */
+    private fun runCompute(node: Node, parentW: Float, parentH: Float, context: RemoteContext) {
+        val lc = node.layoutCompute ?: return
+        val seeded = floatArrayOf(node.x, node.y, node.w, node.h, parentW, parentH)
+        context.loadFloatArray(lc.boundsId, seeded)
+        for (op in node.computeChildren) if (op is VariableSupport) { op.updateVariables(context); op.apply(context) }
+        val out = context.getFloatArray(lc.boundsId) ?: return
+        if (out.size < 4) return
+        when (lc.type) {
+            LC_MEASURE -> { node.w = out[2]; node.h = out[3] }
+            LC_POSITION -> { node.x = out[0]; node.y = out[1] }
+            else -> { node.x = out[0]; node.y = out[1]; node.w = out[2]; node.h = out[3] }
         }
     }
 

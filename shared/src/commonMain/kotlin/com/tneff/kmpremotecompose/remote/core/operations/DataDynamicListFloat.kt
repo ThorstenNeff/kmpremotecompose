@@ -35,8 +35,15 @@ class DataDynamicListFloat(val id: Int, val nbValues: Float) : Operation, Variab
 
     override val opcode: Int get() = Operations.DYNAMIC_FLOAT_LIST
 
-    /** Phase-A — allocate the (zeroed) backing float array so updates + consumers see it. */
+    /**
+     * Phase-A — allocate the (zeroed) backing float array so updates + consumers see it. **REM-139 S2:
+     * allocate-if-absent (idempotent per frame):** the per-frame [RemoteContext] is reset each pass, so a
+     * missing list is freshly allocated; but a list a `LayoutCompute` already seeded+computed in the
+     * EARLIER measure() pass is left intact (no re-zero clobber). LayoutCompute children are
+     * measure-authoritative; standalone lists allocate normally here.
+     */
     override fun apply(context: RemoteContext) {
+        if (context.getFloatArray(id) != null) return // already allocated/seeded this frame (e.g. by LayoutCompute)
         val n = context.resolveCoord(nbValues).toInt()
         if (n <= 0) return
         context.loadFloatArray(id, FloatArray(n))
