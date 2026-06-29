@@ -411,7 +411,18 @@ class RemoteComposePlayer(val context: RemoteContext = RemoteContext()) {
         val startAt = resolveFloat(impulse.startAt)
         val duration = resolveFloat(impulse.duration)
         if (now < startAt) { context.wakeIn(startAt - now); return } // not started yet
-        if (now > startAt + duration) { impulse.lastFrameTime = Float.NaN; return } // window elapsed → reset
+        if (now > startAt + duration) {
+            // Window elapsed → re-arm (upstream `ImpulseOperation` mInitialPass = true). On the elapse
+            // TRANSITION only (lastFrameTime not yet reset), re-arm the body's ParticlesCreate seeds so a
+            // later re-trigger — a tap moving startAt to re-enter the window (S3a, id29) — re-bursts from
+            // the seed rather than continuing from the last evolved state. A tap *during* the active window
+            // never elapses → never re-seeds (B2-ratified: Tap ≠ Re-Seed). Render-only.
+            if (!impulse.lastFrameTime.isNaN()) {
+                for (j in bodyStart until bodyEnd) (ops[j] as? ParticlesCreate)?.resetSeed()
+            }
+            impulse.lastFrameTime = Float.NaN
+            return
+        }
         val live = context.isAnimationEnabled()
         val dt = if (live && !impulse.lastFrameTime.isNaN()) now - impulse.lastFrameTime else 0f
         context.loadFloat(RemoteContext.ID_ANIMATION_DELTA_TIME, dt)
