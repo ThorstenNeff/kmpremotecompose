@@ -57,6 +57,18 @@ class RemoteColorSlot {
 }
 
 /**
+ * REM-148 S1 — output-id holder for [RemotePathTween]. The `PATH_TWEEN` op allocates a fresh
+ * region-0 path id at render time; the consumer of that id (a future `RemotePathDraw(slot)` or
+ * chained `RemotePathTween(out = ..., pathId1 = otherSlot, ...)`) reads `slot.id` after the
+ * primitive node has rendered. Same single-write-during-Phase-B semantics as [RemoteFloatSlot] /
+ * [RemoteColorSlot] (W4 slot-ref-before-emit rule applies — modifier consumers must require
+ * `slot.id >= 0` before forwarding).
+ */
+class RemotePathSlot {
+    internal var id: Int = -1
+}
+
+/**
  * Allocate (and remember across recompositions) a [RemoteFloatSlot] for use with
  * [RemoteFloatExpression] and the slot-form of `RemoteModifier.visibility`. One slot per call site;
  * the slot identity is stable across recompositions (Q4 lock).
@@ -71,3 +83,10 @@ fun rememberRemoteFloatSlot(): RemoteFloatSlot = remember { RemoteFloatSlot() }
  */
 @Composable
 fun rememberRemoteColorSlot(): RemoteColorSlot = remember { RemoteColorSlot() }
+
+/**
+ * REM-148 S1 — Allocate (and remember across recompositions) a [RemotePathSlot] for use with
+ * [RemotePathTween]. Stable identity across recompositions (Q4 lock).
+ */
+@Composable
+fun rememberRemotePathSlot(): RemotePathSlot = remember { RemotePathSlot() }
