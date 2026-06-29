@@ -67,15 +67,20 @@ class Rem143EvolutionGateTest {
     private fun unmatched(expected: List<RecordingParticlePaintContext.Draw>, captured: List<RecordingParticlePaintContext.Draw>, tol: Float): Int =
         expected.count { e -> captured.none { c -> abs(c.cx - e.cx) <= tol && abs(c.cy - e.cy) <= tol } }
 
-    /** A per-doc oracle result: real unmatched + whether a deliberately-shifted expected is DETECTED. */
-    data class Result(val seedUnmatched: Int, val totalUnmatched: Int, val injectedShiftDetected: Boolean)
+    /**
+     * A per-doc oracle result. [anyExpected] is a non-vacuity PRECONDITION: a doc whose reconstruction
+     * produces ZERO expected anchors validates nothing (0 expected ⇒ 0 unmatched trivially), so it must
+     * FAIL, not pass — and [injectedShiftDetected] must NOT short-circuit on it (that hole vacuous-passed
+     * hearts; REM-147 assist review).
+     */
+    data class Result(val seedUnmatched: Int, val totalUnmatched: Int, val injectedShiftDetected: Boolean, val anyExpected: Boolean)
 
     /** @return real (un)matched + the META-TEST: a +50px-shifted "wrong sim" MUST yield unmatched>0 in every
      *  frame that has expected anchors — an oracle that does not flag a known divergence is vacuous. */
     private fun runDoc(name: String): Result {
         val doc = DocumentReader.inflate(RcCorpus.readFixture("corpus/$name"))
         val systems = ParticleSystemDecoder.decode(doc)
-        val schedule = ParticleFrameSchedule.fromDoc(doc) ?: return Result(0, 0, true)
+        val schedule = ParticleFrameSchedule.fromDoc(doc) ?: return Result(0, 0, true, true)
         val captured = ParticleGateHarness.captureFrames(doc, schedule)
         var totalUnmatched = 0
         var seedUnmatched = 0
@@ -117,7 +122,10 @@ class Rem143EvolutionGateTest {
                 }
             }
         }
-        return Result(seedUnmatched, totalUnmatched, !anyExpected || injectedAllDetected)
+        // injectedShiftDetected is the RAW detection result — NOT short-circuited on anyExpected (the
+        // short-circuit vacuous-passed a zero-expected doc). anyExpected is asserted separately as a
+        // precondition, so a doc that produces nothing to validate fails loudly.
+        return Result(seedUnmatched, totalUnmatched, injectedAllDetected, anyExpected)
     }
 
     @Test fun allSixParticleDocs_evolutionGate() {
@@ -127,12 +135,14 @@ class Rem143EvolutionGateTest {
         )
         println("===== REM-143 EVOLUTION GATE — all 6 particle docs =====")
         val results = docs.map { d -> d to runDoc(d) }
-        for ((d, r) in results) println("  $d: seed=${r.seedUnmatched} evolution=${r.totalUnmatched} injectedShiftDetected=${r.injectedShiftDetected}")
+        for ((d, r) in results) println("  $d: seed=${r.seedUnmatched} evolution=${r.totalUnmatched} injectedShiftDetected=${r.injectedShiftDetected} anyExpected=${r.anyExpected}")
         println("===== END GATE =====")
-        // A doc is VALIDATED only if BOTH (a) real evolution converges (0 unmatched, seed + every frame) AND
-        // (b) the META-TEST holds (a +50px-shifted "wrong sim" is flagged) — an oracle that converges but
-        // ignores a known divergence is vacuous (the two REM-147 false-greens). Assert BOTH for every doc.
+        // A doc is VALIDATED only if ALL of: (pre) the reconstruction actually PRODUCED expected anchors —
+        // zero-expected validates nothing and is vacuous by definition; (a) real evolution converges (0
+        // unmatched, seed + every frame); (b) the META-TEST holds (a +50px-shifted "wrong sim" is flagged).
+        // The three REM-147 false-greens (origin-capture, zero-expected, vacuous short-circuit) all die here.
         for ((d, r) in results) {
+            assertTrue(r.anyExpected, "$d: reconstruction must PRODUCE expected anchors — zero-expected validates nothing (vacuous)")
             assertEquals(0, r.seedUnmatched, "$d: seed-frame must match the independent reconstruction (Δt=0 seed)")
             assertEquals(0, r.totalUnmatched, "$d: every frame's evolution must match the independent reconstruction")
             assertTrue(r.injectedShiftDetected, "$d: oracle must FLAG a +50px injected divergence (non-vacuous)")

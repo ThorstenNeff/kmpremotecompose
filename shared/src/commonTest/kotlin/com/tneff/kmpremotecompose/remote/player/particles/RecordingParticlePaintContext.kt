@@ -88,4 +88,13 @@ class RecordingParticlePaintContext(context: RemoteContext) : NoOpPaintContext(c
         dstLeft: Int, dstTop: Int, dstRight: Int, dstBottom: Int,
         cdId: Int,
     ) { record((dstLeft + dstRight) / 2f, (dstTop + dstBottom) / 2f) }
+
+    // --- text draws: a glyph IS a position-bearing draw (hearts' ❤ is a DRAW_TEXT_RUN, not a geom
+    // primitive). Without these the run falls through to NoOpPaintContext → rec.draws empty → 0 expected
+    // anchors → the doc validates NOTHING yet passes (the hearts vacuous-green; REM-147 assist review).
+    // Record the run baseline (x,y) transformed — the particle position for a matrix-scale text body.
+    override fun drawTextRun(textId: Int, start: Int, end: Int, contextStart: Int, contextEnd: Int, x: Float, y: Float, rtl: Boolean) { record(x, y) }
+    override fun drawBitmapFontText(textId: Int, bitmapFontId: Int, start: Int, end: Int, x: Float, y: Float, glyphSpacing: Float) { record(x, y) }
+    override fun drawTextOnPath(textId: Int, pathId: Int, hOffset: Float, vOffset: Float) { record(0f, 0f) }
+    override fun drawComplexText(computedTextLayout: com.tneff.kmpremotecompose.remote.player.core.ComputedTextLayout?) { record(0f, 0f) }
 }
