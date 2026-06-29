@@ -17,18 +17,22 @@
 #   - Live-Render rebaut die rc-canvas-Modifier-Chain pro Frame (~60fps); der pointerInput-Node ist
 #     `remember(d,live)`-stabil → der Drag-Coroutine ueberlebt den Frame-Rebuild (S2b-Fix). Geste ist robust.
 #
-# 🟡 ORACLE-GRENZE (HONEST — an PO gemeldet, nicht still approximiert):
-#   Verfuegbare Live-Hooks = rc-rendered / rc-doc / rc-error / rc-draw-count. KEIN Frame-Counter-/Impulse-
-#   aktiv-Hook. Bei fixem Partikel-N (confetti N=100) bleibt rc-draw-count konstant waehrend die Partikel
-#   sich BEWEGEN → ein draw-count-Delta beweist KEINE Bewegung. Mit den heutigen Hooks beweist dieser Flow:
-#     (a) Partikel-System rendert LIVE (rc-rendered + rc-doc-Identitaet + rc-draw-count>0 = N Seed-Partikel,
-#         nicht blank), und
-#     (b) ein echter Drag-Gesture wird on-device akzeptiert OHNE Crash/Error (rc-error bleibt absent,
-#         rc-rendered persistiert nach dem Swipe = Sim ueberlebt den Touch-Pfad).
-#   Er beweist mit den heutigen Hooks NICHT coarse-grain "Touch verursachte Animation/Bewegung" ohne
-#   Pixel-Diff (= die W9-flaky Lane, die §6 genau vermeidet). Die Bewegungs-KORREKTHEIT ist per Spec §5b
-#   das Multi-Frame-Daten-Orakel (dev-1-Harness / test-3), NICHT dieser Flow. → empfohlener Mini-Hook
-#   (rc-frame-count, optional rc-touch-echo) im PENDING-Block unten; an PO zur dev-2-Routung gemeldet.
+# 🟡 ORACLE — Touch-KAUSALITAET sauber, OHNE Pixel-Diff (PO-geklaert 2026-06-29, dev-2 first-hand):
+#   ⚠️ rc-frame-count taugt NICHT als Touch-Kausal-Beweis: der Live-Loop laeuft KONTINUIERLICH
+#   (RemoteComposeApp.kt:133 `while(true)`) UND confetti auto-animiert pre-touch (default id29=0 → startAt=0
+#   → Burst [0,20s] ohne Touch). Der Frame-Zaehler steigt also jeden Live-Frame, egal ob Touch → f1>f0 nach
+#   Swipe ist IMMER wahr → beweist KEINE Kausalitaet. (Original-test-1-Bar bestaetigt; rc-frame-count nur
+#   als "animiert-ueberhaupt"-Co-Signal.)
+#   ✅ Der saubere Touch-Kausal-Gate ist **rc-touch-echo** (letzte akzeptierte Touch-Koordinate): aendert
+#   sich NUR bei einem on-device akzeptierten Touch (detectDragGestures → TouchState). Pre-touch = Sentinel
+#   "0,0"; nach dem Swipe != "0,0" → die Geste hat den Sim end-to-end erreicht. Das ist der Input-Gate, kein
+#   Pixel-Vergleich (W9-safe). Dieser Flow beweist damit:
+#     (a) Partikel-System rendert LIVE (rc-rendered + rc-doc-Identitaet + rc-draw-count>0, nicht blank),
+#     (b) der Touch wird on-device akzeptiert + erreicht den Sim (rc-touch-echo aendert sich nach Swipe),
+#     (c) kein Crash (rc-error absent, rc-rendered persistiert).
+#   NICHT bewiesen (per Design): die Bewegungs-KORREKTHEIT (evolvieren die Partikel richtig) — das bleibt
+#   das §5b-Multi-Frame-Daten-Orakel (dev-1-Harness / test-3), NICHT Maestro.
+#   Hooks rc-touch-echo + rc-frame-count: dev-2 gebaut (S3-Branch off S2), landen mit der S2→S3-Merge-Kette.
 #
 # Lauf (NACH S3-Merge):  maestro test docs/flows/particles_s3_touch_impulse.yaml   (Android; emulator-5554)
 
@@ -66,6 +70,8 @@ tags:
     label: "rc-draw-count > 0 = N Seed-Partikel gezeichnet (nicht blank — der S1-Seed-Render greift)"
 
 # ── TOUCH → IMPULSE ──────────────────────────────────────────────────────────────────────────────
+# Pre-touch-Sentinel von rc-touch-echo festhalten (erwartet "0,0"): der Gate vergleicht NACH dem Swipe
+# gegen diesen Wert. (PENDING bis der Hook landet — siehe Block unten; bleibt hier als Vertrag.)
 # Echter Drag ueber die Canvas (von rc-canvas aus, UP = Flick) der die touch-slop ueberschreitet →
 # detectDragGestures populiert TouchState → der Impulse-Seam (REM-108 S3) feuert. duration 600ms +
 # voller Weg = robust gg. den S2b touch-slop-Fail. KEIN tapOn (kein Drag → kein Touch).
@@ -84,15 +90,29 @@ tags:
     id: "rc-rendered"
     label: "Render committet weiter nach dem Touch (Sim laeuft, kein Freeze/Error-State)"
 
-# ── PENDING (BLOCKIERT auf dev-2-Hook — NICHT aktiv, hier als Vertrag dokumentiert) ───────────────
-# Um coarse-grain ECHT "Touch→Animation advanced" zu asserten (ohne Pixel-Diff / W9-Flake), braucht
-# es EINEN kleinen Live-only-Hook. Empfehlung an PO→dev-2:
-#   - rc-frame-count : monoton steigender Committed-Frame-Zaehler (nur live). Dann:
-#       * copyTextFrom rc-frame-count  → ${output.f0}   (vor dem Swipe)
-#       * swipe (oben)  + waitForAnimationToEnd:timeout 1500
-#       * copyTextFrom rc-frame-count  → ${output.f1}
-#       * assertTrue ${Number(output.f1) > Number(output.f0)}  = Frames sind nach dem Touch fortgeschritten
-#         → continuous-repaint laeuft (Impulse treibt die Animation, REM-36/§3.3 wakeIn(CONTINUOUS)).
-#   - (optional) rc-touch-echo : letzte akzeptierte Touch-Koordinate → beweist die Geste ERREICHTE die
-#     TouchState (entkoppelt "Geste kam an" von "Clock tickt"), schliesst den Touch→Impulse-Pfad luekenlos.
-# Sobald der Hook merged ist: diesen Block aktivieren, den `staged`-Tag entfernen, gating-Run fahren.
+# ── PENDING — Touch-KAUSAL-Gate (aktivieren sobald rc-touch-echo/rc-frame-count auf develop sind) ──
+# Hooks landen mit der S2→S3-Merge-Kette (dev-2, S3-Branch off S2). Beim Aktivieren: die 4 copyTextFrom/
+# assertTrue-Schritte einkommentieren, den `from:`-Swipe oben dazwischen lassen, `staged`-Tag entfernen,
+# gating-Run fahren. Reihenfolge: echo0 (vor Swipe) → swipe → echo1 (nach Swipe) → assertTrue echo1!=echo0.
+#
+# # (1) PRE-touch: Sentinel festhalten — VOR dem Swipe oben einsetzen.
+# - copyTextFrom: { id: "rc-touch-echo" }      # erwartet "0,0"
+# - evalScript: ${output.echo0 = maestro.copiedText}
+#
+# # (2) POST-touch: nach dem Swipe — der saubere Kausal-Gate.
+# - waitForAnimationToEnd: { timeout: 1500 }
+# - copyTextFrom: { id: "rc-touch-echo" }
+# - evalScript: ${output.echo1 = maestro.copiedText}
+# - assertTrue:
+#     condition: ${output.echo1 != output.echo0 && output.echo1 != "0,0"}
+#     label: "rc-touch-echo aenderte sich → Touch on-device akzeptiert + erreichte den Sim (Kausal-Gate)"
+#
+# # (3) Co-Signal NUR "animiert-ueberhaupt" (KEIN Kausal-Beweis — Loop laeuft eh kontinuierlich):
+# - assertVisible:
+#     id: "rc-frame-count"
+#     text: "^[1-9][0-9]*$"
+#     label: "rc-frame-count > 0 = Live-Loop laeuft (Co-Signal, nicht touch-kausal)"
+#
+# ⚠️ Beim Aktivieren gg. dev-2s echte Impl verifizieren: exakte testTag-ids (rc-touch-echo / rc-frame-count)
+# + das Echo-Sentinel-Format ("0,0" vs "0.0,0.0" vs "(0,0)"). Falls Format abweicht → der !=-Gate bleibt
+# korrekt (format-agnostisch), nur den expliziten "0,0"-Vergleich anpassen.
