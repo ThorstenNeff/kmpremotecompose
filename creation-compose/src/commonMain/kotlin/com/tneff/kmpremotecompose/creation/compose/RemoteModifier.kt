@@ -257,6 +257,38 @@ open class RemoteModifier private constructor(internal val elements: List<Remote
         RemoteModifier(elements + BackgroundColorRefElement(colorId, shape))
 
     /**
+     * REM-145 S3 — `MODIFIER_TOUCH_DOWN` Compose-DSL surface. The [actions] vararg lists the
+     * [ActionElement]s that fire when the touch-down event is detected; each runs inside the
+     * `MODIFIER_TOUCH_DOWN` op's `ListActionsOperation` scope (between the op and its trailing
+     * `CONTAINER_END`). Routes through the REM-145 S1 procedural helper
+     * `LayoutModifier.onTouchDown { ... }` at apply time — bytes come from the byte-proven path.
+     *
+     * **Profile-gating:** `MODIFIER_TOUCH_DOWN` lives in the ANDROIDX-experimental overlay; the
+     * doc must be opened under `PROFILE_ANDROIDX | PROFILE_EXPERIMENTAL`. See S1 for the
+     * corpus byte-anchor (`c_modifier_on_touch_down.rc`).
+     *
+     * **Q4 lock:** element equality compares the actions list — data-class semantics on the
+     * sealed `ActionElement` hierarchy give per-action structural identity, so `update {
+     * set(modifier) }` recomposition skips unchanged compositions correctly.
+     */
+    fun onTouchDown(vararg actions: ActionElement): RemoteModifier =
+        RemoteModifier(elements + OnTouchDownElement(actions.toList()))
+
+    /**
+     * REM-145 S3 — `MODIFIER_TOUCH_UP` Compose-DSL surface. Symmetric to [onTouchDown]; fires on
+     * touch-release. Same Q4-lock + profile-gating contract.
+     */
+    fun onTouchUp(vararg actions: ActionElement): RemoteModifier =
+        RemoteModifier(elements + OnTouchUpElement(actions.toList()))
+
+    /**
+     * REM-145 S3 — `MODIFIER_TOUCH_CANCEL` Compose-DSL surface. Symmetric to [onTouchDown]; fires
+     * on touch-cancel. Same Q4-lock + profile-gating contract.
+     */
+    fun onTouchCancel(vararg actions: ActionElement): RemoteModifier =
+        RemoteModifier(elements + OnTouchCancelElement(actions.toList()))
+
+    /**
      * Convert to a REM-96 [LayoutModifier] for emission. Each element registers itself via the
      * public chain API of [LayoutModifier] — no `@PublishedApi internal` access, no separate
      * code path: the bytes the procedural helpers produce here are byte-identical to bytes a
@@ -425,5 +457,23 @@ internal data class BackgroundColorRefFromSlotElement(
                 "slot must execute BEFORE the consumer modifier in tree order."
         }
         lm.backgroundColorRef(slot.id, shape)
+    }
+}
+
+internal data class OnTouchDownElement(val actions: List<ActionElement>) : RemoteModifierElement {
+    override fun applyToLayoutModifier(lm: LayoutModifier) {
+        lm.onTouchDown { actions.forEach { it.emit(this) } }
+    }
+}
+
+internal data class OnTouchUpElement(val actions: List<ActionElement>) : RemoteModifierElement {
+    override fun applyToLayoutModifier(lm: LayoutModifier) {
+        lm.onTouchUp { actions.forEach { it.emit(this) } }
+    }
+}
+
+internal data class OnTouchCancelElement(val actions: List<ActionElement>) : RemoteModifierElement {
+    override fun applyToLayoutModifier(lm: LayoutModifier) {
+        lm.onTouchCancel { actions.forEach { it.emit(this) } }
     }
 }
