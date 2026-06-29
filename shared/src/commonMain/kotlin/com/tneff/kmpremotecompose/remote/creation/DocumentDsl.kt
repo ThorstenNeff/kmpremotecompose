@@ -63,21 +63,27 @@ fun document(
     // `c_modifier_visibility.rc` / `c_modifier_dynamic_border.rc`): upstream reserves id 42 for the
     // content-description ONLY when the description carries text. An empty string still encodes the
     // `DOC_CONTENT_DESCRIPTION` header property (zero-length STRING in map-form; null skips the
-    // property entirely — Bug #2-Lehre, REM-130) but does NOT pull an id. This matters in map-form
-    // because the first region-0 allocation lands at id 42 (e.g. the FloatExpression in
-    // `c_modifier_visibility.rc`); reserving for an empty string would push the user's first id to
-    // 43 and break the byte-anchor.
-    if (contentDescription != null && contentDescription.isNotEmpty()) {
-        val descId = context.ids.nextId() // pins id 42 to the content-description per the id-order reference
-        if (flatForm) {
-            context.add(TextData(descId, contentDescription))
-            context.add(RootContentDescription(descId))
-        }
-        // Map-form documents already carry DOC_CONTENT_DESCRIPTION in the header; re-emitting the
-        // body ops would double-bind id 42. Reserving the id without emission keeps body ids on the
-        // same 43+ track as the flat-form path so a single DSL script encodes identically whichever
-        // form the profile selects.
+    // property entirely — Bug #2-Lehre, REM-130) but does NOT pull an id.
+    //
+    // REM-146 (REM-141 follow-up, W12 empirical verify against `c_modifier_on_touch_down.rc`):
+    // the reservation is *also* form-conditional. In **flat-form** (api=6, PROFILE_BASELINE) the
+    // description is encoded as two body ops (`DATA_TEXT(42)` + `ROOT_CONTENT_DESCRIPTION(42)`) that
+    // reference id 42 — the reservation IS required there (REM-128 procedure_simple2 oracle relies
+    // on it). In **map-form** (api=7) the description lives in header property 9 (set by the writer
+    // constructor); no body op references id 42 → the reservation is **vestigial** and was an
+    // earlier "cross-form determinism" assumption (REM-141 commit), which the corpus refutes:
+    // `c_modifier_on_touch_down.rc` (PROFILE_ANDROIDX|EXPERIMENTAL, non-empty
+    // contentDescription="DemoModifierOnTouchDown") starts the body with `DATA_INT id=42`, meaning
+    // upstream does NOT reserve in map-form. Gating on `flatForm` aligns the procedural DSL with
+    // the corpus oracle.
+    if (contentDescription != null && contentDescription.isNotEmpty() && flatForm) {
+        val descId = context.ids.nextId() // pins id 42 to the content-description (flat-form ONLY)
+        context.add(TextData(descId, contentDescription))
+        context.add(RootContentDescription(descId))
     }
+    // Map-form (api=7): description was already written into the header by the writer constructor
+    // via `contentDescription = … apiLevel = 7`. No body emission, no id reservation needed —
+    // the first user `ids.nextId()` correctly returns 42, matching `c_modifier_on_touch_*.rc`.
     context.content()
     return context.encodeToByteArray()
 }
