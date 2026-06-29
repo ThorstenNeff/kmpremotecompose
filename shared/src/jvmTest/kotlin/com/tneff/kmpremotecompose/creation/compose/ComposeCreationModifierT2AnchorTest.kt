@@ -45,7 +45,7 @@ import kotlin.test.assertEquals
  * alignBy, visibility claimed transitive §2 via REM-96; assist NO-GO'd that because REM-96 only
  * actually anchors scroll-V byte-for-byte (the others land at decode/source/literal anchors, not
  * corpus). Replaced with direct corpus anchors where the fixtures permit; visibility full-doc
- * remains deferred to T3 (needs ANIMATED_FLOAT primitive composable).
+ * remains deferred to T3 (needs FloatExpression primitive composable — closed by REM-141 S2+S3).
  *
  * **Anchor strategy per T2 modifier (corrected mapping):**
  *
@@ -66,7 +66,7 @@ import kotlin.test.assertEquals
  * |                     |                                   | bytes; `line.toRawBits()` = corpus NaN bits (NOT 12.5f);           |
  * |                     |                                   | experimental profile.                                              |
  * | `visibility`        | Stage-1 + int-id-ref byte check   | Full-doc Stage-2 against corpus deferred to T3 — needs            |
- * |                     |                                   | ANIMATED_FLOAT primitive composable.                              |
+ * |                     |                                   | FloatExpression primitive composable (closed by REM-141).         |
  */
 class ComposeCreationModifierT2AnchorTest {
 
@@ -241,7 +241,9 @@ class ComposeCreationModifierT2AnchorTest {
      * a FloatConstant emitted by the same call; the IDs depend on writer state (allocator), so a
      * corpus sub-span byte-anchor is NOT stable. Stage-1: Compose-DSL emission equals procedural-DSL
      * emission byte-for-byte for the same shape. Procedural side is REM-96-corpus-anchored via
-     * `LayoutModifierByteTest.scroll_horizontal_emitsFullGroup`.
+     * `LayoutModifierByteTest.scroll_fullByteEquality_vsCorpusFixture_horizontalScroll`
+     * (added in REM-130 revision-pass after assist flagged that the prior docstring overclaim
+     * had never actually tested SCROLL_HORIZONTAL against the corpus).
      */
     @Test
     fun stage1_scrollHorizontal_composeEqualsProcedural() = runBlocking {
@@ -423,7 +425,7 @@ class ComposeCreationModifierT2AnchorTest {
             procedural,
             produced,
             "Compose-DSL RemoteModifier.visibility(42) full doc must byte-match procedural-DSL " +
-                "(full-doc Stage-2 against corpus deferred to T3 — needs ANIMATED_FLOAT primitive).",
+                "(full-doc Stage-2 against corpus deferred to T3 — needs FloatExpression primitive; closed by REM-141).",
         )
     }
 
