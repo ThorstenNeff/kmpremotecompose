@@ -1,0 +1,98 @@
+# RC Conformance — Particles S3: Touch→Impulse→Animation §6 End-to-End Proof (REM-143 S3)
+# Owner: test-1 (QA). Sim/create-side: dev-2 (ParticlesCreate/Loop + Impulse + Touch-Impulse-Seam).
+# STATUS: STAGED / ungated-prep (PRE-MERGE). Do NOT gate on this until REM-143 S2+S3 land on develop.
+#   Authored against the spec (docs/TECHSPEC-REM-143-particles-impulse.md §3.4 / §5 / §6) + the live
+#   app wiring (RemoteComposeApp.kt gestureModifier + rc-* hooks). Run target: Android (emulator-5554 /
+#   Pixel_8a) — the FULL-touch capability tier (§3.4 Mobile). The run happens on >=1 target once S3 merges.
+#
+# Zweck: der PROJECT §6 "done means Maestro-proven"-Bar fuer die S3-Achse = TOUCH-getriebener Impulse
+# (capability-gestaffelt, Mobile=voll). Deep-Link `kmprc://render?rc=impulse_demo_confetti_demo&live=1`
+# rendert das Partikel-System LIVE; ein echter Drag-Gesture treibt den Impulse → Partikel animieren.
+#
+# 🔑 WIRING-FAKTEN (verifiziert gg. RemoteComposeApp.kt 2026-06-29):
+#   - Touch wird NUR im LIVE-Mode konsumiert (`touchState = if (live) touchState else null`) → `&live=1` PFLICHT.
+#   - Der Gesture-Seam ist `detectDragGestures` (NICHT tapOn): die Geste MUSS die Compose touch-slop
+#     ueberschreiten, sonst bleibt TouchState leer (genau der S2b-on-device-Root-Cause). → `swipe` mit
+#     echtem Weg + duration>=400ms, KEIN tapOn / kein Mikro-Wisch.
+#   - Live-Render rebaut die rc-canvas-Modifier-Chain pro Frame (~60fps); der pointerInput-Node ist
+#     `remember(d,live)`-stabil → der Drag-Coroutine ueberlebt den Frame-Rebuild (S2b-Fix). Geste ist robust.
+#
+# 🟡 ORACLE-GRENZE (HONEST — an PO gemeldet, nicht still approximiert):
+#   Verfuegbare Live-Hooks = rc-rendered / rc-doc / rc-error / rc-draw-count. KEIN Frame-Counter-/Impulse-
+#   aktiv-Hook. Bei fixem Partikel-N (confetti N=100) bleibt rc-draw-count konstant waehrend die Partikel
+#   sich BEWEGEN → ein draw-count-Delta beweist KEINE Bewegung. Mit den heutigen Hooks beweist dieser Flow:
+#     (a) Partikel-System rendert LIVE (rc-rendered + rc-doc-Identitaet + rc-draw-count>0 = N Seed-Partikel,
+#         nicht blank), und
+#     (b) ein echter Drag-Gesture wird on-device akzeptiert OHNE Crash/Error (rc-error bleibt absent,
+#         rc-rendered persistiert nach dem Swipe = Sim ueberlebt den Touch-Pfad).
+#   Er beweist mit den heutigen Hooks NICHT coarse-grain "Touch verursachte Animation/Bewegung" ohne
+#   Pixel-Diff (= die W9-flaky Lane, die §6 genau vermeidet). Die Bewegungs-KORREKTHEIT ist per Spec §5b
+#   das Multi-Frame-Daten-Orakel (dev-1-Harness / test-3), NICHT dieser Flow. → empfohlener Mini-Hook
+#   (rc-frame-count, optional rc-touch-echo) im PENDING-Block unten; an PO zur dev-2-Routung gemeldet.
+#
+# Lauf (NACH S3-Merge):  maestro test docs/flows/particles_s3_touch_impulse.yaml   (Android; emulator-5554)
+
+appId: com.tneff.kmpremotecompose.android
+name: "Particles S3 touch->impulse->animation §6 proof"
+tags:
+  - particles
+  - s3
+  - touch
+  - render
+  - staged   # remove once REM-143 S3 is merged + this flow is promoted to a gating run
+---
+- launchApp:
+    clearState: true
+# LIVE is mandatory: touch is only wired when live=1 (RemoteComposeApp: touchState gated on `live`).
+- openLink:
+    link: "kmprc://render?rc=impulse_demo_confetti_demo&live=1"
+    autoVerify: true
+- assertVisible:
+    id: "rc-canvas"
+- extendedWaitUntil:
+    visible:
+      id: "rc-rendered"
+    timeout: 10000
+    label: "post-frame-commit honesty anchor — Seed-Frame committed, erst dann asserten"
+- assertNotVisible:
+    id: "rc-error"
+- assertVisible:
+    id: "rc-doc"
+    text: "impulse_demo_confetti_demo"
+    label: "gerendertes Doc == Ziel-Partikel-Doc (kein Resource-Fallback)"
+- assertVisible:
+    id: "rc-draw-count"
+    text: "^[1-9][0-9]*$"
+    label: "rc-draw-count > 0 = N Seed-Partikel gezeichnet (nicht blank — der S1-Seed-Render greift)"
+
+# ── TOUCH → IMPULSE ──────────────────────────────────────────────────────────────────────────────
+# Echter Drag ueber die Canvas (von rc-canvas aus, UP = Flick) der die touch-slop ueberschreitet →
+# detectDragGestures populiert TouchState → der Impulse-Seam (REM-108 S3) feuert. duration 600ms +
+# voller Weg = robust gg. den S2b touch-slop-Fail. KEIN tapOn (kein Drag → kein Touch).
+- swipe:
+    from:
+      id: "rc-canvas"
+    direction: UP
+    duration: 600
+    label: "Touch-getriebener Impulse-Trigger (Drag ueberschreitet touch-slop)"
+
+# Liveness/no-crash nach dem Touch: der Sim ueberlebt den Touch-Pfad und committet weiter Frames.
+- assertNotVisible:
+    id: "rc-error"
+    label: "Touch hat den Sim/Render-Pfad NICHT gecrasht (kein decode/render-Throw)"
+- assertVisible:
+    id: "rc-rendered"
+    label: "Render committet weiter nach dem Touch (Sim laeuft, kein Freeze/Error-State)"
+
+# ── PENDING (BLOCKIERT auf dev-2-Hook — NICHT aktiv, hier als Vertrag dokumentiert) ───────────────
+# Um coarse-grain ECHT "Touch→Animation advanced" zu asserten (ohne Pixel-Diff / W9-Flake), braucht
+# es EINEN kleinen Live-only-Hook. Empfehlung an PO→dev-2:
+#   - rc-frame-count : monoton steigender Committed-Frame-Zaehler (nur live). Dann:
+#       * copyTextFrom rc-frame-count  → ${output.f0}   (vor dem Swipe)
+#       * swipe (oben)  + waitForAnimationToEnd:timeout 1500
+#       * copyTextFrom rc-frame-count  → ${output.f1}
+#       * assertTrue ${Number(output.f1) > Number(output.f0)}  = Frames sind nach dem Touch fortgeschritten
+#         → continuous-repaint laeuft (Impulse treibt die Animation, REM-36/§3.3 wakeIn(CONTINUOUS)).
+#   - (optional) rc-touch-echo : letzte akzeptierte Touch-Koordinate → beweist die Geste ERREICHTE die
+#     TouchState (entkoppelt "Geste kam an" von "Clock tickt"), schliesst den Touch→Impulse-Pfad luekenlos.
+# Sobald der Hook merged ist: diesen Block aktivieren, den `staged`-Tag entfernen, gating-Run fahren.
