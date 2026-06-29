@@ -73,6 +73,18 @@ object RcRouter {
         private set
 
     /**
+     * Force the deterministic BASELINE host palette (REM-135): set from a deep-link `&palette=baseline` so a
+     * golden/capture renders with `baselineHostPalette()` on **every** target — deliberately overriding
+     * Android's live Material-You device accent, which is non-deterministic across emulators/devices/API.
+     * **Default `false` = the live app keeps the real device accent** (untouched behavior); only an explicit
+     * `&palette=baseline` flips it. This is the palette analogue of the `&density=1.0` capture-determinism
+     * pin: the live app gets the device-true accent, captures get a fixed cross-target palette so goldens are
+     * reproducible. Parsed via [setForceBaselinePalette]. [RemoteComposeApp] selects the palette on it.
+     */
+    var forceBaselinePalette: Boolean by mutableStateOf(false)
+        private set
+
+    /**
      * Parse a deep-link `&density=<f>` value into [forcedDensity]. **Fail-safe to `null`** (use platform
      * density): `null` / blank / non-numeric / non-positive / non-finite all map to `null`, so only a valid
      * positive number ever forces the density. Centralized so platform parsers and tests share one rule.
@@ -80,6 +92,16 @@ object RcRouter {
     fun setForcedDensity(value: String?) {
         val parsed = value?.trim()?.toFloatOrNull()
         forcedDensity = if (parsed != null && parsed.isFinite() && parsed > 0f) parsed else null
+    }
+
+    /**
+     * Parse a deep-link `&palette=<mode>` value into [forceBaselinePalette]. **Fail-safe to `false`** (the
+     * live device accent): only the exact literal `baseline` flips it on; `null` / blank / anything else maps
+     * to `false`, so a normal launch is never accidentally de-themed. Centralized so platform parsers and
+     * tests share one rule (mirrors [setForcedDensity]).
+     */
+    fun setForceBaselinePalette(value: String?) {
+        forceBaselinePalette = value?.trim() == "baseline"
     }
 
     /**
@@ -105,6 +127,7 @@ object RcRouter {
         live = false
         setStaticTime(null) // → staticTimeSeconds = 0f
         setForcedDensity(null) // → forcedDensity = null (use platform density)
+        setForceBaselinePalette(null) // → forceBaselinePalette = false (use live device accent)
     }
 
     /**
