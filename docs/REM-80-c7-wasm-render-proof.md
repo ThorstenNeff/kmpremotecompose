@@ -68,7 +68,7 @@ Android+iOS zur Golden-Zeit als solid-color zeigten (→ REM-105 Golden-Refresh)
   `withFrameNanos→recompose` tickt nicht. **→ REM-114** (dev-1, Web-Loop-Owner). Honest-Caveat: headless-chromium
   × Compose-wasm-Frame-Clock-Interaktion nicht voll ausschließbar → Real-Browser-Gegencheck (Human/Display).
   **Der Render-Beweis hier ist STATIC** (&t-Pins); LIVE war nie exercised, ist auf REM-114 geblockt.
-- **3 oversize Docs:** render-bestätigt, aber nicht voll-pixel-verglichen (REM-111).
+- ~~**3 oversize Docs:** render-bestätigt, aber nicht voll-pixel-verglichen (REM-111).~~ **✅ ERLEDIGT (REM-111, 2026-06-29):** voll-höhe capturet via `maestro --headless --screen-size <gw>x<gh+~150>` + crop→golden-dims. **0 echte Web-Defekte:** digital_clock1 = Web RICHER (rendert Ziffern, Android-Golden blank→Golden-Refresh-Kandidat); haptic_demo_demo_haptic1 = PASS (nur Text-AA); shader_calendar = Kalender-Struktur PASS, FAIL-breach = AGSL→SkSL-Shader-Wellen-Phasen-Divergenz (REM-77-Klasse, kosmetisch). Flow: `docs/flows/web_tall_capture.yaml`.
 - **DeviceMotion-Sensor-Pfad:** WebSensorSource (dev-1, REM-101-S4) ist auf der Browser→Cache-Hälfte verifiziert;
   Cache→Render blockt auf demselben REM-114-Live-Loop.
 
@@ -77,7 +77,7 @@ Android+iOS zur Golden-Zeit als solid-color zeigten (→ REM-105 Golden-Refresh)
 ## 5. Offene Tickets (Stand 2026-06-28)
 
 - **REM-110** — heart_rate ❤-Element rendert nicht auf wasm (narrowed: Herz-Form + rote-Linie-Y). test-3-Triangulation.
-- **REM-111** — höherer Capture-Viewport / Scroll-Stitch für 3 Docs > 780h (Tooling, low-prio).
+- ~~**REM-111** — höherer Capture-Viewport / Scroll-Stitch für 3 Docs > 780h (Tooling, low-prio).~~ **✅ ERLEDIGT 2026-06-29** (Methode: `maestro --headless --screen-size`; 0 echte Web-Defekte — s. §4). **Tooling-Befund:** rohes system-Chrome-149 via CDP bootet den skiko-`<canvas>` NICHT (headless ODER headed); nur Maestros Selenium/ChromeDriver-Launch tut es → Tall-Capture läuft über Maestro, nicht raw-CDP.
 - **REM-114** — wasm-Live-Loop tickt nicht (Zeit + Sensor); dev-1. Blockt Live-Interaktivitäts-Beweis.
 
 ## 6. Reproduktion
