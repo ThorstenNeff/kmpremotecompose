@@ -15,6 +15,8 @@
  */
 package com.tneff.kmpremotecompose.remote.core.operations
 
+import com.tneff.kmpremotecompose.remote.player.core.RemoteContext
+import com.tneff.kmpremotecompose.remote.player.core.VariableSupport
 import com.tneff.kmpremotecompose.remote.wire.WireBuffer
 
 /**
@@ -23,6 +25,12 @@ import com.tneff.kmpremotecompose.remote.wire.WireBuffer
  * Wire layout: opcode, `int id`, `int groupId`, `short lightMode`, `short darkMode`,
  * `int lightModeFallback`, `int darkModeFallback`. This is a profile-overlay operation (androidx /
  * widgets), not part of the base set.
+ *
+ * REM-131: runtime is additive (wire form unchanged). [lightMode]/[darkMode] are the upstream
+ * color-*group indices* (`mLightModeIndex`/`mDarkModeIndex`) used only when a named host color group
+ * is bound (REM-68 territory, not wired here); the rendered value is the resolved fallback ARGB
+ * (`lightModeFallback`/`darkModeFallback`) — exactly what upstream initializes `mLightMode`/`mDarkMode`
+ * to and what its `apply` loads.
  */
 class ColorTheme(
     val id: Int,
@@ -31,9 +39,18 @@ class ColorTheme(
     val darkMode: Int,
     val lightModeFallback: Int,
     val darkModeFallback: Int,
-) : Operation {
+) : Operation, VariableSupport {
 
     override val opcode: Int get() = Operations.COLOR_THEME
+
+    /**
+     * Publish the themed color (upstream `ColorTheme.apply`): pick the light or dark fallback ARGB by
+     * the context's active paint theme (default LIGHT), then [RemoteContext.loadColor] it under [id].
+     */
+    override fun apply(context: RemoteContext) {
+        val color = if (context.getPaintTheme() == Theme.LIGHT) lightModeFallback else darkModeFallback
+        context.loadColor(id, color)
+    }
 
     override fun write(buffer: WireBuffer) {
         buffer.writeByte(opcode)

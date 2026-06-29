@@ -110,6 +110,13 @@ class RemoteContext {
     // consumed by MATRIX_VECTOR_MATH.
     private val matrixStore: MutableMap<Int, FloatArray> = mutableMapOf()
 
+    // REM-131 theme MODE (upstream mPaintTheme / mTheme). Distinct from the REM-68 host color palette
+    // above (name→ARGB override): this is the light/dark mode selector. [paintTheme] (default LIGHT, like
+    // upstream mPaintTheme=-3) is what ColorTheme reads to pick its light/dark fallback; [docTheme]
+    // (default UNSPECIFIED) is the in-document section theme a Theme op sets. Constants mirror Theme.*.
+    private var paintTheme: Int = -3 // = Theme.LIGHT
+    private var docTheme: Int = -1 // = Theme.UNSPECIFIED
+
     /**
      * The resolved float for variable [id], or **`0f`** when unresolved — source-grounded against
      * upstream `RemoteComposeState.getFloat` → `IntFloatMap.get`, which returns `0` for a missing key
@@ -142,6 +149,22 @@ class RemoteContext {
         if (id in colorOverride) return
         colorStore[id] = value
     }
+
+    /**
+     * REM-131: the active paint theme mode (upstream `getPaintTheme`/`setPaintTheme`, default LIGHT). A
+     * [ColorTheme] op reads this to choose its light vs. dark fallback color. The host sets it when it
+     * wants a non-default (dark) render; left at the default it yields the document's light-mode colors.
+     */
+    fun getPaintTheme(): Int = paintTheme
+    fun setPaintTheme(theme: Int) { paintTheme = theme }
+
+    /**
+     * REM-131: the in-document section theme (upstream `getTheme`/`setTheme`, default UNSPECIFIED). A
+     * [Theme] op sets this; it is infrastructure for theme-gated sections (not yet consumed by a paint
+     * gate here, so setting it is a no-op on render — by design, "no regress" for THEME-only docs).
+     */
+    fun getTheme(): Int = docTheme
+    fun setTheme(theme: Int) { docTheme = theme }
 
     /** Theme-override write: sets the color and marks the id so a later [loadColor] cannot clobber it. */
     private fun overrideColorId(id: Int, color: Int) {

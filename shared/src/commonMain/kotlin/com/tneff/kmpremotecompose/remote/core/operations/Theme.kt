@@ -15,16 +15,28 @@
  */
 package com.tneff.kmpremotecompose.remote.core.operations
 
+import com.tneff.kmpremotecompose.remote.player.core.RemoteContext
+import com.tneff.kmpremotecompose.remote.player.core.VariableSupport
 import com.tneff.kmpremotecompose.remote.wire.WireBuffer
 
 /**
  * Select the document's color theme (`THEME`): light/dark/system as the [theme] code.
  *
  * Wire layout: opcode, `int theme`.
+ *
+ * REM-131: runtime is additive (wire form unchanged). [apply] publishes the section theme into the
+ * context (upstream `Theme.apply` → `context.setTheme`). It is the infrastructure half of the
+ * theme/color cluster; no paint gate consumes it yet, so for documents that only carry THEME (and no
+ * [ColorTheme]) this is a deliberate no-op on render — "no regress" is the acceptance bar there.
  */
-class Theme(val theme: Int) : Operation {
+class Theme(val theme: Int) : Operation, VariableSupport {
 
     override val opcode: Int get() = Operations.THEME
+
+    /** Publish the section theme (upstream `Theme.apply` → `context.setTheme(mTheme)`). */
+    override fun apply(context: RemoteContext) {
+        context.setTheme(theme)
+    }
 
     override fun write(buffer: WireBuffer) {
         buffer.writeByte(opcode)
@@ -38,6 +50,12 @@ class Theme(val theme: Int) : Operation {
     override fun hashCode(): Int = theme
 
     companion object : OperationReader {
+        // Theme mode codes, verbatim from upstream Theme.* — also mirrored as literals in RemoteContext.
+        const val SYSTEM = 0
+        const val UNSPECIFIED = -1
+        const val DARK = -2
+        const val LIGHT = -3
+
         override fun read(buffer: WireBuffer, operations: MutableList<Operation>) {
             operations += Theme(buffer.readInt())
         }
