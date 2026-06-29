@@ -61,6 +61,10 @@ kotlin {
         commonMain.dependencies {
             api(projects.shared)
             implementation(libs.compose.runtime)
+            // CMP `androidx.compose.ui.graphics.Color` is the canonical Compose colour type; the
+            // S3 Q1 modifier `background(color: Color)` convenience overload routes through
+            // Color.toArgb() to the byte-anchor Int path (TechSpec §2 Q1).
+            implementation(libs.compose.ui)
         }
         commonTest {
             dependencies {
