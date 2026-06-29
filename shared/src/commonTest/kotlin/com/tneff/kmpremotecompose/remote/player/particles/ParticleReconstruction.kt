@@ -88,18 +88,11 @@ class ParticleReconstruction(
      * order; does NOT touch the RNG pin (the driver owns it). [ctx] must carry this frame's Δt.
      */
     fun stepFrame(ctx: RemoteContext) {
-        for (p in 0 until particleCount) {
-            for (v in 0 until varCount) ctx.loadFloat(varIds[v], state[p][v])
-            for (v in 0 until varCount) {
-                state[p][v] = RpnFloatEvaluator.eval(updateEqs[v], updateEqs[v].size, ctx)
-                ctx.loadFloat(varIds[v], state[p][v])
-            }
-            if (restart != null && RpnFloatEvaluator.eval(restart, restart.size, ctx) > 0f) {
-                seedParticle(p, state, ctx)
-            }
-        }
-        // PARTICLE_COMPARE (condition1Body): after the loop update, each compare conditionally mutates a
-        // particle's vars (maze wall collision). Runs per-compare in doc order, like the sim's walk.
+        // PARTICLE_COMPARE (condition1Body): the compares appear in the impulse process BEFORE the
+        // ParticlesLoop (maze doc order [Compare×4, Loop]), so the sim's paint walk applies the collision
+        // response FIRST, then the loop moves the particle. Each compare conditionally mutates a particle's
+        // vars (`eval(expr) > 0` ⇒ apply eq1), per-compare in doc order — exactly the sim's order, so any
+        // RAND the compares draw is consumed before the loop's RAND too.
         for (cmp in compares) {
             val start = if (cmp.min < 0f) 0 else cmp.min.toInt()
             val end = if (cmp.max < 0f) particleCount else cmp.max.toInt()
@@ -112,6 +105,17 @@ class ParticleReconstruction(
                         ctx.loadFloat(varIds[v], state[p][v])
                     }
                 }
+            }
+        }
+        // ParticlesLoop: per particle, update var-major in-place then the restart eq (`>0` ⇒ re-seed).
+        for (p in 0 until particleCount) {
+            for (v in 0 until varCount) ctx.loadFloat(varIds[v], state[p][v])
+            for (v in 0 until varCount) {
+                state[p][v] = RpnFloatEvaluator.eval(updateEqs[v], updateEqs[v].size, ctx)
+                ctx.loadFloat(varIds[v], state[p][v])
+            }
+            if (restart != null && RpnFloatEvaluator.eval(restart, restart.size, ctx) > 0f) {
+                seedParticle(p, state, ctx)
             }
         }
     }

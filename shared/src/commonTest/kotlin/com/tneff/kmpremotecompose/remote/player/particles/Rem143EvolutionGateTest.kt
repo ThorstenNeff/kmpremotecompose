@@ -17,6 +17,7 @@ import com.tneff.kmpremotecompose.remote.player.core.seedHostPalette
 import kotlin.math.abs
 import kotlin.test.Test
 import kotlin.test.assertEquals
+import kotlin.test.assertTrue
 
 /**
  * REM-143 §5b — the LIVE multi-frame EVOLUTION gate: dev-2's S2 sim (full-doc paint, draw-capture) vs the
@@ -128,8 +129,13 @@ class Rem143EvolutionGateTest {
         val results = docs.map { d -> d to runDoc(d) }
         for ((d, r) in results) println("  $d: seed=${r.seedUnmatched} evolution=${r.totalUnmatched} injectedShiftDetected=${r.injectedShiftDetected}")
         println("===== END GATE =====")
-        // A doc is VALIDATED only if BOTH (a) real evolution converges (0 unmatched) AND (b) the META-TEST
-        // holds (a +50px-shifted "wrong sim" is flagged) — an oracle that converges but ignores a known
-        // divergence is vacuous (the bug found in REM-147). Reported per-doc; assertions pending full rebuild.
+        // A doc is VALIDATED only if BOTH (a) real evolution converges (0 unmatched, seed + every frame) AND
+        // (b) the META-TEST holds (a +50px-shifted "wrong sim" is flagged) — an oracle that converges but
+        // ignores a known divergence is vacuous (the two REM-147 false-greens). Assert BOTH for every doc.
+        for ((d, r) in results) {
+            assertEquals(0, r.seedUnmatched, "$d: seed-frame must match the independent reconstruction (Δt=0 seed)")
+            assertEquals(0, r.totalUnmatched, "$d: every frame's evolution must match the independent reconstruction")
+            assertTrue(r.injectedShiftDetected, "$d: oracle must FLAG a +50px injected divergence (non-vacuous)")
+        }
     }
 }
