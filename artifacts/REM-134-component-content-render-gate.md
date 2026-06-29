@@ -1,12 +1,87 @@
 # REM-134 Component-Content-Render — Desktop-Daten-Orakel-Gate
 
-> **Adressat:** PO. **Status:** 🔴 **RED — Daten-Orakel NICHT erfüllt.**
-> Render zeigt nur **Zeile 1 von 6**; Zeilen 2-6 sind NICHT sichtbar; Lines 5
-> Underline/Strike sind emittiert, aber bei **falschen Bounds (volle Canvas-Breite)
-> und falscher Y-Position (über/unter Zeile 1 statt Zeile 5)**. **Re-Baseline NICHT
-> ausgeführt** — der Golden wäre nur eine andere Poisoned-Stufe (Line-1-only).
-> **Branch:** `bugfix/REM-134-component-content-render-gate` (Verdikt-Doc-only,
-> KEIN Golden-Update). **Cherry-pick** `0378899` lokal getestet, nicht gepusht.
+> **Adressat:** PO. **Status (Re-Run nach dev-2 Fix `28418f4`):**
+> **Bars 1-5 ✅ GRÜN** — Text-Deliverable bewiesen, alle 6 Zeilen on-canvas,
+> Row-Baselines an Soll 45/98/151/204/257/351, Z-Order Yellow-BG-Text korrekt.
+> **Bar 6 ⚠️ PRE-EXISTING OFFEN** — Underline/Strike-DrawLines noch an Top-
+> Origin (0,~40) statt Span (x~206,y~257); per PO `1521071949999247451`
+> Klassifikation = §4.3-Design-Ruling-Issue, **wartet auf assist parallel,
+> blockiert Text-Teil-Verdikt nicht.** **Re-Baseline weiter BLOCKIERT** (Text-
+> grün + Decoration-falsch = neuer partial-poisoned Golden; erst wenn beides
+> grün ist). Branch: `bugfix/REM-134-component-content-render-gate` (Verdikt-
+> Doc-only). Cherry-picks `0378899 + 28418f4` lokal getestet, nicht gepusht.
+>
+> *Historischer Initial-RED-Run (vor `28418f4`):* nur Zeile 1 sichtbar
+> (Root-Cause: Modifier-lose Rows defaulteten auf FILL=492px → Zeilen 2-6
+> off-canvas; jetzt wrappen). Initial-Befund unten als historischer Kontext
+> erhalten.
+
+## Re-Run-Befund nach Fix `28418f4` (aktuell)
+
+Cherry-pick: `0378899` + `28418f4` lokal auf develop `7f53e0b` → Render-Tip
+`4e0240d`. Re-Render `attribute_string.png` = 46089 B (vs. ursprünglicher
+poisoned-Golden 1702 B / vorheriger Line-1-only-Render 10814 B).
+
+**Sichtbare Inhalts-Bands (Color-Class + Row-Detection):**
+
+| Band | Y-Range | Höhe | Farben | Zuordnung |
+|---|---|---|---|---|
+| 1 | y[13, 56] | 44 | text (black-grey) | **Zeile 1** "AttributedString Demo:" — Baseline ~45 ✓ |
+| 2 | y[67,110] | 44 | text | **Zeile 2** "This is **Bold**, this is *Italic*..." — Baseline ~98 ✓ |
+| 3 | y[121,219] | 99 | text + **red** + **yellow** | **Zeile 3 + Zeile 4 merged-band** (kein Pixel-Gap >4 zwischen ihnen): Baseline 151 (Red) + 204 (Yellow-BG) ✓ |
+| 4 | y[229,272] | 44 | text | **Zeile 5** "This is Underlined, and..." — Baseline ~257 ✓ |
+| 5 | y[293,380] | 88 | text | **Zeile 6** "This is **Big**, and this..." — Baseline ~351 ✓ (88 ≈ 92px Big font extent) |
+
+**Color-Class-Census (gesamtes 500×500):**
+- **Red: 970 px** ✓ (Zeile 3 "Red" span — Color resolved nicht Fail-Soft)
+- **Yellow: 7156 px** ✓ (Zeile 4 "Yellow Background"-Rect)
+- Black: 26738 px (Text)
+- Grey: 10990 px (AA)
+- White: 203429 px (Background)
+
+**Visuell verifiziert via Crop** (siehe `/tmp/rem-134-render2/attribute_string.png`):
+alle 6 Zeilen vertikal gestapelt sichtbar, Bold/Italic-Styling differenziert,
+Red-Span ROT, Yellow-BG mit Text-Overlay (Z-Order korrekt!), "Big"-Span deutlich
+größer (92px) auf Zeile 6.
+
+## Per-Source-B-Bar-Check (Re-Run)
+
+| # | Source-B-Bar | Befund | Verdikt |
+|---|---|---|---|
+| 1 | ≥24 `drawTextRun`/`drawComplexText` an Soll-Positionen | drawCount=28 dispatched; visuell alle 6 Zeilen mit Spans an gestaffelten X-Positionen sichtbar → 24 Spans rendern an Soll | ✅ **GRÜN** |
+| 2 | Pro Zeile: x-monoton steigend | Visuelles Cleanly-left-to-right pro Zeile (kein Overlap, keine Backtracking) | ✅ **GRÜN** |
+| 3 | Pro Zeile: EINE gemeinsame Baseline; **Zeile 6 harte Fall** (Big 92px + 46px) | Zeile 6 band y[293,380]: "This is" 46px + "Big" 92px + ", and this" 46px **teilen Baseline 351** (kleinere Spans nach unten geschoben, NICHT top-aligned) — AlignBy line=NaN funktioniert | ✅ **GRÜN** |
+| 4 | Zeilen stapeln vertikal top→down (Row-Baselines streng steigend) | Bands at y=13/67/121/229/293; Baselines 45/98/151/204/257/351 monoton steigend (PO-bestätigt) | ✅ **GRÜN** |
+| 5 | Z-order: Zeile-4-"Yellow Background"-Text SICHTBAR ÜBER gelbem BG-Rect | Yellow-BG sichtbar mit schwarzem Text-Overlay (Z-Order korrekt: Text NACH BG gerendert via DrawContent-Stream-Position) | ✅ **GRÜN** |
+| 6 | Underline/Strike: 2 `drawLine`s an **gemessenen Span-Bounds** | 2 DrawLines noch an **Top-Origin (0,~40)**: y=31-32 (Strike) und y=45-46 (Underline) mit x[0,489]/x[0,499] = volle Canvas-Breite. Soll wäre Zeile 5 (Underline) + Zeile 5 (Strike) an "Underlined"-/"Strikethrough"-Span-Bounds (x~206, y~257). | ⚠️ **PRE-EXISTING** (per PO §4.3-Design-Ruling, wartet auf assist) |
+
+**Bars 1-5 = ✅ GRÜN.** Text-Deliverable bewiesen: alle 6 Zeilen / 24 Spans /
+korrekte Baselines / x-Monotonie / Z-Order Yellow-BG / AlignBy.
+
+**Bar 6 (Decoration-Position) = ⚠️ pre-existing.** Per PO-Routing
+`1521071949999247451`: ".rc erwartet span-LOKALE Coords + per-Component-
+Translate, was §4.3 (kein Translate) verbietet. Pre-existing + wartet auf
+assist-Design-Ruling parallel". Blockiert Text-Teil-Gate nicht.
+
+## Cross-Check: jvmTest weiter grün
+
+Annahme bestätigt: dev-2 `Rem134ComponentContentTest` 6/6 PASS auf cherry-pickter
+Tip — Layout-MATH war schon mit Fake-Metrics grün, ist mit Real-Metrics + Fix
+`28418f4` **jetzt auch im Pixel-Render grün** für Bars 1-5.
+
+## Re-Baseline-Status
+
+**WEITER BLOCKIERT** (per PO-Anweisung `1521071949999247451`):
+
+> "**Wichtig: re-baseline den attribute_string-Golden NOCH NICHT** — erst wenn
+> Text UND Decoration korrekt sind (sonst „text+wrong-decoration" = neuer
+> partial-poisoned Golden)."
+
+Ich folge der Regel: Text-grün (Bars 1-5) + Decoration-falsch (Bar 6) wäre ein
+neuer partial-poisoned-Golden = REM-123-Gate-Verletzung. Re-Baseline kommt erst
+nach assist-§4.3-Ruling + dev-2-Decoration-Fix.
+
+## Initial-RED-Befund (historisch, vor `28418f4`)
 
 ## TL;DR (3 Sätze)
 
