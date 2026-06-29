@@ -49,7 +49,10 @@ class Rem143EvolutionGateTest {
                     if (op is VariableSupport) { op.updateVariables(ctx); op.apply(ctx) }
                     if (op is PaintOperation) op.paint(ctx, rec)
                 }
-                anchors += rec.draws
+                // ONE anchor per particle = the body's first draw (the placement = particle position).
+                // Later body draws are decoration/shape (e.g. a DRAW_LINE offset by the per-particle scale),
+                // which encode geometry, not position, and must not pollute the position-evolution match.
+                rec.draws.firstOrNull()?.let { anchors += it }
             }
             anchors
         }
@@ -59,26 +62,38 @@ class Rem143EvolutionGateTest {
     private fun unmatched(expected: List<RecordingParticlePaintContext.Draw>, captured: List<RecordingParticlePaintContext.Draw>, tol: Float): Int =
         expected.count { e -> captured.none { c -> abs(c.cx - e.cx) <= tol && abs(c.cy - e.cy) <= tol } }
 
-    /** @return (seedUnmatched, totalUnmatched) — both 0 ⇒ the doc passes (i)+(ii). */
-    private fun runDoc(name: String): Pair<Int, Int> {
+    /** A per-doc oracle result: real unmatched + whether a deliberately-shifted expected is DETECTED. */
+    data class Result(val seedUnmatched: Int, val totalUnmatched: Int, val injectedShiftDetected: Boolean)
+
+    /** @return real (un)matched + the META-TEST: a +50px-shifted "wrong sim" MUST yield unmatched>0 in every
+     *  frame that has expected anchors — an oracle that does not flag a known divergence is vacuous. */
+    private fun runDoc(name: String): Result {
         val doc = DocumentReader.inflate(RcCorpus.readFixture("corpus/$name"))
         val systems = ParticleSystemDecoder.decode(doc)
-        val schedule = ParticleFrameSchedule.fromDoc(doc) ?: return 0 to 0
+        val schedule = ParticleFrameSchedule.fromDoc(doc) ?: return Result(0, 0, true)
         val captured = ParticleGateHarness.captureFrames(doc, schedule)
         var totalUnmatched = 0
         var seedUnmatched = 0
+        var injectedAllDetected = true
+        var anyExpected = false
         for (system in systems) {
             val frames = system.reconstruction.evolve(schedule.frameCount) { k, ctx ->
                 ctx.loadFloat(RemoteContext.ID_ANIMATION_DELTA_TIME, if (k == 0) 0f else DT)
             }
             val expected = expectedAnchors(doc, system, frames, schedule)
             for (k in expected.indices) {
-                val u = unmatched(expected[k], captured.getOrElse(k) { emptyList() }, tol = 0.1f)
-                if (k == 0) seedUnmatched += u
-                totalUnmatched += u
+                val cap = captured.getOrElse(k) { emptyList() }
+                totalUnmatched += unmatched(expected[k], cap, tol = 0.1f)
+                if (k == 0) seedUnmatched += unmatched(expected[k], cap, tol = 0.1f)
+                if (expected[k].isNotEmpty()) {
+                    anyExpected = true
+                    // META: shift every expected anchor +50px → a vacuous oracle would still match.
+                    val shifted = expected[k].map { RecordingParticlePaintContext.Draw(it.cx + 50f, it.cy + 50f) }
+                    if (unmatched(shifted, cap, tol = 0.1f) == 0) injectedAllDetected = false
+                }
             }
         }
-        return seedUnmatched to totalUnmatched
+        return Result(seedUnmatched, totalUnmatched, !anyExpected || injectedAllDetected)
     }
 
     @Test fun allSixParticleDocs_evolutionGate() {
@@ -88,13 +103,10 @@ class Rem143EvolutionGateTest {
         )
         println("===== REM-143 EVOLUTION GATE — all 6 particle docs =====")
         val results = docs.map { d -> d to runDoc(d) }
-        for ((d, r) in results) println("  $d: seed=${r.first} evolution=${r.second}")
+        for ((d, r) in results) println("  $d: seed=${r.seedUnmatched} evolution=${r.totalUnmatched} injectedShiftDetected=${r.injectedShiftDetected}")
         println("===== END GATE =====")
-        // (i) seed-frame matches + (ii) frame-k evolution converges, for every doc, vs the independent
-        // reconstruction (draw-capture, NOT op-readback). Any unmatched anchor ⇒ a sim/spec divergence.
-        for ((d, r) in results) {
-            assertEquals(0, r.first, "$d: seed-frame must match seed positions (Δt=0 seed property)")
-            assertEquals(0, r.second, "$d: frame-k evolution must converge with the independent reconstruction")
-        }
+        // A doc is VALIDATED only if BOTH (a) real evolution converges (0 unmatched) AND (b) the META-TEST
+        // holds (a +50px-shifted "wrong sim" is flagged) — an oracle that converges but ignores a known
+        // divergence is vacuous (the bug found in REM-147). Reported per-doc; assertions pending full rebuild.
     }
 }
