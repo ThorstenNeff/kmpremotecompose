@@ -31,8 +31,13 @@ REM-109)**. Berührt **NICHT** LayoutMeasure — reine Paint-Walk + Eval + Op-Fe
   4. **Body zeichnen** (die Ops zwischen PARTICLE_LOOP und CONTAINER_END) mit den geladenen Partikel-Vars —
      wie `runLoop`, aber N× pro Partikel (Body enthält z.B. DrawBitmap-Sprite REM-132, DrawOval, Matrix-Ops).
 - **ImpulseStart** (`IMPULSE_START`, Container; duration/startAt) + **ImpulseProcess** (`IMPULSE_PROCESS`,
-  Container): Timeline-Block — re-evaluiert seine Kinder pro Frame über `[startAt, startAt+duration]`. Treibt
-  die zeit-basierte Animation; bindet an den continuous-repaint-Clock (REM-36 E-D1, `wakeIn`).
+  Container): **Lifecycle-Controller** (korrigiert nach decode + upstream `ImpulseOperation.paint` Z.141-167 —
+  der frühere „re-evaluiert Kinder"-Sketch war unter-modelliert). Pro paint: `currentTime = getAnimationTime`
+  (= unser `context.frameTimeSeconds`, REM-36/57). `currentTime < startAt`(resolved) → `wakeIn(startAt−now)` +
+  return. Im aktiven Fenster `[startAt, startAt+duration]`: **erster Durchlauf (`mInitialPass`) = SEED** (Kinder
+  apply → ParticlesCreate seedt) / **Folge-Durchläufe = `mProcess.paint`** (ParticlesLoop evolviert). Nach
+  Dauer → `mInitialPass=true` (reset → nächste Aktivierung re-seedet). `startAt` ist ein **NaN-Var-Ref**
+  (decode: confetti/particle id29, maze id1, region 0; resolved **0 @ static t=0**).
 - **PARTICLE_COMPARE** (op 194; **decode-aufgelöst — NICHT loud-guard, korpus-AKTIV**): Klasse
   `ParticlesCompare(id, flags, min, max, compare[], equations1[], equations2[])` = ein **per-Partikel-
   Conditional**: wertet `compare` (+ min/max-Range) pro Partikel aus → wendet `equations1` ODER `equations2`
@@ -44,8 +49,11 @@ REM-109)**. Berührt **NICHT** LayoutMeasure — reine Paint-Walk + Eval + Op-Fe
 
 ### 3.1 Op-Feld-State-Lebensdauer (Design-Punkt 1)
 - `mParticles` ist ein **render-only Op-Feld** auf ParticlesCreate (nicht serialisiert → §2-safe).
-- **Seed-once-Semantik:** ParticlesCreate seedt beim ERSTEN apply (ein `seeded`-Flag); Folge-Frames seeden
-  NICHT neu (sonst keine Evolution). Statischer Render (1 paint) = Seed-Frame; Live (N paints) = Seed + Evolution.
+- **Seed-Semantik (korrigiert): IMPULSE-`mInitialPass`-gated, NICHT Phase-A.** ParticlesCreate seedt im
+  **ersten aktiven Impulse-Durchlauf** (`mInitialPass`, currentTime≥startAt) — der Seed wandert von Phase-A in
+  den Impulse-Lifecycle (§2). **Static-Render (1 paint) = `mInitialPass`=true → SEED-Frame** (= S1s Render, da
+  startAt resolved 0 @static → Impulse sofort aktiv); **Live (N paints) = Seed (Frame 1) + `mProcess`-Evolution
+  (Frame 2..N)**; nach Dauer → reset. (Kontrollfluss-Touch ggü. S1 — assist-GE'd, S1-Seed-Frame bleibt valide.)
 
 - **✅ VERIFIZIERTE VORBEDINGUNG (dev-1, first-hand): decode-once → paint-N HÄLT.** doc-by-`remember` +
   LaunchedEffect-inflate (`RemoteComposeApp:91/103-111`, 1× pro `docName`); die Frame-Loop reused die Op-
@@ -69,10 +77,15 @@ REM-109)**. Berührt **NICHT** LayoutMeasure — reine Paint-Walk + Eval + Op-Fe
   `[i+1, matchEnd)` **pro Partikel** mit eval-then-paint, lädt vor jedem Body-Durchlauf die Partikel-Vars.
 - PARTICLE_LOOP ist bereits in CONTAINER_OPENING_OPCODES (skip-depth) — der Walk-Intercept ist additiv.
 
-### 3.3 Impulse-Timeline + Animations-Clock (Design-Punkt 3)
-- ImpulseStart/Process treiben die Zeit über `[startAt, startAt+duration]`. Integration mit dem bestehenden
-  Animations-Clock: time-driven → `context.wakeIn(CONTINUOUS)` (REM-36 E-D1) → Host re-paintet → Evolution.
-- Static-Mode (animation off): Impulse @ `staticTimeSeconds` (REM-57/62) = deterministischer Seed-Frame.
+### 3.3 Impulse-Timeline + Animations-Clock (Design-Punkt 3, korrigiert)
+- **Impulse-Intercept im Paint-Walk** (wie LOOP_START/PARTICLE_LOOP; IMPULSE_START ist in
+  CONTAINER_OPENING_OPCODES): `now = context.frameTimeSeconds` (= getAnimationTime, REM-36/57). `now < startAt`
+  → `context.wakeIn(startAt−now)` + Block überspringen (skipConditionalBlock). Aktiv: **`mInitialPass`-Op-Feld**
+  steuert SEED (erster aktiver paint: Kinder/ParticlesCreate apply) vs PROCESS (Folge: ParticlesLoop evolviert);
+  nach `now > startAt+duration` → `mInitialPass=true` (reset). Continuous-repaint via `wakeIn(CONTINUOUS)` solange aktiv.
+- **`mInitialPass` ist ein render-only Op-Feld** (wie `mParticles`) → überlebt Frames (decode-once→paint-N).
+- **Static-Mode (animation off):** Single-paint → `mInitialPass`=true → SEED-Frame; Seed-Render-Zeit = der
+  **resolved `startAt`** (Hardening §5), nicht hartkodiert t=0.
 
 ### 3.4 Capability-Staffing (Design-Punkt 4; PROJECT_CONTEXT §0)
 - **Mobile:** voll — Touch treibt den Impulse (TouchExpression-Seam REM-108), Partikel reagieren live.
@@ -82,14 +95,17 @@ REM-109)**. Berührt **NICHT** LayoutMeasure — reine Paint-Walk + Eval + Op-Fe
 ## 4. §2 / Byte-Invariante (HARD GATE)
 - **`write`/`read`/`companion read`/`equals`/`hashCode` aller 5 Ops UNVERÄNDERT** (bereits byte-faithful
   gemergt) → 173-Byte-Conformance by-construction. Sim = additive apply/paint + render-only Op-Felder
-  (`mParticles`, `seeded`), nicht serialisiert. Kein Binärformat-Touch.
+  (`mParticles`, `seeded`, Impulse-`mInitialPass`), nicht serialisiert. Kein Binärformat-Touch.
 
 ## 5. 🔴 Render-Gate-Strategie (LIVE — der harte Teil)
 - **§2:** Conformance-173 grün + 4-Target-Compile.
 - **VOLL-173-RENDER-Sweep PFLICHT** (Shared-Draw-Path — REM-140-Lehre): kein Draw-Fingerprint-Proxy, echter
   Render; nur die Ziel-Docs dürfen Δ, 0 Collateral auf den anderen.
-- **S1 (Seed-Frame):** statischer t=0-Golden (Partikel @ Init-Position) — deterministisch (RNG-Seed-Pin §3.1),
-  golden-bar. Daten-Orakel: N Partikel an Soll-Seed-Positionen.
+- **S1 (Seed-Frame):** statischer Golden (Partikel @ Init-Position) — deterministisch (RNG-Seed-Pin §3.1),
+  golden-bar. Daten-Orakel: N Partikel an Soll-Seed-Positionen. **🔒 Hardening (assist):** die Seed-Render-Zeit
+  wird an den **resolved `startAt`** gepinnt (= das `mInitialPass`-Seed-Fenster), NICHT hartkodiert t=0 — robust
+  falls je ein Doc `startAt` non-zero resolved (heute alle 0 @static, aber var-ref → nicht annehmen). Capture-
+  Config: static-time = resolved startAt.
 - **S2/S3 (LIVE):** **NICHT headless-Screenshot** (headless captured nur first-paint — die wasm-headless-Lehre).
   → **Multi-Frame-Daten-Orakel** (seed-time → N Frames → Partikel-State evolviert korrekt, REM-123-Klasse:
   Daten-Orakel nicht nur Pixel) + **Maestro-Live-Flow** (Touch→Impulse→Partikel animieren) auf ≥1 Target
