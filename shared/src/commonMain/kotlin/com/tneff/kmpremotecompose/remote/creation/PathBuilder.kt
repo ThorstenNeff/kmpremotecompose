@@ -20,6 +20,7 @@ import com.tneff.kmpremotecompose.remote.core.operations.draw.DrawTweenPath
 import com.tneff.kmpremotecompose.remote.core.operations.draw.PathAppend
 import com.tneff.kmpremotecompose.remote.core.operations.draw.PathCreate
 import com.tneff.kmpremotecompose.remote.core.operations.draw.PathData
+import com.tneff.kmpremotecompose.remote.core.operations.draw.PathTween
 import com.tneff.kmpremotecompose.remote.wire.WireTypes
 
 /**
@@ -185,6 +186,32 @@ fun RemoteComposeContext.addPathData(floats: FloatArray, winding: Int = 0): Int 
 /** `DRAW_PATH` — render the path previously created at [pathId]. Does NOT allocate a new id. */
 fun RemoteComposeContext.drawPath(pathId: Int) {
     add(DrawPath(pathId))
+}
+
+/**
+ * REM-148 S1 — `PATH_TWEEN` (opcode [com.tneff.kmpremotecompose.remote.core.operations.Operations.PATH_TWEEN]).
+ * Interpolates the geometry of [pathId1] and [pathId2] into a fresh region-0 path id at parameter
+ * [tween]; the returned id can be passed to [drawPath] or another [pathTween] (chaining is the
+ * `path_demo_path_tween_demo.rc` corpus pattern).
+ *
+ * Wire layout (17 bytes total, byte-anchored against
+ * `corpus/path_demo_path_tween_demo.rc`'s op #22 sub-span): opcode(1) + outId(4) + pathId1(4) +
+ * pathId2(4) + tween(4).
+ *
+ * **NaN-bit fidelity (W14).** [tween] is `Float`-typed rather than `Number` so a NaN-encoded
+ * variable reference (e.g. `WireTypes.asNan(animatedFloatId)` — the corpus encodes tween as
+ * `Float.fromBits(0xFF80002B.toInt())` referring to an `ANIMATED_FLOAT id=43`) round-trips
+ * verbatim through `WireBuffer.writeFloat`'s `toRawBits()` path. `Number.toFloat()` would discard
+ * the NaN payload — this signature shape forbids that mistake at the call site.
+ *
+ * **id-allocation (E5 byte-contract).** The output path id comes from [IdAllocator.nextId]
+ * (region-0). The two inputs are pre-existing path ids (no allocation here). Mirrors REM-86
+ * `pathCreate` (allocates) vs. `drawPath` (does not).
+ */
+fun RemoteComposeContext.pathTween(pathId1: Int, pathId2: Int, tween: Float): Int {
+    val outId = ids.nextId()
+    add(PathTween(outId, pathId1, pathId2, tween))
+    return outId
 }
 
 /**
