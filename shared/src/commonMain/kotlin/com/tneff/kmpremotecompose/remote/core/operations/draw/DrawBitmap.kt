@@ -18,15 +18,33 @@ package com.tneff.kmpremotecompose.remote.core.operations.draw
 import com.tneff.kmpremotecompose.remote.core.operations.Operation
 import com.tneff.kmpremotecompose.remote.core.operations.OperationReader
 import com.tneff.kmpremotecompose.remote.core.operations.Operations
+import com.tneff.kmpremotecompose.remote.player.core.PaintContext
+import com.tneff.kmpremotecompose.remote.player.core.PaintOperation
+import com.tneff.kmpremotecompose.remote.player.core.RemoteContext
+import com.tneff.kmpremotecompose.remote.player.core.VariableSupport
+import com.tneff.kmpremotecompose.remote.player.core.resolveCoord
 import com.tneff.kmpremotecompose.remote.wire.WireBuffer
 
 /**
- * `DRAW_BITMAP` (opcode [Operations.DRAW_BITMAP]) — draws a bitmap into a rect (the draw command,
- * distinct from the group-A `DATA_BITMAP` image data).
+ * `DRAW_BITMAP` (opcode [Operations.DRAW_BITMAP]) — draws the whole bitmap stored under [id] into a
+ * dst rect (the draw command, distinct from the group-A `DATA_BITMAP` image data). The simplest of the
+ * three blit ops: no src-rect / no scaleType (cf. [DrawBitmapInt], [DrawBitmapScaled]).
  *
  * Wire layout: opcode byte + int `id` + float `left` + float `top` + float `right` + float `bottom` +
  * int `descriptionId` = 25 bytes (mirrors upstream `DrawBitmap.apply`/`read`). Floats may carry
  * NaN-encoded ids; raw bits preserved.
+ *
+ * **REM-132 render-apply:** upstream `DrawBitmap extends PaintOperation implements VariableSupport` — a
+ * CONSUMER. [updateVariables] resolves NaN l/t/r/b into render-only fields (Phase-A); [paint] blits the
+ * whole bitmap into the resolved dst rect via the 5-arg `PaintContext.drawBitmap`. Render-only:
+ * [write]/[read] and the raw fields are untouched → 173-byte-conformance intact (§2/§6).
+ *
+ * **Scope flag (REM-132, dispatch≠visual):** this renders the DrawBitmap *sprite* only. The single
+ * corpus user (`impulse_demo_confetti_demo`) draws it per-particle inside the **Impulse/Particles
+ * subsystem** (ImpulseStart/Process/ParticlesCreate/ParticleLoop — all still `Operation`-only =
+ * separately deferred). At static t=0 our linear walk dispatches this op once → one sprite at the
+ * resolved rect, NOT the animated particle field. Full-doc confetti correctness is NOT REM-132; it is
+ * gated behind the Particles subsystem ticket.
  */
 class DrawBitmap(
     val id: Int,
@@ -35,9 +53,28 @@ class DrawBitmap(
     val right: Float,
     val bottom: Float,
     val descriptionId: Int,
-) : Operation {
+) : PaintOperation, VariableSupport {
 
     override val opcode: Int get() = Operations.DRAW_BITMAP
+
+    // REM-132 render-only resolved dst rect (Phase-A output; not serialized → byte-safe).
+    private var rLeft: Float = left
+    private var rTop: Float = top
+    private var rRight: Float = right
+    private var rBottom: Float = bottom
+
+    /** Resolve NaN-encoded dst-rect refs against the store (consumer side, upstream `updateVariables`). */
+    override fun updateVariables(context: RemoteContext) {
+        rLeft = context.resolveCoord(left)
+        rTop = context.resolveCoord(top)
+        rRight = context.resolveCoord(right)
+        rBottom = context.resolveCoord(bottom)
+    }
+
+    /** Blit the whole bitmap [id] into the resolved dst rect (upstream `paint` → 5-arg `drawBitmap`). */
+    override fun paint(context: RemoteContext, paint: PaintContext) {
+        paint.drawBitmap(id, rLeft, rTop, rRight, rBottom)
+    }
 
     override fun write(buffer: WireBuffer) {
         buffer.writeByte(opcode)
