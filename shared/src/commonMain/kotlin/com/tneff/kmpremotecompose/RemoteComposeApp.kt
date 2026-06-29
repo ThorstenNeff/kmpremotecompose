@@ -46,6 +46,7 @@ import com.tneff.kmpremotecompose.remote.player.core.RemoteComposePlayer
 import com.tneff.kmpremotecompose.remote.player.core.renderOpaque
 import com.tneff.kmpremotecompose.remote.player.core.RemoteContext
 import com.tneff.kmpremotecompose.remote.player.core.SensorSource
+import com.tneff.kmpremotecompose.remote.player.core.baselineHostPalette
 import com.tneff.kmpremotecompose.remote.player.core.seedHostPalette
 import com.tneff.kmpremotecompose.remote.player.core.systemAccentPalette
 import com.tneff.kmpremotecompose.remote.player.core.TouchState
@@ -164,7 +165,12 @@ fun RemoteComposeApp(
     // (Android reads real device colors; iOS/desktop mirror the baseline). Seeded into each render's
     // context below so a `NamedVariable`-bound theme color (e.g. color.system_accent1_100) overrides the
     // doc's debug `ColorConstant` fallback (REM-61/67) — clock/digital_clock1/color_table get real tones.
-    val themePalette = remember { systemAccentPalette() }
+    // REM-135: a deep-link `&palette=baseline` forces the deterministic baseline palette (capture pin,
+    // analog `&density=1.0`) — keyed on the flag so the choice re-resolves if a deep-link flips it. Absent ⇒
+    // `systemAccentPalette()` = the real device Material-You accent (untouched live-app behavior).
+    val themePalette = remember(RcRouter.forceBaselinePalette) {
+        if (RcRouter.forceBaselinePalette) baselineHostPalette() else systemAccentPalette()
+    }
     // REM-108 S2b: persistent pointer-gesture state (survives the per-frame-fresh RemoteContext). Written
     // by the live pointerInput below, consumed one transition per frame by the player.
     val touchState = remember { TouchState() }

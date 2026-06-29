@@ -19,6 +19,9 @@ struct iOSApp: App {
                     // REM-91: &density=<f> forces a uniform render density for cross-target parity (iOS-Sim
                     // is fixed @3x). Absent / invalid → nil = real platform density (original path).
                     RcRouter.shared.setForcedDensity(value: items?.first(where: { $0.name == "density" })?.value)
+                    // REM-135: &palette=baseline forces the deterministic baseline host palette for captures
+                    // (analog &density=1.0). Absent / other → live device accent (untouched app behavior).
+                    RcRouter.shared.setForceBaselinePalette(value: items?.first(where: { $0.name == "palette" })?.value)
                 }
         }
     }

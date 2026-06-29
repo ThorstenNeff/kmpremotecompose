@@ -228,3 +228,27 @@ RE-FROZEN from fresh 902c358 renders (&t=0), both platforms, A<->iOS verified, d
     REM-110 wasm-only gap (heart missing on Web only; Desktop/Mobile show it) — REM-112 fixes the stale-mobile part, REM-110 the Web part.
   • text_refresh_bug — accent green-clover + arrow now present (REM-68). 10.5%.
 A<->iOS parity 92.6–98.4% (residual = AA + REM-51 dp-round: A 500/500/475/300 · iOS 498/498/474/300). Frozen count +0 (in-place).
+
+## REM-135 — Mobile baseline-seed re-baseline: digital_clock1 + clock @t=36630 (branch feature/REM-135, off develop 58a5714, 2026-06-29)
+REM-135 added the `&palette=baseline` capture param (RcRouter.forceBaselinePalette → RemoteComposeApp seeds baselineHostPalette()
+instead of the live device accent — the palette analogue of the `&density=1.0` capture pin). Goldens are now captured with the
+deterministic BASELINE host palette on every target, so a device-specific Material-You accent can never bake into a golden.
+VERIFY-BEFORE-ROUTE: the 5-doc REM-135 census (test-3) carries DESKTOP/Web palette flips (fallback-cyan→resolved, the
+harness-never-seeded bug). On MOBILE the goldens were ALWAYS seeded (RemoteComposeApp app-path) → never poisoned: stock /
+text_refresh_bug / themed_plot1 mobile goldens were already baseline (MAD 0.00 / 0.56 / 0.66 vs fresh baseline capture) → NOT
+re-frozen (re-freeze = pure AA churn). Only two mobile goldens changed, and the change is **stale RENDER (new content), not
+palette**:
+  • digital_clock1 — the digit scroll-wheel now renders (old golden was blank navy, pre-wheel). New: navy bg + "10" wheel @t=36630.
+  • clock — the accent1_50 scalloped face now renders (old golden was white-bg, no face). New: accent1_50 face + spread hands @t=36630.
+PIN = &palette=baseline + &t=36630 (REM-69 cross-platform-safe clock pin; the old goldens were degenerate &t=0 12:00-collapse) +
+platform density (matches the existing 500/498-px dp-round convention). Cross-target t aligned with test-3's desktop re-capture
+(develop f4b41e0, also @t=36630) — verify-before-route flagged the t-pin trap before the push.
+DATA-ORACLE (resolved == BASELINE palette constant, NOT cross-target self-compare), all green both platforms:
+  • digital_clock1: bg #40527D = system_primary_dim_light; digit #FAF8FE = system_background_light.
+  • clock: face #EEF0FF = system_accent1_50; hand #6476A5 = system_accent1_500; 2nd hand #404659 = accent2_700; dot #836E99 = accent3_500.
+RE-FROZEN (both platforms): digital_clock1 (android 500×1500 · ios 498×1500), clock (android 500×500 · ios 498×498).
+A<->iOS parity: digital_clock1 99.99% (MAD 0.02), clock 99.7% (MAD 1.56). Frozen count +0 (2 docs × 2 platforms, in-place).
+NOTE on this emu: Android `Resources.getSystem()` does NOT reflect the runtime Material-You overlay in-process (cmd-overlay-lookup
+showed a forced red accent #ffd64145 while systemAccentPalette() still returned baseline 0xFF6476A5), so live==baseline HERE and
+the param shows no pixel flip on this emulator — the flip was proven via on-device logcat instrumentation (forceBaseline=true →
+baselineHostPalette → a1_500=0xFF6476A5). The determinism guarantee holds by construction for any device where the accent diverges.

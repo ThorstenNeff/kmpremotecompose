@@ -51,7 +51,8 @@ class MainActivity : ComponentActivity() {
     }
 
     /**
-     * Apply the `rc` (doc), `live` (REM-37 E-D1 animation) and `t` (REM-62 static frame pin, seconds)
+     * Apply the `rc` (doc), `live` (REM-37 E-D1 animation), `t` (REM-62 static frame pin, seconds),
+     * `density` (REM-91 forced density) and `palette` (REM-135 `=baseline` capture-determinism seed)
      * query params of a `kmprc://render` URI.
      */
     private fun selectFromIntent(intent: Intent?) {
@@ -59,5 +60,6 @@ class MainActivity : ComponentActivity() {
         RcRouter.live = intent?.data?.getQueryParameter("live") == "1"
         RcRouter.setStaticTime(intent?.data?.getQueryParameter("t"))
         RcRouter.setForcedDensity(intent?.data?.getQueryParameter("density"))
+        RcRouter.setForceBaselinePalette(intent?.data?.getQueryParameter("palette"))
     }
 }
