@@ -41,13 +41,29 @@ object RenderTimePins {
     const val CLOCK_SAFE_TIME_SECONDS: Float = 36630f
 
     /**
-     * doc name (without the `.rc` extension) → pinned static time in seconds. Currently the two docs
-     * test-3 confirmed as time-sensitive in the REM-135 sweep; extend here (the single source) if another
-     * doc proves time-sensitive — do not re-introduce per-target `--t` hardcoding.
+     * doc name (without the `.rc` extension) → pinned static time in seconds. The docs test-3 confirmed as
+     * time-sensitive (collapse to 12:00 at t=0): the REM-135 sweep found `clock`/`digital_clock1`; the
+     * REM-138 fancy-clock census found 14 more. Extend here (the single source) if another doc proves
+     * time-sensitive — do not re-introduce per-target `--t` hardcoding.
      */
     private val pins: Map<String, Float> = mapOf(
         "clock" to CLOCK_SAFE_TIME_SECONDS,
         "digital_clock1" to CLOCK_SAFE_TIME_SECONDS,
+        // REM-138 — 14 further time-sensitive clock docs (test-3 fancy-clock census).
+        "experimental_gmt" to CLOCK_SAFE_TIME_SECONDS,
+        "experimental_solar_gmt" to CLOCK_SAFE_TIME_SECONDS,
+        "clock_demo1_clock1" to CLOCK_SAFE_TIME_SECONDS,
+        "clock_demo2_jancy_clock2" to CLOCK_SAFE_TIME_SECONDS,
+        "clock_demo2_jclock2" to CLOCK_SAFE_TIME_SECONDS,
+        "fancy_clock2" to CLOCK_SAFE_TIME_SECONDS,
+        "fancy_clocks_fancy_clock1" to CLOCK_SAFE_TIME_SECONDS,
+        "fancy_clocks_fancy_clock2" to CLOCK_SAFE_TIME_SECONDS,
+        "fancy_clocks_fancy_clock3" to CLOCK_SAFE_TIME_SECONDS,
+        "server_clock" to CLOCK_SAFE_TIME_SECONDS,
+        "wake_demo_wake_clock" to CLOCK_SAFE_TIME_SECONDS,
+        "texture_demo_texture_clock" to CLOCK_SAFE_TIME_SECONDS,
+        "experimental_fancy_clock" to CLOCK_SAFE_TIME_SECONDS,
+        "experimental_sweep_clock1" to CLOCK_SAFE_TIME_SECONDS,
     )
 
     /**
