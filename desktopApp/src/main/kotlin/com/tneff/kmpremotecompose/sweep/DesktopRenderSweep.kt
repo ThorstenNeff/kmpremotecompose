@@ -21,6 +21,7 @@ import com.tneff.kmpremotecompose.remote.player.compose.deferredPaintTagsOf
 import com.tneff.kmpremotecompose.remote.player.core.RemoteComposePlayer
 import com.tneff.kmpremotecompose.remote.player.core.RemoteContext
 import com.tneff.kmpremotecompose.remote.player.core.renderOpaque
+import com.tneff.kmpremotecompose.remote.player.core.seedHostPalette
 import org.jetbrains.skia.EncodedImageFormat
 import java.io.File
 import kotlin.system.exitProcess
@@ -132,6 +133,11 @@ private fun renderOne(rcBytes: ByteArray, staticTime: Float, density: Float): Re
     val ctx = RemoteContext().apply {
         setDensity(density)
         animationEnabled = false
+        // REM-135: seed the deterministic baseline host palette so NamedVariable-bound theme colors
+        // (color.system_accent1_100 etc., + REM-133 legacy aliases) bind to real tones in Phase A — bare
+        // context dropped to debug ColorConstant fallback (proven via digital_clock1 4/4 + color_table
+        // 192/195 flips). Default arg = baselineHostPalette() = capture-deterministic on all targets.
+        seedHostPalette()
     }
     var thrown: String? = null
     var paintContextRef: ComposePaintContext? = null
