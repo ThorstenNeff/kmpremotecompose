@@ -37,6 +37,17 @@ class TouchState {
         private set
     var phase: TouchPhase = TouchPhase.IDLE
 
+    /**
+     * REM-143 S3a: the frame-time (seconds) of the last touch-down — the impulse `startAt` (= the
+     * `ID_TOUCH_EVENT_TIME` system var, id 29) is seeded from this **each live frame** by
+     * [RemoteComposePlayer.paint], because the [RemoteContext] is rebuilt per frame (the same persistence
+     * pattern as `ImpulseStart.lastFrameTime`). Upstream sets id29 in the platform view's `onTouchEvent`;
+     * we hold it here and re-seed. Default **0f** keeps the §0 auto-animation floor: with no touch,
+     * id29 = 0 ⇒ a `startAt`=id29 impulse is active from t=0 (the S1/S2 behaviour), rather than upstream's
+     * `-Float.MAX_VALUE` (touch-only) default — a deliberate, §0-sanctioned divergence. Set by
+     * [RemoteComposePlayer]'s touch-down dispatch, which has the frame time. */
+    var touchEventTime: Float = 0f
+
     /** Pointer pressed at doc-space ([px], [py]). */
     fun down(px: Float, py: Float) { x = px; y = py; phase = TouchPhase.DOWN }
 

@@ -102,7 +102,15 @@ class RemoteComposePlayer(val context: RemoteContext = RemoteContext()) {
         // Phase A (so their re-eval this frame sees the loaded TOUCH_POS). LIVE mode only → static renders
         // never dispatch a touch → deterministic. The phase is advanced here (DOWN→DRAG, UP/CANCEL→IDLE)
         // so the persistent [TouchState] drives exactly one step per frame.
-        if (context.isAnimationEnabled() && touchState != null) dispatchTouch(document, context, touchState)
+        if (context.isAnimationEnabled() && touchState != null) {
+            dispatchTouch(document, context, touchState)
+            // REM-143 S3a: seed id29 (ID_TOUCH_EVENT_TIME) from the persistent touch-event-time EVERY live
+            // frame (the ctx is per-frame-fresh, so a one-shot load on DOWN would vanish next frame — same
+            // reason ImpulseStart.lastFrameTime is an op-field). A `startAt`=id29 impulse stays active for
+            // its [startAt, startAt+duration] window; a tap moves the window to the tap time. Default 0f ⇒
+            // auto-animation from t=0 (§0 floor). Static mode never runs this → id29 stays 0 (deterministic).
+            context.loadFloat(RemoteContext.ID_TOUCH_EVENT_TIME, touchState.touchEventTime)
+        }
         // RootContentBehavior doc→surface scaling (REM-36): when a surface box is given, apply
         // translate(align) then scale(doc→surface) — upstream `CoreDocument` order — so doc-space
         // renders with correct proportions instead of 1:1 (a 600-doc stretched into a 924-surface).
@@ -454,7 +462,13 @@ class RemoteComposePlayer(val context: RemoteContext = RemoteContext()) {
     /** Consume exactly one [TouchState] transition this frame and advance the phase (REM-108 S2b). */
     private fun dispatchTouch(document: RemoteComposeDocument, context: RemoteContext, ts: TouchState) {
         when (ts.phase) {
-            TouchPhase.DOWN -> { touchDown(document, context, ts.x, ts.y); ts.phase = TouchPhase.DRAG }
+            TouchPhase.DOWN -> {
+                // REM-143 S3a: record the touch-down frame-time so id29 (ID_TOUCH_EVENT_TIME) can be seeded
+                // from it each live frame → a tap (re)triggers a `startAt`=id29 impulse (confetti/hearts/
+                // particle/haptic). Upstream sets id29 = getAnimationTime() in onTouchEvent ACTION_DOWN.
+                ts.touchEventTime = context.frameTimeSeconds
+                touchDown(document, context, ts.x, ts.y); ts.phase = TouchPhase.DRAG
+            }
             TouchPhase.DRAG -> touchDrag(document, context, ts.x, ts.y)
             TouchPhase.UP -> { touchUp(document, context, ts.x, ts.y); ts.phase = TouchPhase.IDLE }
             TouchPhase.CANCEL -> { touchCancel(document); ts.phase = TouchPhase.IDLE }
