@@ -297,4 +297,55 @@ class RemoteModifierEqualsTest {
         val viaInt = RemoteModifier.backgroundColorRef(colorId = 42)
         assertNotEquals(viaSlot, viaInt, "Slot-form and raw-int form are structurally distinct elements")
     }
+
+    // -------------------------------------------------------------------------------------------
+    // REM-145 S3 — Touch event modifier (onTouchDown/Up/Cancel) Q4 equality
+    // -------------------------------------------------------------------------------------------
+
+    @Test
+    fun onTouchDown_sameActions_isEqual() {
+        val a = RemoteModifier.onTouchDown(valueIntegerChange(42, 1), valueIntegerChange(43, 2))
+        val b = RemoteModifier.onTouchDown(valueIntegerChange(42, 1), valueIntegerChange(43, 2))
+        assertEquals(a, b, "Same action list → equal OnTouchDownElement → equal RemoteModifier")
+        assertEquals(a.hashCode(), b.hashCode())
+    }
+
+    @Test
+    fun onTouchDown_differentActionContent_notEqual() {
+        val a = RemoteModifier.onTouchDown(valueIntegerChange(42, 1))
+        val b = RemoteModifier.onTouchDown(valueIntegerChange(42, 2))
+        assertNotEquals(a, b, "Different action.value → different wire bytes → different element")
+    }
+
+    @Test
+    fun onTouchDown_differentActionOrder_notEqual() {
+        // Action order = wire byte order. Two orderings emit different bytes → must NOT compare equal.
+        val a = RemoteModifier.onTouchDown(valueIntegerChange(42, 1), valueIntegerChange(43, 2))
+        val b = RemoteModifier.onTouchDown(valueIntegerChange(43, 2), valueIntegerChange(42, 1))
+        assertNotEquals(a, b, "Action order is emit order is wire order — distinct elements")
+    }
+
+    @Test
+    fun onTouchDown_vs_onTouchUp_vs_onTouchCancel_areDistinct() {
+        // Three different opcodes (0xdb/0xdc/0xe1) → three different element types even with the
+        // same actions. The data-class identity carries the opcode meaning.
+        val down = RemoteModifier.onTouchDown(valueIntegerChange(42, 1))
+        val up = RemoteModifier.onTouchUp(valueIntegerChange(42, 1))
+        val cancel = RemoteModifier.onTouchCancel(valueIntegerChange(42, 1))
+        assertNotEquals(down, up)
+        assertNotEquals(down, cancel)
+        assertNotEquals(up, cancel)
+    }
+
+    @Test
+    fun valueIntegerChangeActionElement_dataClassEquality() {
+        // The ActionElement itself follows the same data-class-equality contract as the
+        // RemoteModifierElement sealed hierarchy.
+        val a: ActionElement = valueIntegerChange(42, 1)
+        val b: ActionElement = valueIntegerChange(42, 1)
+        val c: ActionElement = valueIntegerChange(42, 2)
+        assertEquals(a, b)
+        assertEquals(a.hashCode(), b.hashCode())
+        assertNotEquals(a, c)
+    }
 }
