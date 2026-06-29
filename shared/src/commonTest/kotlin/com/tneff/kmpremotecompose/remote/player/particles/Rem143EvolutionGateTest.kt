@@ -59,7 +59,7 @@ class Rem143EvolutionGateTest {
             }
             val expected = expectedAnchors(system, frames)
             for (k in expected.indices) {
-                val u = unmatched(expected[k], captured.getOrElse(k) { emptyList() }, tol = 1.0f)
+                val u = unmatched(expected[k], captured.getOrElse(k) { emptyList() }, tol = 0.1f)
                 if (k == 0) seedUnmatched += u
                 totalUnmatched += u
             }

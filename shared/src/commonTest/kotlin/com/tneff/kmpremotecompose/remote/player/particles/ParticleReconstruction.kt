@@ -49,9 +49,18 @@ class ParticleReconstruction(
     val initEqs: Array<FloatArray>,
     val restart: FloatArray?,
     val updateEqs: Array<FloatArray>,
+    val compares: List<Compare> = emptyList(),
     val seed: Long = RenderRngPins.PARTICLE_SEED,
 ) {
     val varCount: Int get() = varIds.size
+
+    /**
+     * REM-143 (iii): a `PARTICLE_COMPARE` condition1Body spec (eq2 empty) — for each particle in
+     * `[min,max]` (`<0` ⇒ full range), if `eval(expr) > 0` apply [eq1] to the particle's vars. Decoded
+     * from the upstream op (data); the conditional-evolution semantics are re-derived from the upstream
+     * spec (ParticlesCompare.condition1Body), not the sim.
+     */
+    class Compare(val min: Float, val max: Float, val expr: FloatArray, val eq1: Array<FloatArray>)
 
     /** One frame of reconstructed state: `[particle][var]`. */
     private fun snapshot(state: Array<FloatArray>): Array<FloatArray> = Array(particleCount) { state[it].copyOf() }
@@ -86,6 +95,22 @@ class ParticleReconstruction(
                 }
                 if (restart != null && RpnFloatEvaluator.eval(restart, restart.size, ctx) > 0f) {
                     seedParticle(p, state, ctx)
+                }
+            }
+            // PARTICLE_COMPARE (condition1Body): after the loop update, each compare conditionally mutates
+            // a particle's vars (maze wall collision). Runs per-compare in doc order, like the sim's walk.
+            for (cmp in compares) {
+                val start = if (cmp.min < 0f) 0 else cmp.min.toInt()
+                val end = if (cmp.max < 0f) particleCount else cmp.max.toInt()
+                for (p in start until minOf(end, particleCount)) {
+                    for (v in 0 until varCount) ctx.loadFloat(varIds[v], state[p][v])
+                    if (RpnFloatEvaluator.eval(cmp.expr, cmp.expr.size, ctx) > 0f) {
+                        for (v in cmp.eq1.indices) {
+                            if (v >= varCount) break
+                            state[p][v] = RpnFloatEvaluator.eval(cmp.eq1[v], cmp.eq1[v].size, ctx)
+                            ctx.loadFloat(varIds[v], state[p][v])
+                        }
+                    }
                 }
             }
             frames += snapshot(state)

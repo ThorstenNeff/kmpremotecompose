@@ -18,6 +18,7 @@ package com.tneff.kmpremotecompose.remote.player.particles
 import com.tneff.kmpremotecompose.remote.core.document.RemoteComposeDocument
 import com.tneff.kmpremotecompose.remote.core.operations.Operation
 import com.tneff.kmpremotecompose.remote.core.operations.Operations
+import com.tneff.kmpremotecompose.remote.core.operations.draw.ParticlesCompare
 import com.tneff.kmpremotecompose.remote.core.operations.draw.ParticlesCreate
 import com.tneff.kmpremotecompose.remote.core.operations.draw.ParticlesLoop
 import com.tneff.kmpremotecompose.remote.player.core.RemoteComposePlayer
@@ -49,6 +50,10 @@ object ParticleSystemDecoder {
             val loopIndex = ops.indexOfFirst { it is ParticlesLoop && it.id == create.id }
             if (loopIndex < 0) continue
             val loop = ops[loopIndex] as ParticlesLoop
+            // condition1Body compares (eq2 empty) for this system, in doc order — the maze wall collisions.
+            val compares = ops.filterIsInstance<ParticlesCompare>()
+                .filter { it.id == create.id && it.equations2.isEmpty() }
+                .map { ParticleReconstruction.Compare(min = it.min, max = it.max, expr = it.compare, eq1 = it.equations1) }
             out += System(
                 create = create,
                 loop = loop,
@@ -59,6 +64,7 @@ object ParticleSystemDecoder {
                     initEqs = create.equations,
                     restart = if (loop.restart.isEmpty()) null else loop.restart,
                     updateEqs = loop.equations,
+                    compares = compares,
                 ),
             )
         }
