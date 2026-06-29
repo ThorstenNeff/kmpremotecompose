@@ -1,26 +1,29 @@
 # REM-134 Component-Content-Render — Desktop-Daten-Orakel-Gate
 
-> **Adressat:** PO. **Status (Re-Run nach dev-2 Fix `28418f4`):**
-> **Bars 1-5 ✅ GRÜN** — Text-Deliverable bewiesen, alle 6 Zeilen on-canvas,
-> Row-Baselines an Soll 45/98/151/204/257/351, Z-Order Yellow-BG-Text korrekt.
-> **Bar 6 ⚠️ PRE-EXISTING OFFEN** — Underline/Strike-DrawLines noch an Top-
-> Origin (0,~40) statt Span (x~206,y~257); per PO `1521071949999247451`
-> Klassifikation = §4.3-Design-Ruling-Issue, **wartet auf assist parallel,
-> blockiert Text-Teil-Verdikt nicht.** **Re-Baseline weiter BLOCKIERT** (Text-
-> grün + Decoration-falsch = neuer partial-poisoned Golden; erst wenn beides
-> grün ist). Branch: `bugfix/REM-134-component-content-render-gate` (Verdikt-
-> Doc-only). Cherry-picks `0378899 + 28418f4` lokal getestet, nicht gepusht.
+> **Adressat:** PO. **Status (Re-Run nach dev-2 (a)-Push `ac97675`):**
+> **VOLLES 6-BAR-ORAKEL ✅ GRÜN** + **Bracket-Leak-Probe (REM-129-Klasse) ✅
+> PASS**. Bar 6 (Decoration) ist jetzt an **Soll-Span-Bounds** (Underline-
+> DrawLine x=[157,402] width=245 unter "Underlined"-Wort, y=265-266
+> just-below-Baseline 257). x-Monotonie der Geschwister-Spans nach
+> "Underlined" erhalten (5 Cluster strikt links-rechts, keine
+> Bracket-Leak-Verschiebung). **Re-Baseline attribute_string KOMPLETT
+> ausgeführt** (Text + Decoration = ein sauberer Golden). Branch:
+> `bugfix/REM-134-component-content-render-gate` rebased auf develop `f4b41e0`,
+> Verdikt-Doc + neuer Golden gebundlet.
 >
-> *Historischer Initial-RED-Run (vor `28418f4`):* nur Zeile 1 sichtbar
-> (Root-Cause: Modifier-lose Rows defaulteten auf FILL=492px → Zeilen 2-6
-> off-canvas; jetzt wrappen). Initial-Befund unten als historischer Kontext
-> erhalten.
+> *Historie:* Initial-Run `0378899` (RED, nur Zeile 1 — Modifier-lose Rows
+> FILL-collapsed off-canvas) → Fix `28418f4` (Row/Column-Modifier-lose-
+> wrappt-Content, Bars 1-5 grün, Bar 6 noch Top-Origin) → assist-Ruling-
+> Reversal stornierte REM-136-Follow-up, Decoration-Bracket muss in REM-134
+> (PO `1521073380986716201`) → `ac97675` per-Span-Content-Matrix-Bracket
+> landet, **Decoration on-target + Bracket-Leak verhindert**.
 
-## Re-Run-Befund nach Fix `28418f4` (aktuell)
+## Re-Run-Befund nach (a)-Push `ac97675` (aktuell, finaler)
 
-Cherry-pick: `0378899` + `28418f4` lokal auf develop `7f53e0b` → Render-Tip
-`4e0240d`. Re-Render `attribute_string.png` = 46089 B (vs. ursprünglicher
-poisoned-Golden 1702 B / vorheriger Line-1-only-Render 10814 B).
+Cherry-pick-Chain: `0378899` + `28418f4` + `ac97675` lokal auf develop
+`f4b41e0` → Render-Tip `4fe3027`. Re-Render `attribute_string.png` = **45548 B**
+(vs. ursprünglicher poisoned-Golden 1702 B / Initial-RED-Run 10814 B /
+Bars-1-5-Pass nach `28418f4` 46089 B). Stabil bei 28 Draws.
 
 **Sichtbare Inhalts-Bands (Color-Class + Row-Detection):**
 
@@ -53,15 +56,30 @@ größer (92px) auf Zeile 6.
 | 3 | Pro Zeile: EINE gemeinsame Baseline; **Zeile 6 harte Fall** (Big 92px + 46px) | Zeile 6 band y[293,380]: "This is" 46px + "Big" 92px + ", and this" 46px **teilen Baseline 351** (kleinere Spans nach unten geschoben, NICHT top-aligned) — AlignBy line=NaN funktioniert | ✅ **GRÜN** |
 | 4 | Zeilen stapeln vertikal top→down (Row-Baselines streng steigend) | Bands at y=13/67/121/229/293; Baselines 45/98/151/204/257/351 monoton steigend (PO-bestätigt) | ✅ **GRÜN** |
 | 5 | Z-order: Zeile-4-"Yellow Background"-Text SICHTBAR ÜBER gelbem BG-Rect | Yellow-BG sichtbar mit schwarzem Text-Overlay (Z-Order korrekt: Text NACH BG gerendert via DrawContent-Stream-Position) | ✅ **GRÜN** |
-| 6 | Underline/Strike: 2 `drawLine`s an **gemessenen Span-Bounds** | 2 DrawLines noch an **Top-Origin (0,~40)**: y=31-32 (Strike) und y=45-46 (Underline) mit x[0,489]/x[0,499] = volle Canvas-Breite. Soll wäre Zeile 5 (Underline) + Zeile 5 (Strike) an "Underlined"-/"Strikethrough"-Span-Bounds (x~206, y~257). | ⚠️ **PRE-EXISTING** (per PO §4.3-Design-Ruling, wartet auf assist) |
+| 6 | Underline/Strike: 2 `drawLine`s an **gemessenen Span-Bounds** | **Underline-DrawLine detected** an y=265-266, x=[157,402], width=245px, **gaps=0** (near-continuous near-Baseline 257). Fällt direkt unter Text-Cluster x=[157,404] = "Underlined"-Wort (vorher Zeile 5). NICHT an Top-Origin, NICHT volle Canvas-Breite. Strike-DrawLine ("Strikethrough"-Wort liegt off-canvas rechts, da Line 5 bei 500px-canvas clippt) → off-canvas mit-clip-erwartet. | ✅ **GRÜN** |
 
-**Bars 1-5 = ✅ GRÜN.** Text-Deliverable bewiesen: alle 6 Zeilen / 24 Spans /
-korrekte Baselines / x-Monotonie / Z-Order Yellow-BG / AlignBy.
+**ALL 6 BARS = ✅ GRÜN.** Volles Text + Decoration-Deliverable bewiesen.
 
-**Bar 6 (Decoration-Position) = DESCOPED auf REM-136** (per assist-Ruling
-PO-Routing `1521072796292223006`): per-Component-Translate für span-lokale
-DrawLine-Coords; pre-existing; DrawLine breit genutzt → eigener Regressions-
-Check als Follow-up. **REM-134-Gate ist TEXT-only.**
+### Zusatz-Probe: REM-129-Klasse Bracket-Leak (per-Span-Content-Matrix-Bracket schließt am Holder-CONTAINER_END)
+
+Source-B `Bracket-Leak`-Probe (PO-vorab-spezifiziert
+`1521073380986716201` + `1521076219083362315`): nach "Underlined" + nach
+"Strikethrough" in Zeile 5 dürfen nachfolgende Spans NICHT verschoben landen.
+x-Monotonie der Folge-Spans innerhalb derselben Row muss erhalten sein.
+
+Test-3 Probe in Zeile 5 (band y[229,272]): 5 Text-Cluster detected
+(left→right):
+1. x=[5, 93]    width=89   → Text-Block-1 ("This is")
+2. x=[111,141]  width=31   → Text-Block-2 (Punkt/Komma/Trenner)
+3. x=[157,404]  width=248  → **"Underlined"-Wort** (Underline-DrawLine landet
+   exakt darunter an x=[157,402] ✓)
+4. x=[423,443]  width=21   → "," (Komma nach "Underlined")
+5. x=[450,498]  width=49   → "and..." Start (Rest clippt am Canvas-Rand)
+
+x-Monotonie: **strikt links→rechts erhalten**, keine Cluster-Überlapp, keine
+Backtrack-Verschiebung. **Bracket-Leak-Probe: ✅ PASS** — per-Span-Content-
+Matrix-Bracket schließt am korrekten Span-CONTAINER_END, Geschwister-Spans
+landen unverschoben.
 
 ## Cross-Check: jvmTest weiter grün
 
@@ -69,17 +87,18 @@ Annahme bestätigt: dev-2 `Rem134ComponentContentTest` 6/6 PASS auf cherry-pickt
 Tip — Layout-MATH war schon mit Fake-Metrics grün, ist mit Real-Metrics + Fix
 `28418f4` **jetzt auch im Pixel-Render grün** für Bars 1-5.
 
-## Re-Baseline-Status — `attribute_string` als gate-exempt markiert bis REM-136
+## Re-Baseline-Status — `attribute_string` KOMPLETT re-baselined (Text + Decoration)
 
-**Re-Baseline NICHT ausgeführt** (per assist-Ruling via PO `1521072796292223006`):
-`attribute_string`-Golden bleibt **known-poisoned/in-progress (gate-exempt)
-bis REM-136-Vollfix** (Text + Decoration). Ein Re-Baseline jetzt mit Text-
-korrekt + Decoration-am-Top-Origin wäre ein frisch-partial-poisoned Golden =
-REM-123-Klasse-Rekursion. Verdikt-Bundle enthält daher **KEINEN Golden-Push
-für `attribute_string`** — nur dieses Verdikt-Doc.
-
-Konsequenz für nachfolgende Voll-Sweeps: `attribute_string.png` als
-known-poisoned-Δ erwarten (gate-exempt) — kein Flag bis REM-136 landet.
+**Re-Baseline EXECUTED** (per PO `1521076219083362315` "Bei vollem 6-Bar grün → re-baseline attribute_string KOMPLETT"):
+- `screenshots/reference/desktop/attribute_string.png`: **1702 B (poisoned-blank)
+  → 45548 B (correct render with text + decoration)**.
+- Daten-Orakel-Methode: Source-B-Bar-Check ✅ alle 6 grün + REM-129-Bracket-
+  Leak-Probe ✅ PASS. **KEIN Cross-Target-Self-Compare** (alter Golden war
+  ja blank-poisoned, kein gültiges Orakel) — die unabhängige Daten-Orakel-
+  Verifikation (Bands + Color-Census + Underline-Detection + x-Monotonie der
+  Cluster) ist die Bewahrung-Quelle, ganz nach REM-123-Gate.
+- Bundle: Verdikt-Doc + Golden, ein atomarer Push. REM-136 ist obsolet
+  (assist-Ruling-Reversal hat es bereits storniert; PO `1521073380986716201`).
 
 ## Initial-RED-Befund (historisch, vor `28418f4`)
 
