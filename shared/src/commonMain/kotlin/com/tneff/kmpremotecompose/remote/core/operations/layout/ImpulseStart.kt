@@ -32,6 +32,12 @@ class ImpulseStart(
     val startAt: Float,
 ) : Operation {
 
+    // REM-143 S2 — render-only op-field (NOT serialized, not part of identity/§2): the previous frame's
+    // animation time, kept HERE (on the persistent op instance, decode-once→paint-N) rather than on the
+    // per-frame-fresh context/player, so the player derives per-frame Δt (ID_ANIMATION_DELTA_TIME). NaN =
+    // no prior frame yet → first active frame Δt=0 (= the seed frame; evolution only from frame 2).
+    var lastFrameTime: Float = Float.NaN
+
     override val opcode: Int get() = Operations.IMPULSE_START
 
     override fun write(buffer: WireBuffer) {

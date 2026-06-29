@@ -409,6 +409,11 @@ class RemoteContext {
         const val ID_WINDOW_HEIGHT = 6
         /** Offset to UTC, in seconds (upstream `ID_OFFSET_TO_UTC`). */
         const val ID_OFFSET_TO_UTC = 10
+        /**
+         * Per-frame animation delta-time in seconds (upstream `ID_ANIMATION_DELTA_TIME` = 31). Seeded by
+         * the player from the impulse op-field (REM-143 S2); 0 in static mode (deterministic seed frame).
+         */
+        const val ID_ANIMATION_DELTA_TIME = 31
 
         // REM-108 (Epic-F) — reserved TOUCH float ids (region 0), source-grounded against upstream
         // `RemoteContext` (ID_TOUCH_POS_X=13 … ID_TOUCH_VEL_Y=16, ID_TOUCH_EVENT_TIME=29). A live doc

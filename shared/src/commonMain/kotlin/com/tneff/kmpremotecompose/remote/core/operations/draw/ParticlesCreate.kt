@@ -55,12 +55,21 @@ class ParticlesCreate(
     override fun apply(context: RemoteContext) {
         context.putObject(id, this)
         if (seeded) return
-        for (i in 0 until particleCount) {
-            for (j in varIds.indices) {
-                particles[i][j] = RpnFloatEvaluator.eval(equations[j], equations[j].size, context, i.toFloat())
-            }
-        }
+        for (i in 0 until particleCount) initializeParticle(context, i)
         seeded = true
+    }
+
+    /**
+     * REM-143 — (re)seed particle [i]: `particles[i][j] = eval(initEq[j], VAR1=i)` (upstream
+     * `initializeParticle`, Z.251/257-264 — var-major, VAR1=particle-index injected before each eval).
+     * Called once at seed (S1) and by [com.tneff.kmpremotecompose.remote.core.operations.draw.ParticlesLoop]
+     * on a positive restart (S2 recycle).
+     */
+    fun initializeParticle(context: RemoteContext, i: Int) {
+        if (i !in particles.indices) return
+        for (j in varIds.indices) {
+            particles[i][j] = RpnFloatEvaluator.eval(equations[j], equations[j].size, context, i.toFloat())
+        }
     }
 
     override fun write(buffer: WireBuffer) {
