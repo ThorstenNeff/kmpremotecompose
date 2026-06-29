@@ -45,11 +45,24 @@ class Rem134ComponentContentTest {
 
     private data class Draw(val textId: Int, val x: Float, val baseline: Float, val text: String, val size: Float)
 
-    /** A deterministic text-measuring PaintContext: width = len·size·0.6, ascent = size·0.8, descent = size·0.2. */
+    /**
+     * A deterministic text-measuring PaintContext: width = len·size·0.6, ascent = size·0.8, descent = size·0.2.
+     * It also models the canvas translate (CTM) so recorded draw coords are ABSOLUTE — REM-134 (a) draws the
+     * span content in LOCAL coords under a [SpanBracket] translate, so a fake that ignored the matrix would
+     * see all spans at ~0 (the bug that hid the decoration mis-position; this is the fix per test-3 methodology).
+     */
     private class FakeTextContext(context: RemoteContext) : NoOpPaintContext(context) {
         var size = 36f
+        var tx = 0f
+        var ty = 0f
+        private val stack = ArrayDeque<Pair<Float, Float>>()
         val draws = ArrayList<Draw>()
-        var lines = 0
+        val lineDraws = ArrayList<FloatArray>() // [x1,y1,x2,y2] absolute
+        val lines get() = lineDraws.size
+        override fun matrixSave() { stack.addLast(tx to ty) }
+        override fun matrixRestore() { stack.removeLastOrNull()?.let { tx = it.first; ty = it.second } }
+        override fun translate(translateX: Float, translateY: Float) { tx += translateX; ty += translateY }
+        override fun matrixTranslate(translateX: Float, translateY: Float) { tx += translateX; ty += translateY }
         override fun applyPaint(paint: PaintData) {
             val v = paint.values
             var i = 0
@@ -60,9 +73,9 @@ class Rem134ComponentContentTest {
             bounds[0] = 0f; bounds[1] = -size * 0.8f; bounds[2] = t.length * size * 0.6f; bounds[3] = size * 0.2f
         }
         override fun drawTextRun(textId: Int, start: Int, end: Int, contextStart: Int, contextEnd: Int, x: Float, y: Float, rtl: Boolean) {
-            draws += Draw(textId, x, y, context.getText(textId) ?: "", size)
+            draws += Draw(textId, x + tx, y + ty, context.getText(textId) ?: "", size)
         }
-        override fun drawLine(x1: Float, y1: Float, x2: Float, y2: Float) { lines++ }
+        override fun drawLine(x1: Float, y1: Float, x2: Float, y2: Float) { lineDraws += floatArrayOf(x1 + tx, y1 + ty, x2 + tx, y2 + ty) }
     }
 
     private fun render(): FakeTextContext {
@@ -139,10 +152,20 @@ class Rem134ComponentContentTest {
     }
 
     @Test
-    fun underlineAndStrike_drawLinesStillEmit() {
-        // ComponentValue width/height now resolve (TextLayout content slot is sized) → the 2 decoration
-        // DrawLines (Underlined / Strikethrough) keep emitting; they are no longer the ONLY thing drawn.
-        assertTrue(render().lines >= 2, "underline + strikethrough DrawLines must emit")
+    fun underlineAndStrike_drawAtTheirSpanRow_notDocOrigin() {
+        // REM-134 (a): the 2 decoration DrawLines (Underlined/Strikethrough, in row 5 — base≈257) must be
+        // bracketed to their span's absolute position, NOT collapsed to doc-origin (y≈32–45) where the
+        // pre-(a) absolute-walk left them (the full-width strike test-3 saw on line 1). Their width tracks
+        // the now-measured span text (ComponentValue resolves span bounds, not the 500px container).
+        val rec = render()
+        assertTrue(rec.lines >= 2, "underline + strikethrough DrawLines must emit")
+        val firstRowBaseline = rows(rec.draws).first()[0].baseline // line 1 ≈ 45
+        for (ln in rec.lineDraws) {
+            val y = ln[1]
+            assertTrue(y > firstRowBaseline + 100f, "decoration line must sit at its span row, not doc-origin (y=$y)")
+            val width = ln[2] - ln[0]
+            assertTrue(width > 0f && width < 480f, "decoration width tracks span text, not full canvas (w=$width)")
+        }
     }
 
     @Test

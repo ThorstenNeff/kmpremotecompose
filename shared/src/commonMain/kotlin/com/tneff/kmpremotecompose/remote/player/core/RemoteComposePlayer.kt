@@ -119,7 +119,7 @@ class RemoteComposePlayer(val context: RemoteContext = RemoteContext()) {
         // `ComponentValue`'s measured dimension (e.g. server_clock #43/44) is in the store when the
         // FloatExpressions that reference it evaluate. Measures in doc-space; safe no-op without a tree.
         // REM-108 S3b: measure returns the scroll brackets (content holders to clip+translate in paint).
-        val scrollBrackets = LayoutMeasure.measure(document, surfaceWidth, surfaceHeight, context)
+        val measured = LayoutMeasure.measure(document, surfaceWidth, surfaceHeight, context)
         // Phase A (REM-36 Eval-Engine E1): resolve + evaluate variables BEFORE painting, so draw ops
         // read already-resolved values (the long-flagged "deferred apply-phase"). MVP evaluates every
         // VariableSupport op each frame (no dirty tracking). updateVariables (resolve NaN refs) then
@@ -134,7 +134,7 @@ class RemoteComposePlayer(val context: RemoteContext = RemoteContext()) {
                 op.apply(context)
             }
         }
-        walkGated(ops, 0, ops.size, paintPhase = true, paint, scrollBrackets) { op ->
+        walkGated(ops, 0, ops.size, paintPhase = true, paint, measured.scrollBrackets, measured.spanBrackets) { op ->
             if (op is PaintOperation) {
                 op.paint(context, paint)
             }
@@ -166,15 +166,19 @@ class RemoteComposePlayer(val context: RemoteContext = RemoteContext()) {
         paintPhase: Boolean,
         paint: PaintContext,
         scrollBrackets: Map<Int, LayoutMeasure.ScrollBracket>? = null,
+        spanBrackets: Map<Int, LayoutMeasure.SpanBracket>? = null,
         action: (Operation) -> Unit,
     ) {
-        // REM-108 S3b: op-indices where a scroll bracket's matrixRestore must fire (the content holder's
-        // matching CONTAINER_END). Local to this walk call → only the top-level paint pass opens brackets.
-        val scrollRestoreAt = if (scrollBrackets.isNullOrEmpty()) null else HashSet<Int>()
+        // REM-108 S3b / REM-134 (a): op-indices where a matrix bracket's matrixRestore must fire (the
+        // content holder's matching CONTAINER_END). Shared by scroll + span brackets (both are transient
+        // matrixSave/translate/restore; CONTAINER_ENDs nest, so by-index restore preserves stack order).
+        // Local to this walk call → only the top-level paint pass opens brackets.
+        val hasBrackets = !scrollBrackets.isNullOrEmpty() || !spanBrackets.isNullOrEmpty()
+        val restoreAt = if (hasBrackets) HashSet<Int>() else null
         var i = start
         while (i < end) {
-            // Close any scroll bracket whose content holder ends at this op (before processing the END).
-            if (scrollRestoreAt != null && i in scrollRestoreAt) { paint.matrixRestore(); scrollRestoreAt.remove(i) }
+            // Close any bracket whose content holder ends at this op (before processing the END).
+            if (restoreAt != null && i in restoreAt) { paint.matrixRestore(); restoreAt.remove(i) }
             val op = ops[i]
             when {
                 op is LoopStart -> { // isolated loop interception — non-loop path below is untouched
@@ -187,7 +191,15 @@ class RemoteComposePlayer(val context: RemoteContext = RemoteContext()) {
                     // REM-108 S3b: open a scroll bracket when entering a scrollable component's content holder
                     // — clip to its viewport (if it carries a ClipRectModifier) and translate by the live
                     // offset (read post-eval from the store), restoring at the holder's matching CONTAINER_END.
-                    if (scrollRestoreAt != null) openScrollBracket(ops, i, op, scrollBrackets!!, paint, scrollRestoreAt)
+                    if (restoreAt != null && !scrollBrackets.isNullOrEmpty()) {
+                        openScrollBracket(ops, i, op, scrollBrackets!!, paint, restoreAt)
+                    }
+                    // REM-134 (a): open a span bracket when entering a TextLayout span's content holder —
+                    // translate the canvas to the span's absolute origin so its local-coord content (text +
+                    // decoration DrawLines) lands correctly, restoring at the holder's matching CONTAINER_END.
+                    if (restoreAt != null && !spanBrackets.isNullOrEmpty()) {
+                        openSpanBracket(ops, i, op, spanBrackets!!, paint, restoreAt)
+                    }
                     action(op); i++
                 }
             }
@@ -210,6 +222,23 @@ class RemoteComposePlayer(val context: RemoteContext = RemoteContext()) {
         if (b.clip) paint.clipRect(b.clipL, b.clipT, b.clipR, b.clipB)
         val offset = b.scroll.scrollOffset(context)
         if (b.scroll.direction == ScrollModifier.HORIZONTAL) paint.translate(offset, 0f) else paint.translate(0f, offset)
+        restoreAt.add(matchEnd)
+    }
+
+    /** Open the span bracket for [op] if it is a bracketed TextLayout content holder (REM-134 a). */
+    private fun openSpanBracket(
+        ops: List<Operation>,
+        index: Int,
+        op: Operation,
+        brackets: Map<Int, LayoutMeasure.SpanBracket>,
+        paint: PaintContext,
+        restoreAt: MutableSet<Int>,
+    ) {
+        val holderId = contentHolderId(op) ?: return
+        val b = brackets[holderId] ?: return
+        val matchEnd = skipConditionalBlock(ops, index) - 1 // index of the holder's matching CONTAINER_END
+        paint.matrixSave()
+        paint.translate(b.x, b.y) // span-local content (text + decoration) now resolves to absolute
         restoreAt.add(matchEnd)
     }
 

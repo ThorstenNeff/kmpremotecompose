@@ -79,6 +79,21 @@ internal object LayoutMeasure {
         val scroll: ScrollModifier,
     )
 
+    /**
+     * REM-134 (a) — a measured TextLayout-span content holder the paint walk brackets: translate the
+     * canvas to the span's absolute origin [x],[y] so the span's content (DrawContent text + decoration
+     * DrawLines, both authored in span-LOCAL coords in the `.rc`) lands at the right place. Same transient
+     * stack-scoped matrix pattern as [ScrollBracket]; `DrawLine`/`DrawContent` stay coordinate-agnostic
+     * (the canvas moves, not the op). Keyed on the content holder ([contentHolderId]) like the scroll one.
+     */
+    internal class SpanBracket(val contentHolderId: Int, val x: Float, val y: Float)
+
+    /** Result of [measure]: the scroll brackets (REM-108) + the TextLayout-span brackets (REM-134 a). */
+    internal class MeasureResult(
+        val scrollBrackets: Map<Int, ScrollBracket>,
+        val spanBrackets: Map<Int, SpanBracket>,
+    )
+
     private const val MAX_DEPTH = 32 // bounded-depth guard; real docs are 2–4 deep
 
     // ComponentValue.type wire constants (upstream ComponentValue): which dimension a value exposes.
@@ -144,11 +159,11 @@ internal object LayoutMeasure {
         surfaceW: Float,
         surfaceH: Float,
         context: RemoteContext,
-    ): Map<Int, ScrollBracket> {
+    ): MeasureResult {
         // REM-37 c_text: pre-load DATA_TEXT so CoreText intrinsic measure (getTextBounds) sees the text —
         // mirrors upstream, which loads TextData at inflate (into mTextData) before any layout measure.
         for (op in document.operations) if (op is TextData) context.putText(op.id, op.text)
-        val root = buildTree(document) ?: return emptyMap()
+        val root = buildTree(document) ?: return MeasureResult(emptyMap(), emptyMap())
         val byId = HashMap<Int, Node>()
         index(root, byId)
 
@@ -181,7 +196,26 @@ internal object LayoutMeasure {
         // measure phase, BEFORE the eval Phase-A) so the paired TouchExpression clamps against a fresh max
         // (TechSpec §5 sequencing — in delta-mode docs `max` is the TE's own clamp id). The returned brackets
         // are applied by the paint walk (clip viewport + translate by the live offset). Empty ⇒ no scroll doc.
-        return collectScrollBrackets(root, context)
+        return MeasureResult(collectScrollBrackets(root, context), collectSpanBrackets(root))
+    }
+
+    /**
+     * REM-134 (a) — build the TextLayout-span → content-holder bracket map. For each TextLayout span that
+     * has a DrawContent placeholder, bracket its content holder (the CONTENT child) at the holder's
+     * measured absolute origin, so the paint walk translates the canvas there and the span's local-coord
+     * content (text + decoration) lands correctly. (DrawContent's draw origin is set LOCAL in [applyBounds].)
+     */
+    private fun collectSpanBrackets(root: Node): Map<Int, SpanBracket> {
+        val out = HashMap<Int, SpanBracket>()
+        fun visit(node: Node) {
+            if (node.kind == Kind.TEXT_LAYOUT && node.drawContent != null) {
+                val holder = node.children.firstOrNull { it.kind == Kind.CONTENT }
+                if (holder != null) out[holder.componentId] = SpanBracket(holder.componentId, holder.x, holder.y)
+            }
+            for (c in node.children) visit(c)
+        }
+        visit(root)
+        return out
     }
 
     /** Walk the tree, publish scroll bounds, and build the content-holder → [ScrollBracket] map. */
@@ -449,11 +483,13 @@ internal object LayoutMeasure {
         // multi-line text to the component width and position the complex layout. Single-line text ignores
         // this and keeps the baseline origin above (Bein-2: non-wrapping text stays pixel-identical).
         node.coreText?.setTextBox(node.x, node.y, node.w, node.h)
-        // REM-134: wire the span's DrawContent placeholder with the resolved single-line text draw origin
-        // (same convention as CoreText: x = node.x − textLeft, baseline = node.y − textTop). DrawContent
-        // paints at its own z-order-correct stream position (after the modifiers), using these bounds.
+        // REM-134 (a): wire the span's DrawContent with its text draw origin in SPAN-LOCAL coords
+        // (−textLeft, −textTop). The paint walk opens a [SpanBracket] that translates the canvas to the
+        // content holder's absolute origin (= the span position), so local + translate = the correct
+        // absolute baseline (node.y − textTop), while the span's decoration DrawLines (also local in the
+        // .rc) ride the same bracket. (Pre-(a) this was absolute; the bracket now owns the offset.)
         val tl = node.textLayout
-        if (tl != null) node.drawContent?.setTextContent(tl, node.textId, node.x - node.textLeft, node.y - node.textTop)
+        if (tl != null) node.drawContent?.setTextContent(tl, node.textId, -node.textLeft, -node.textTop)
         for (c in node.children) applyBounds(c)
     }
 
