@@ -58,10 +58,10 @@ größer (92px) auf Zeile 6.
 **Bars 1-5 = ✅ GRÜN.** Text-Deliverable bewiesen: alle 6 Zeilen / 24 Spans /
 korrekte Baselines / x-Monotonie / Z-Order Yellow-BG / AlignBy.
 
-**Bar 6 (Decoration-Position) = ⚠️ pre-existing.** Per PO-Routing
-`1521071949999247451`: ".rc erwartet span-LOKALE Coords + per-Component-
-Translate, was §4.3 (kein Translate) verbietet. Pre-existing + wartet auf
-assist-Design-Ruling parallel". Blockiert Text-Teil-Gate nicht.
+**Bar 6 (Decoration-Position) = DESCOPED auf REM-136** (per assist-Ruling
+PO-Routing `1521072796292223006`): per-Component-Translate für span-lokale
+DrawLine-Coords; pre-existing; DrawLine breit genutzt → eigener Regressions-
+Check als Follow-up. **REM-134-Gate ist TEXT-only.**
 
 ## Cross-Check: jvmTest weiter grün
 
@@ -69,17 +69,17 @@ Annahme bestätigt: dev-2 `Rem134ComponentContentTest` 6/6 PASS auf cherry-pickt
 Tip — Layout-MATH war schon mit Fake-Metrics grün, ist mit Real-Metrics + Fix
 `28418f4` **jetzt auch im Pixel-Render grün** für Bars 1-5.
 
-## Re-Baseline-Status
+## Re-Baseline-Status — `attribute_string` als gate-exempt markiert bis REM-136
 
-**WEITER BLOCKIERT** (per PO-Anweisung `1521071949999247451`):
+**Re-Baseline NICHT ausgeführt** (per assist-Ruling via PO `1521072796292223006`):
+`attribute_string`-Golden bleibt **known-poisoned/in-progress (gate-exempt)
+bis REM-136-Vollfix** (Text + Decoration). Ein Re-Baseline jetzt mit Text-
+korrekt + Decoration-am-Top-Origin wäre ein frisch-partial-poisoned Golden =
+REM-123-Klasse-Rekursion. Verdikt-Bundle enthält daher **KEINEN Golden-Push
+für `attribute_string`** — nur dieses Verdikt-Doc.
 
-> "**Wichtig: re-baseline den attribute_string-Golden NOCH NICHT** — erst wenn
-> Text UND Decoration korrekt sind (sonst „text+wrong-decoration" = neuer
-> partial-poisoned Golden)."
-
-Ich folge der Regel: Text-grün (Bars 1-5) + Decoration-falsch (Bar 6) wäre ein
-neuer partial-poisoned-Golden = REM-123-Gate-Verletzung. Re-Baseline kommt erst
-nach assist-§4.3-Ruling + dev-2-Decoration-Fix.
+Konsequenz für nachfolgende Voll-Sweeps: `attribute_string.png` als
+known-poisoned-Δ erwarten (gate-exempt) — kein Flag bis REM-136 landet.
 
 ## Initial-RED-Befund (historisch, vor `28418f4`)
 
