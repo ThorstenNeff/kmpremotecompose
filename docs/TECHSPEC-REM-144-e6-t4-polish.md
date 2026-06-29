@@ -1,10 +1,10 @@
-# REM-144 — E6 T4 Polish — Scoping Draft
+# REM-144 — E6 T4 Polish — TechSpec
 
-> **Status:** DRAFT (Dev-3). Awaiting PO/assist Open-Question close + Mensch-T4-confirm before
-> slice routing.
-> **Branch:** `feature/REM-144-e6-t4-polish-scoping-draft` from develop `9532010` (latest tip
-> `c57b4a3`, scoping draft branches off the human-stable point `9532010` so REM-142 / REM-139
-> non-E6 work doesn't entangle).
+> **Status:** PO-approved 2026-06-29 (msg 1521177479639728381). All 7 §4 open questions closed
+> with Dev-3 recommendations; 4-slice plan approved. **Start S1 + S2 in parallel; S3 depends
+> on S1; S4 (sample-app screen) last with test-1 Android Maestro routing post-S4.**
+> **Branch:** `feature/REM-144-e6-t4-polish-scoping-draft` from develop `9532010` (E6-stable
+> tip; REM-142 / REM-139 non-E6 work intentionally excluded from the merge base).
 > **Parent epic:** REM-128 (E6 Compose-Creation-DSL).
 
 ---
@@ -289,31 +289,43 @@ render-side proof on top.
 
 ---
 
-## §4 — Open questions for PO/assist/Mensch close
+## §4 — Open questions — ALL RESOLVED (PO-close 2026-06-29, msg 1521177479639728381)
 
-| #  | Question                                                                                              | Recommendation                                              |
-|----|-------------------------------------------------------------------------------------------------------|--------------------------------------------------------------|
-| Q1 | Higher-level RPN-DSL — value class `RcExpr(rpn: FloatArray)` with operator overloads?                  | Yes. Idiomatic Kotlin. Stage-2 anchor via c_modifier_visibility.rc reuses the existing corpus oracle. |
-| Q2 | dynamic-background raw-int form: separate name `backgroundColorRef` or overload via different signature? | Separate name (Q2 lesson, REM-141 S1). |
-| Q3 | Maestro recipe — what should the sample app draw? Trivial 3-color row (my proposal §3.3) vs something using a T2/T3 modifier (padding/border/dynamic-color)? | Start with trivial 3-color row → simpler Maestro assertions. Add a T2/T3-modifier screen as follow-up if needed. |
-| Q4 | Maestro on which target (Android, iOS, Desktop)? Just one for E6-close, or all three? | One Android (most stable Maestro path) for E6-close. iOS / Desktop are post-E6 stretch. |
-| Q5 | Is the sample-app integration screen Dev-3's commit, or a Tester's? | I write the screen + recipe (Compose-Creation side); Tester writes the Maestro flow. PO routes the Tester. |
-| Q6 | Higher-level RPN naming: `rcLit`/`rcVar`/`rcId` extension shorthand vs verbose `RcExpr.literal(f)` companion?    | Extension shorthand — cleaner call site, easier-to-read tests. |
-| Q7 | RPN-DSL — operator coverage in this slice? All 32 RcExpression ops or just the ~10 common ones (+/-/*/⁄/%/sqrt/abs/sin/cos/clamp)? | Common 10 — extensible later. Full coverage is mechanical follow-up if needed. |
+All 7 OQs closed with Dev-3 recommendations. The table is preserved as the audit trail; the
+**Close** column is the canonical decision now folded into the slice plan §5.
+
+| #  | Question                                                                                              | Recommendation                                              | Close                                              |
+|----|-------------------------------------------------------------------------------------------------------|--------------------------------------------------------------|----------------------------------------------------|
+| Q1 | Higher-level RPN-DSL — value class `RcExpr(rpn: FloatArray)` with operator overloads?                  | Yes. Idiomatic Kotlin. Stage-2 anchor via c_modifier_visibility.rc reuses the existing corpus oracle. | ✅ ACCEPTED — `@JvmInline value class RcExpr(rpn: FloatArray)` + operator overloads. |
+| Q2 | dynamic-background raw-int form: separate name `backgroundColorRef` or overload via different signature? | Separate name (Q2 lesson, REM-141 S1). | ✅ ACCEPTED — separate name `backgroundColorRef` (REM-141 S1 precedent). |
+| Q3 | Maestro recipe — what should the sample app draw? Trivial 3-color row (my proposal §3.3) vs something using a T2/T3 modifier (padding/border/dynamic-color)? | Start with trivial 3-color row → simpler Maestro assertions. Add a T2/T3-modifier screen as follow-up if needed. | ✅ ACCEPTED — trivial 3-color row first. T2/T3 modifier screens deferred. |
+| Q4 | Maestro on which target (Android, iOS, Desktop)? Just one for E6-close, or all three? | One Android (most stable Maestro path) for E6-close. iOS / Desktop are post-E6 stretch. | ✅ ACCEPTED — one Android for E6-close (§6 = "≥1 Target"); iOS/Desktop stretch post-E6. |
+| Q5 | Is the sample-app integration screen Dev-3's commit, or a Tester's? | I write the screen + recipe (Compose-Creation side); Tester writes the Maestro flow. PO routes the Tester. | ✅ ACCEPTED — Dev-3 screen+recipe; **test-1 (Android)** Maestro-flow; PO routes test-1 post-S4. |
+| Q6 | Higher-level RPN naming: `rcLit`/`rcVar`/`rcId` extension shorthand vs verbose `RcExpr.literal(f)` companion?    | Extension shorthand — cleaner call site, easier-to-read tests. | ✅ ACCEPTED — extension shorthand. |
+| Q7 | RPN-DSL — operator coverage in this slice? All 32 RcExpression ops or just the ~10 common ones (+/-/*/⁄/%/sqrt/abs/sin/cos/clamp)? | Common 10 — extensible later. Full coverage is mechanical follow-up if needed. | ✅ ACCEPTED — ~10 common ops; full coverage = mechanical follow-up if needed. |
+
+**Additional PO §2-note (msg 1521177479639728381, slot-form transitive §2-soundness):** the
+MODIFIER_BACKGROUND `flags=2` op-encoding is corpus-byte-anchored via the raw-int sub-span anchor
+(`c_modifier_background_id.rc`); the slot-form (which sources its `colorId` from a region-0
+`ColorExpression` instead of a system id) emits the **same op shape** — only the colorId int
+field differs in value. Slot-form is therefore **transitively §2-sound via the raw-int sub-span
+anchor** (no separate corpus fixture needed). Same shape of argument as REM-141 borderColorRef
+slot-vs-raw-int. Folded into §6 W8 below.
 
 ---
 
-## §5 — Slice plan (for PO routing after open-questions close)
+## §5 — Slice plan (PO-approved 2026-06-29)
 
-| Slice | Touches                                                                                 | Tests added                                 |
-|-------|-----------------------------------------------------------------------------------------|---------------------------------------------|
-| S1    | `:shared` commonMain — new `LayoutModifier.backgroundColorRef(colorId, shape)` helper + REM-96 byte-anchor vs `c_modifier_background_id.rc`. | 2 byte-anchor tests in `LayoutModifierByteTest`. |
-| S2    | `:creation-compose` commonMain — RPN-DSL value class `RcExpr` + extension shorthands + operator overloads + new `RemoteFloatExpression(slot, RcExpr)` overload. | Stage-2 byte-anchor reusing `c_modifier_visibility.rc` (RPN expressed via DSL). NaN-bit round-trip test. |
-| S3    | `:creation-compose` commonMain — `RemoteModifier.background(colorId: Int)` + `RemoteModifier.background(colorIdSlot: RemoteColorSlot)` overloads. | Stage-2 full-doc byte-anchor vs `c_modifier_background_id.rc` (raw-int form). Equals tests for new elements. |
-| S4    | sample-app — `E6CreationProofScreen` (Compose-side). | Render-only verification at compile time. Maestro flow added by Tester (separate PR). |
+| Slice | Touches                                                                                 | Tests added                                 | Routing |
+|-------|-----------------------------------------------------------------------------------------|---------------------------------------------|---------|
+| S1    | `:shared` commonMain — new `LayoutModifier.backgroundColorRef(colorId, shape)` helper + REM-96 byte-anchor vs `c_modifier_background_id.rc`. | 2 byte-anchor tests in `LayoutModifierByteTest`. | **Dev-3 — start now, parallel with S2.** |
+| S2    | `:creation-compose` commonMain — RPN-DSL value class `RcExpr` + extension shorthands + operator overloads (~10 common ops) + new `RemoteFloatExpression(slot, RcExpr)` overload. | Stage-2 byte-anchor reusing `c_modifier_visibility.rc` (RPN expressed via DSL). NaN-bit round-trip test. | **Dev-3 — start now, parallel with S1.** |
+| S3    | `:creation-compose` commonMain — `RemoteModifier.background(colorId: Int)` + `RemoteModifier.background(colorIdSlot: RemoteColorSlot)` overloads. | Stage-2 full-doc byte-anchor vs `c_modifier_background_id.rc` (raw-int form). Slot-form Stage-1 compose==procedural (transitively §2-sound via S1 sub-span anchor — same op shape, different colorId source). Equals tests for new elements. | **Dev-3 — after S1 merges.** |
+| S4    | sample-app — `E6CreationProofScreen` (Compose-side, Dev-3). + Maestro flow (Tester, separate PR). | Render-only verification at Compose compile time. Maestro acceptance via test-1 (Android). | **Dev-3 writes screen+recipe last; PO routes test-1 for Maestro flow.** |
 
-S1 + S2 can ship independently. S3 depends on S1 (uses the new procedural helper). S4 ships
-last (depends on E6 surface being stable; Tester runs Maestro on the merged develop tip).
+**Sequencing:** S1+S2 start together (independent); S3 follows after S1 merges; S4 last (depends
+on full E6 surface being stable + merged). test-1 (Android) Maestro-flow routing happens **after
+S4 is pushed**.
 
 ---
 
@@ -323,7 +335,8 @@ last (depends on E6 surface being stable; Tester runs Maestro on the merged deve
 |----|----------------------------------------------------------------------------------|----------------------------------------------------------------------------|
 | W6 | Higher-level RPN-DSL allocates `FloatArray`s during operator chains — perf could matter under recomposition. | Acceptable for MVP — composition is not on the hot rendering path. Optimisation (e.g. pooled arrays) is later if needed. |
 | W7 | NaN-bit preservation through `@JvmInline value class` boxing.                    | Belt-and-suspenders test (round-trip `Float.fromBits(0xff800001)` through `.rcVar()`). |
-| W8 | Background dynamic-color same-signature ambiguity (`background(Int)` vs new form). | Separate name `backgroundColorRef` in procedural; Compose-side uses distinct param type (`RemoteColorSlot`) or distinct name for raw-int. |
+| W8 | Background dynamic-color same-signature ambiguity (`background(Int)` vs new form). | **Procedural-DSL:** separate name `backgroundColorRef` (PO-confirmed Q2-close — REM-141 S1 precedent). **Compose-DSL slot-form:** distinct param type `RemoteColorSlot` (unambiguous against `background(color: Int)`). **Compose-DSL raw-int form:** uses the SAME name `background` overloaded via a marker — to avoid the procedural's ambiguity at the Compose surface, we use a dedicated overload that takes a non-ambiguous companion-marker or a wrapper type. **Detail to nail down in S3:** if Kotlin overload resolution flags ambiguity between `background(color: Int)` and `background(colorId: Int)` (same positional type), fall back to a distinct name `backgroundColorRef(colorId: Int)` matching the procedural side. Slot-form is unambiguous either way. |
+| W11| **Slot-form §2-soundness without dedicated corpus fixture** (PO §2-note, msg 1521177479639728381). | Slot-form emits the SAME op shape as the raw-int form — only the `colorId` value field differs (region-0 from ColorExpression vs system id). Raw-int form's sub-span anchor against `c_modifier_background_id.rc` (S1) IS the byte-anchor for the op shape; slot-form is transitively §2-sound via that anchor + Stage-1 compose==procedural test that proves the new `background(colorIdSlot)` Compose surface emits bytes identical to the new procedural `backgroundColorRef(colorId)` helper (which IS corpus-anchored). Same shape of argument as REM-141 borderColorRef slot-vs-raw-int. |
 | W9 | Maestro flow flakiness — pixel-perfect rendering may vary across runs/devices.   | Use a coarse-grain visual oracle (e.g. test-id + content-description) rather than exact-pixel match. Tester picks the right granularity. |
 | W10| Sample-app screen lifecycle and `captureSingleRemoteDocument`-suspend integration in non-coroutine UI scope. | Use `LaunchedEffect` to drive the capture asynchronously; cache the bytes in `remember`. |
 
@@ -341,8 +354,8 @@ last (depends on E6 surface being stable; Tester runs Maestro on the merged deve
 
 ---
 
-## §8 — assist/PO close needed before TechSpec → impl
+## §8 — Status (PO-canonical)
 
-PO already pre-authorised T4 scope via Mensch-decision (msg 1521175810868773056). assist may
-review after-the-fact. The open-questions in §4 + the slice plan in §5 are the asks. Branch
-`feature/REM-144-e6-t4-polish-scoping-draft` (only this doc; no impl) ready for review.
+PO approved 2026-06-29 (msg 1521177479639728381). All 7 §4 OQs resolved, 4-slice plan in §5 is
+canonical. **Dev-3 starts S1+S2 in parallel.** This TechSpec is the canonical reference for the
+implementation; future amendments require a separate Spec-amendment commit.
