@@ -102,6 +102,25 @@ object RpnFloatEvaluator {
     // so a doc that seeds gets reproducible randomness; default otherwise.
     private var rng: Random = Random.Default
 
+    /**
+     * REM-143: pin the RAND RNG to a reproducible [seed] for a deterministic capture/reconstruction run.
+     * The shared reseed seam — both the single-frame 173-sweep (test-3, reseed-before-paint per doc vs the
+     * static-RNG drift) and the multi-frame particle gate (dev-1) call it; the pin value is the single
+     * source of truth [com.tneff.kmpremotecompose.remote.player.core.RenderRngPins.PARTICLE_SEED].
+     *
+     * Functionally identical to executing an in-equation `OP_RAND_SEED` with this seed (which the particle
+     * corpus docs do NOT carry — they use `OP_RAND` with no seed → otherwise non-deterministic). It exposes
+     * nothing new behaviorally and is never invoked by ordinary rendering, so RAND/RAND_SEED behavior for
+     * every existing doc is unchanged (render-neutral; not a wire/§2 concern).
+     *
+     * The particle render gate calls this with the SAME pin before BOTH the sim-capture run and the
+     * independent reconstruction run (which execute sequentially, so the shared singleton rng is safe):
+     * each run then consumes an identical RAND sequence and advances the rng continuously across its frames.
+     */
+    fun seedRngForCapture(seed: Long) {
+        rng = Random(seed)
+    }
+
     // REM-104: stack/geometry ops (upstream AnimatedFloatExpression). HYPOT computes a radial-gradient
     // radius = hypot(w/2, h/2) in countdown/demo_use_of_global; the unimplemented operator previously threw,
     // leaving the radius unset (→ 0 → false "degenerate gradient"). Siblings SQUARE/SQUARE_SUM/DUP/SWAP are
