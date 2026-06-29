@@ -478,14 +478,36 @@ internal val ANDROID_LEGACY_FIXED_COLORS: Map<String, Int> = mapOf(
 )
 
 /**
+ * REM-133 fast-follow: the `system_*_disabled` tokens have **no public AOSP `R.color` constant** (they
+ * are theme-derived). **Documented §5 approximation** (PO-approved option b): the enabled tone at the
+ * Material disabled alpha (38% = [DISABLED_ALPHA]), derived off the *resolved* base so it tracks whatever
+ * palette is in effect (baseline for captures, live on Android-app). Refine if test-3's data-oracle later
+ * surfaces a canonical value. Maps disabled-name → the base tone name it dims.
+ */
+internal const val DISABLED_ALPHA: Int = 0x61
+
+internal val DISABLED_TOKEN_BASES: Map<String, String> = mapOf(
+    "color.system_on_surface_disabled" to "color.system_on_surface_light",
+    "color.system_outline_disabled" to "color.system_outline_light",
+    "color.system_surface_disabled" to "color.system_surface_light",
+)
+
+/**
  * Merge [base] (the resolved `color.system_*` palette) with the [ANDROID_LEGACY_ALIASES] resolved
- * against it, plus the [ANDROID_LEGACY_FIXED_COLORS] (REM-133). Shared by the iOS actual, the Android
- * pre-31 fallback, and (via the resolved palette) Android post-31 so all targets surface the same names.
+ * against it, the [ANDROID_LEGACY_FIXED_COLORS] (REM-133), and the derived [DISABLED_TOKEN_BASES]
+ * (REM-133 fast-follow). Shared by the iOS actual, the Android pre-31 fallback, and (via the resolved
+ * palette) Android post-31 so all targets surface the same names.
  */
 internal fun withLegacyAliases(base: Map<String, Int>): Map<String, Int> {
-    val out = LinkedHashMap<String, Int>(base.size + ANDROID_LEGACY_ALIASES.size + ANDROID_LEGACY_FIXED_COLORS.size)
+    val out = LinkedHashMap<String, Int>(
+        base.size + ANDROID_LEGACY_ALIASES.size + ANDROID_LEGACY_FIXED_COLORS.size + DISABLED_TOKEN_BASES.size,
+    )
     out.putAll(base)
     for ((legacy, systemName) in ANDROID_LEGACY_ALIASES) base[systemName]?.let { out[legacy] = it }
     out.putAll(ANDROID_LEGACY_FIXED_COLORS)
+    // Derived §5-approximation: enabled tone's RGB at the Material disabled alpha (38%).
+    for ((disabled, baseName) in DISABLED_TOKEN_BASES) base[baseName]?.let {
+        out[disabled] = (it and 0x00FFFFFF) or (DISABLED_ALPHA shl 24)
+    }
     return out
 }

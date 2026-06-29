@@ -89,4 +89,20 @@ class SystemAccentPaletteTest {
             assertEquals(0xFF, (pal[name]!! ushr 24) and 0xFF, "$name is opaque")
         }
     }
+
+    @Test
+    fun rem133_disabledTokensAreEnabledToneAtMaterialDisabledAlpha() {
+        // Fast-follow: the *_disabled tokens have no public AOSP R.color (theme-derived). Documented §5
+        // approximation (PO option b): the enabled tone's RGB at the Material disabled alpha (0x61 = 38%).
+        // Derived off the resolved base, so semi-transparent (alpha 0x61), NOT the debug fallback.
+        val expected = mapOf(
+            "color.system_on_surface_disabled" to 0x6130323A,
+            "color.system_outline_disabled" to 0x61787A84,
+            "color.system_surface_disabled" to 0x61FAF8FE,
+        )
+        for ((name, argb) in expected) {
+            assertEquals(argb, pal[name], "$name = enabled tone @ disabled alpha 0x61")
+            assertEquals(0x61, (pal[name]!! ushr 24) and 0xFF, "$name carries the 38% disabled alpha")
+        }
+    }
 }
