@@ -15,6 +15,8 @@
  */
 package com.tneff.kmpremotecompose.remote.core.operations
 
+import com.tneff.kmpremotecompose.remote.player.core.RemoteContext
+import com.tneff.kmpremotecompose.remote.player.core.VariableSupport
 import com.tneff.kmpremotecompose.remote.wire.WireBuffer
 import com.tneff.kmpremotecompose.remote.wire.WireTypes
 
@@ -23,8 +25,12 @@ import com.tneff.kmpremotecompose.remote.wire.WireTypes
  *
  * Wire layout: opcode, `int id`, `int count`, then for each entry a length-prefixed UTF-8 name, a
  * `byte` type and an `int` id. Entry order is preserved for byte-exact round-tripping.
+ *
+ * **REM-139 S1:** upstream `DataMapIds.apply` publishes the map into the store (`putDataMap`). We store
+ * the op itself under [id] (it carries the entries) so [DataMapLookup] can resolve a key → entry. Phase-A
+ * producer; [write]/[read] untouched (§2).
  */
-class DataMapIds(val id: Int, val entries: List<Entry>) : Operation {
+class DataMapIds(val id: Int, val entries: List<Entry>) : Operation, VariableSupport {
 
     /**
      * One id-map entry: a [name], a [type] tag (`STRING=0, INT=1, FLOAT=2` — verified against
@@ -34,6 +40,14 @@ class DataMapIds(val id: Int, val entries: List<Entry>) : Operation {
     data class Entry(val name: String, val type: Int, val valueId: Int)
 
     override val opcode: Int get() = Operations.ID_MAP
+
+    /** REM-139 S1 — publish this map into the store so [DataMapLookup] can resolve keys against it. */
+    override fun apply(context: RemoteContext) {
+        context.putObject(id, this)
+    }
+
+    /** Resolve a key string to its entry (upstream `DataMap.getPos`); null when absent. */
+    fun lookup(key: String): Entry? = entries.firstOrNull { it.name == key }
 
     override fun write(buffer: WireBuffer) {
         buffer.writeByte(opcode)
@@ -56,6 +70,13 @@ class DataMapIds(val id: Int, val entries: List<Entry>) : Operation {
     companion object : OperationReader {
         /** Mirror of the upstream `Limits.MAX_DATA_MAP_SIZE`. */
         const val MAX_DATA_MAP_SIZE = 2000
+
+        // Entry type tags (upstream DataMapIds.TYPE_*). Only STRING/FLOAT are corpus-exercised (REM-139 S1).
+        const val TYPE_STRING = 0
+        const val TYPE_INT = 1
+        const val TYPE_FLOAT = 2
+        const val TYPE_LONG = 3
+        const val TYPE_BOOLEAN = 4
 
         override fun read(buffer: WireBuffer, operations: MutableList<Operation>) {
             val id = buffer.readInt()

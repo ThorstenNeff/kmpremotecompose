@@ -15,6 +15,9 @@
  */
 package com.tneff.kmpremotecompose.remote.core.operations
 
+import com.tneff.kmpremotecompose.remote.player.core.RemoteContext
+import com.tneff.kmpremotecompose.remote.player.core.VariableSupport
+import com.tneff.kmpremotecompose.remote.player.core.resolveCoord
 import com.tneff.kmpremotecompose.remote.wire.WireBuffer
 
 /**
@@ -22,10 +25,22 @@ import com.tneff.kmpremotecompose.remote.wire.WireBuffer
  * [id], where the size is itself a float (a literal count or a NaN-encoded id reference).
  *
  * Wire layout: opcode, `int id`, `float nbValues` (raw bits). Profile-overlay op (androidx + widgets).
+ *
+ * **REM-139 S1:** upstream `apply` registers a collection; we allocate a zeroed `FloatArray(nbValues)`
+ * under [id] in Phase-A (the natural KMP mapping of the dynamic-float collection), which [UpdateDynamicFloatList]
+ * then writes. Re-allocated each pass (MVP, no dirty tracking) — the declare op precedes its updates in
+ * stream order, so the single Phase-A pass yields a correct list. [write]/[read] untouched (§2).
  */
-class DataDynamicListFloat(val id: Int, val nbValues: Float) : Operation {
+class DataDynamicListFloat(val id: Int, val nbValues: Float) : Operation, VariableSupport {
 
     override val opcode: Int get() = Operations.DYNAMIC_FLOAT_LIST
+
+    /** Phase-A — allocate the (zeroed) backing float array so updates + consumers see it. */
+    override fun apply(context: RemoteContext) {
+        val n = context.resolveCoord(nbValues).toInt()
+        if (n <= 0) return
+        context.loadFloatArray(id, FloatArray(n))
+    }
 
     override fun write(buffer: WireBuffer) {
         buffer.writeByte(opcode)
