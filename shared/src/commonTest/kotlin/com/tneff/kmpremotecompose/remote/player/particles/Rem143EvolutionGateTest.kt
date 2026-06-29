@@ -6,7 +6,11 @@ package com.tneff.kmpremotecompose.remote.player.particles
 
 import com.tneff.kmpremotecompose.conformance.RcCorpus
 import com.tneff.kmpremotecompose.remote.core.document.DocumentReader
+import com.tneff.kmpremotecompose.remote.core.operations.draw.ParticlesCompare
+import com.tneff.kmpremotecompose.remote.core.operations.draw.ParticlesCreate
+import com.tneff.kmpremotecompose.remote.core.operations.draw.ParticlesLoop
 import com.tneff.kmpremotecompose.remote.player.core.PaintOperation
+import com.tneff.kmpremotecompose.remote.player.core.RemoteComposePlayer
 import com.tneff.kmpremotecompose.remote.player.core.RemoteContext
 import com.tneff.kmpremotecompose.remote.player.core.VariableSupport
 import com.tneff.kmpremotecompose.remote.player.core.seedHostPalette
@@ -76,8 +80,20 @@ class Rem143EvolutionGateTest {
         var seedUnmatched = 0
         var injectedAllDetected = true
         var anyExpected = false
+        val docW = doc.width.toFloat(); val docH = doc.height.toFloat()
         for (system in systems) {
-            val frames = system.reconstruction.evolve(schedule.frameCount) { k, ctx ->
+            val reconCtx = RemoteContext().also { it.setDensity(1f); it.animationEnabled = true; it.seedHostPalette() }
+            // Resolve the doc-var ENVIRONMENT the particle init/update eqs reference — canvas dims (id5/6)
+            // and layout-resolved doc floats (maze start-x id43, particle.rc id58). These are computed by
+            // the doc's own (layout-aware) eval walk, so resolve them via ONE player pass at startAt rather
+            // than a flat op loop (which mis-evaluates floats nested in CanvasContent containers). Done
+            // BEFORE evolve's RNG pin (evolve reseeds the capture RNG at entry) → the particle RAND this
+            // pass draws is discarded by the re-pin, leaving the pinned PARTICLE-RAND sequence untouched
+            // (the §6/REM-123 independence boundary). id43/id58 are generic doc-float data — not the
+            // particle orchestration — so resolving them via the doc's eval is data, not sim-coupling.
+            reconCtx.seedSystemVariables(docW, docH, schedule.startAt, 1f)
+            RemoteComposePlayer(reconCtx).paint(doc, com.tneff.kmpremotecompose.remote.player.NoOpPaintContext(reconCtx), frameTimeSeconds = schedule.startAt)
+            val frames = system.reconstruction.evolve(schedule.frameCount, reconCtx) { k, ctx ->
                 ctx.loadFloat(RemoteContext.ID_ANIMATION_DELTA_TIME, if (k == 0) 0f else DT)
             }
             val expected = expectedAnchors(doc, system, frames, schedule)
