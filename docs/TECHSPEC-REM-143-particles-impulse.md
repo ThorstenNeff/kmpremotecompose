@@ -43,19 +43,15 @@ REM-109)**. Berührt **NICHT** LayoutMeasure — reine Paint-Walk + Eval + Op-Fe
 - **Seed-once-Semantik:** ParticlesCreate seedt beim ERSTEN apply (ein `seeded`-Flag); Folge-Frames seeden
   NICHT neu (sonst keine Evolution). Statischer Render (1 paint) = Seed-Frame; Live (N paints) = Seed + Evolution.
 
-- **🔴 LOAD-BEARING VERIFIZIERTE VORBEDINGUNG (dev-1, read-only, VOR S2) — NICHT ANGENOMMEN:** der Op-Feld-
-  State-Ansatz steht und fällt damit, dass der Player das `RemoteComposeDocument`/die Op-Instanzen über Frames
-  **wiederverwendet (decode-once → paint-N)**, NICHT pro Frame re-inflated. Wenn re-decode-pro-Frame → kein
-  `mParticles`-Op-Feld überlebt → Ansatz braucht Rethink (Fallback unten). dev-1 verifiziert den Decode-/Host-
-  Paint-Pfad read-only + flagt VOR S2; PO relayt den Befund; diese Sektion wird auf der VERIFIZIERTEN Antwort
-  finalisiert. **Doppelt load-bearing:** auch das **LIVE-Multi-Frame-Gate-Harness MUSS decode-once-paint-N**,
-  sonst evolviert der State im Orakel nicht → das Gate sieht nur Seed-Frames = die §6-Render-Golden-Gate-Falle
-  für akkumulierende Generierung (REM-89/121-Klasse). Das Harness teilt diese Vorbedingung mit der Impl.
-- **Fallback (falls re-inflate-pro-Frame):** Partikel-State NICHT als Op-Feld, sondern in einem **persistenten
-  Player-State-Map keyed nach Partikel-id**, der den per-Frame-Context-Reset überlebt (Host-gehalten oder ein
-  reset-exemptes Store-Segment). Größerer Eingriff → erst nach dev-1s Verdikt entscheiden.
-- **S1 ist von dieser Frage UNABHÄNGIG:** S1 = ein einziger paint() (Seed + Draw @t=0) → keine Cross-Frame-
-  Persistenz nötig. S1 kann fast-parallel laufen; die Vorbedingung blockt nur S2.
+- **✅ VERIFIZIERTE VORBEDINGUNG (dev-1, first-hand): decode-once → paint-N HÄLT.** doc-by-`remember` +
+  LaunchedEffect-inflate (`RemoteComposeApp:91/103-111`, 1× pro `docName`); die Frame-Loop reused die Op-
+  Instanzen; TouchExpression-Render-Felder überleben heute schon Frames. → **Op-Feld-State (`mParticles`) trägt,
+  KEIN persistenter-State-Map-Fallback nötig** (kein Player-State-Arch-Touch). Auch das Multi-Frame-Gate-Harness
+  MUSS decode-once-paint-N (dasselbe inflated Doc N× painten, NICHT pro Frame re-inflaten) — sonst evolviert der
+  State im Orakel nicht → §6-Akkumulierungs-Falle (REM-89/121). Harness-Contract: §5b.
+- **(Verworfen) Fallback** (reset-exempter Player-State-Map) = Player-State-Arch-Touch mit Risk-Posture-Δ —
+  **nicht nötig** (Vorbedingung hält); falls je gebraucht = eigene PO-/Mensch-Entscheidung, nicht still.
+- **S1 ist von dieser Frage ohnehin UNABHÄNGIG:** S1 = ein einziger paint() (Seed + Draw @t=0).
 
 - **Determinismus für Goldens:** Init-Eqs mit `OP_RAND` brauchen einen reproduzierbaren Seed. Wenn das Doc
   selbst `RAND_SEED` setzt → reproduzierbar. Sonst: **Partikel-RNG-Seed-Pin** (analog RenderTimePins/REM-57)
@@ -91,6 +87,34 @@ REM-109)**. Berührt **NICHT** LayoutMeasure — reine Paint-Walk + Eval + Op-Fe
   → **Multi-Frame-Daten-Orakel** (seed-time → N Frames → Partikel-State evolviert korrekt, REM-123-Klasse:
   Daten-Orakel nicht nur Pixel) + **Maestro-Live-Flow** (Touch→Impulse→Partikel animieren) auf ≥1 Target
   (real-browser/CDP-per-Frame ODER Maestro, kein headless-First-Paint).
+
+## 5b. LIVE-Multi-Frame-Gate — Harness↔Sim-Contract (gepinnt für dev-1)
+Das Multi-Frame-Harness existiert noch nicht (DesktopRenderSweep ist single-frame: 1 paint @ nanoTime=0). dev-1
+baut es, test-3 fährt es. Gepinnter Contract:
+
+- **#1 Snapshot-Schedule:** Frame 0 = Seed (`frameTimeSeconds = startAt`), dann fixe Frames @ konstantem dt über
+  `[startAt, startAt+duration]` + ein Decay-Tail. `duration`/`startAt` aus `ImpulseStart` (resolved; NaN/0 →
+  Default-Fenster 2.0s). **Pflicht-Snapshots:** Seed (t=startAt), Mid (t=startAt+duration/2), End (t=startAt+
+  duration) + jeder dt-Frame dazwischen. (Keyframe-Trio + dichte dt-Abtastung = Evolution sichtbar, nicht nur Endpunkte.)
+- **#2 Clock-Advance:** **deterministisch, NICHT wall-clock.** `frameTimeSeconds = startAt + k·dt` für k=0..N,
+  `dt = 1/30 s` (fix), `N = ceil(duration/dt) + 4` (Decay-Tail). `animationEnabled=true` (LIVE → Impulse
+  advanciert; `staticTimeSeconds` ungenutzt). Harness ruft `player.paint(doc, recCtx, frameTimeSeconds=…)` für
+  jedes k auf **demselben inflated Doc** (decode-once→paint-N, §3.1-Vorbedingung).
+- **#3 Daten-Orakel-Rekonstruktions-Form (unabhängig, §6/REM-123):** der Orakel rekonstruiert pro Frame k die
+  erwartete Partikel-Position **außerhalb des Players** (separater Recompute, NICHT die Sim aufrufen): Seed =
+  init-Eqs @ k=0 (mit gepinntem RNG, #4) → dann k× die ParticlesLoop-Update-Eqs (+ Restart) anwenden → die
+  Positions-Vars → erwartete Draw-(cx,cy) (Body-Placement-Transform angewandt). **Prüfbare Felder pro Frame:**
+  die Menge der N Partikel-Draw-Positionen (cx,cy) je Frame (Float-Toleranz). Die Rekonstruktion teilt die
+  Equations (decodiert) aber NICHT den Player-Sim-Pfad → bug-unabhängig.
+- **#5 Vergleichs-Mechanismus = DRAW-CAPTURE (black-box), NICHT op-State-Readback:** ein Recording-PaintContext
+  fängt die Per-Partikel-Draw-Primitive (`drawCircle` cx/cy bzw. `drawBitmap`-dst, je nach Body) pro Frame →
+  verglichen gg. die #3-Rekonstruktion. **KEIN `op.mParticles`-Readback** — der teilt den Sim-Pfad (falsche
+  mParticles + Readback liest dieselben falschen mParticles = falsch-grün, REM-89/121-Klasse). Draw-Capture
+  testet was tatsächlich GEMALT wird (Output, sim-bug-unabhängig). **dev-1+PO-Lean bestätigt, dev-2 stimmt zu.**
+- **#4 RNG-Determinismus (= OQ1, gelöst):** Docs tragen kein `RAND_SEED` → **Partikel-RNG-Seed-Pin** (fixe
+  documented Konstante, Capture-Config). Harness reseedet den RNG auf den Pin VOR Frame 0; die #3-Rekonstruktion
+  nutzt **denselben Seed + dieselbe RAND-Konsum-Reihenfolge** (partikel-major, var-major = Sim-Eval-Order) →
+  RAND-Sequenz matchbar. Seed-Pin-Owner: Tester-Config (§2-irrelevant).
 
 ## 6. Slicing
 - **S1 — Seed-Frame** (klein-mittel; etablierte Muster): ParticlesCreate-Seed (Init-Eqs, `mParticles` füllen) +
