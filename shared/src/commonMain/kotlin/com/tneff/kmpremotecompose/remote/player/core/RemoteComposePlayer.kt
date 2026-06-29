@@ -20,6 +20,8 @@ import com.tneff.kmpremotecompose.remote.core.operations.ConditionalOperations
 import com.tneff.kmpremotecompose.remote.core.operations.FloatExpression
 import com.tneff.kmpremotecompose.remote.core.operations.Operation
 import com.tneff.kmpremotecompose.remote.core.operations.Operations
+import com.tneff.kmpremotecompose.remote.core.operations.draw.ParticlesCreate
+import com.tneff.kmpremotecompose.remote.core.operations.draw.ParticlesLoop
 import com.tneff.kmpremotecompose.remote.core.operations.layout.CanvasContent
 import com.tneff.kmpremotecompose.remote.core.operations.layout.LayoutContent
 import com.tneff.kmpremotecompose.remote.core.operations.layout.LoopStart
@@ -186,6 +188,11 @@ class RemoteComposePlayer(val context: RemoteContext = RemoteContext()) {
                     if (paintPhase) runLoop(op, ops, i + 1, afterEnd - 1, paint) // body = [i+1, END)
                     i = afterEnd
                 }
+                op is ParticlesLoop -> { // REM-143 S1: per-particle body draw (like runLoop, N× per particle)
+                    val afterEnd = skipConditionalBlock(ops, i) // index past the matching CONTAINER_END
+                    if (paintPhase) runParticleLoop(op, ops, i + 1, afterEnd - 1, paint) // body = [i+1, END)
+                    i = afterEnd
+                }
                 op is ConditionalOperations && !op.conditionHolds(context) -> i = skipConditionalBlock(ops, i)
                 else -> {
                     // REM-108 S3b: open a scroll bracket when entering a scrollable component's content holder
@@ -271,6 +278,28 @@ class RemoteComposePlayer(val context: RemoteContext = RemoteContext()) {
             }
             v += step
             count++
+        }
+    }
+
+    /**
+     * REM-143 S1 — run a [ParticlesLoop]'s body `[bodyStart, bodyEnd)` once **per particle** (mirrors
+     * upstream `ParticlesLoop.paint`, the per-particle analogue of [runLoop]). For each particle it loads the
+     * seeded var values (`varIds[j] = particles[i][j]`) into the store so the body's draw ops resolve them,
+     * then walks the body eval-then-paint. **S1 = static seed-frame:** no time-evolution (update/restart
+     * equations) yet — that is S2. Source = the [ParticlesCreate] published under [ParticlesLoop.id].
+     */
+    private fun runParticleLoop(loop: ParticlesLoop, ops: List<Operation>, bodyStart: Int, bodyEnd: Int, paint: PaintContext) {
+        val src = context.getFromId(loop.id) as? ParticlesCreate ?: return
+        val n = minOf(src.particleCount, src.particles.size, MAX_LOOP_ITERATIONS)
+        for (i in 0 until n) {
+            val state = src.particles[i]
+            for (j in src.varIds.indices) context.loadFloat(src.varIds[j], state[j])
+            walkGated(ops, bodyStart, bodyEnd, paintPhase = false, paint) { op ->
+                if (op is VariableSupport) { op.updateVariables(context); op.apply(context) }
+            }
+            walkGated(ops, bodyStart, bodyEnd, paintPhase = true, paint) { op ->
+                if (op is PaintOperation) op.paint(context, paint)
+            }
         }
     }
 

@@ -110,16 +110,20 @@ class Rem132DrawBitmapRenderTest {
 
     @Test
     fun confettiDoc_dispatchesSpriteAtResolvedRect() {
-        // End-to-end data-oracle (dispatch≠visual): the one DrawBitmap in the corpus draws its 50x50
-        // sprite at its resolved dst-rect [0,0,50,50]. Pre-REM-132 this op had no paint → BLANK. We
-        // assert sprite-AT-RECT, NOT the live animated confetti (Particles subsystem, deferred).
+        // End-to-end data-oracle (dispatch≠visual): the DrawBitmap draws its 50x50 sprite at its resolved
+        // dst-rect [0,0,50,50]. Pre-REM-132 this op had no paint → BLANK.
+        // REM-143 S1 UPDATE: the sprite lives inside the ParticlesLoop body → now dispatched ONCE PER
+        // PARTICLE (100 confetti particles), each at the same raw dst [0,0,50,50] but matrix-positioned
+        // per particle (the matrix translate is the per-particle spread, not captured by this raw-rect
+        // recorder). So: ≥1 sprite, all at the resolved dst. (Was "exactly once" pre-S1, when PARTICLE_LOOP
+        // was non-functional and the body ran once linearly.)
         Builtins.register()
         val ctx = RemoteContext()
         val rec = RecordingBitmapContext(ctx)
         val doc = DocumentReader.inflate(RcCorpus.readFixture("corpus/impulse_demo_confetti_demo.rc"))
         RemoteComposePlayer(ctx).paint(doc, rec)
         val bmp = rec.blits.filter { it.id == 54 }
-        assertEquals(1, bmp.size, "the DrawBitmap#54 sprite must be dispatched exactly once")
-        assertEquals(RecordingBitmapContext.Blit(54, 0f, 0f, 50f, 50f), bmp[0], "sprite at its resolved dst-rect")
+        assertEquals(100, bmp.size, "DrawBitmap#54 dispatches once per particle (100 confetti particles, REM-143 S1)")
+        assertTrue(bmp.all { it == RecordingBitmapContext.Blit(54, 0f, 0f, 50f, 50f) }, "each sprite at its resolved dst-rect")
     }
 }

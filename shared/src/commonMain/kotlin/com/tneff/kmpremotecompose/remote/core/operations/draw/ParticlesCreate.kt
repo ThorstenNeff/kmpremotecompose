@@ -18,6 +18,9 @@ package com.tneff.kmpremotecompose.remote.core.operations.draw
 import com.tneff.kmpremotecompose.remote.core.operations.Operation
 import com.tneff.kmpremotecompose.remote.core.operations.OperationReader
 import com.tneff.kmpremotecompose.remote.core.operations.Operations
+import com.tneff.kmpremotecompose.remote.player.core.RemoteContext
+import com.tneff.kmpremotecompose.remote.player.core.RpnFloatEvaluator
+import com.tneff.kmpremotecompose.remote.player.core.VariableSupport
 import com.tneff.kmpremotecompose.remote.wire.WireBuffer
 
 /**
@@ -27,15 +30,38 @@ import com.tneff.kmpremotecompose.remote.wire.WireBuffer
  * Wire layout (mirrors upstream `ParticlesCreate.apply`/`read`): opcode byte + int `id` +
  * int `particleCount` + int `varCount` + `varCount`×{ int `varId` + int `equationLength` +
  * `equationLength`×float }. Floats may carry NaN-encoded ids; raw bits preserved.
+ *
+ * **REM-143 S1:** [apply] seeds the per-particle state [particles]`[i][j] = eval(initEq[j], VAR1=i)` —
+ * `VAR1`(op70) is the particle index — and publishes itself under [id] so [ParticlesLoop] can read the
+ * state. **State is a render-only op-field, seeded ONCE** (cross-frame persistence for the S2 live
+ * evolution; the static seed-frame is a single paint — decode-once→paint-N, §3.1-verified). Init
+ * `OP_RAND` is reproducible only with a seed pin (the docs carry no `RAND_SEED`) — capture-config,
+ * §2-irrelevant. [write]/[read] untouched (§2).
  */
 class ParticlesCreate(
     val id: Int,
     val particleCount: Int,
     val varIds: IntArray,
     val equations: Array<FloatArray>,
-) : Operation {
+) : Operation, VariableSupport {
+
+    // REM-143 render-only particle state [particle][var]; seeded once, evolved by ParticlesLoop (S2). Not serialized.
+    val particles: Array<FloatArray> = Array(particleCount.coerceAtLeast(0)) { FloatArray(varIds.size) }
+    private var seeded = false
 
     override val opcode: Int get() = Operations.PARTICLE_DEFINE
+
+    /** REM-143 S1 — register as the particle source + seed the per-particle state once (VAR1 = particle index). */
+    override fun apply(context: RemoteContext) {
+        context.putObject(id, this)
+        if (seeded) return
+        for (i in 0 until particleCount) {
+            for (j in varIds.indices) {
+                particles[i][j] = RpnFloatEvaluator.eval(equations[j], equations[j].size, context, i.toFloat())
+            }
+        }
+        seeded = true
+    }
 
     override fun write(buffer: WireBuffer) {
         buffer.writeByte(opcode)
