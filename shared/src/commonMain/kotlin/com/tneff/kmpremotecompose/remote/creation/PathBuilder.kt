@@ -20,6 +20,7 @@ import com.tneff.kmpremotecompose.remote.core.operations.draw.DrawTweenPath
 import com.tneff.kmpremotecompose.remote.core.operations.draw.PathAppend
 import com.tneff.kmpremotecompose.remote.core.operations.draw.PathCreate
 import com.tneff.kmpremotecompose.remote.core.operations.draw.PathData
+import com.tneff.kmpremotecompose.remote.core.operations.draw.PathExpression
 import com.tneff.kmpremotecompose.remote.core.operations.draw.PathTween
 import com.tneff.kmpremotecompose.remote.wire.WireTypes
 
@@ -212,6 +213,53 @@ fun RemoteComposeContext.pathTween(pathId1: Int, pathId2: Int, tween: Float): In
     val outId = ids.nextId()
     add(PathTween(outId, pathId1, pathId2, tween))
     return outId
+}
+
+/**
+ * REM-148 S2 — `PATH_EXPRESSION` (opcode [com.tneff.kmpremotecompose.remote.core.operations.Operations.PATH_EXPRESSION]).
+ * Allocates a fresh region-0 path id holding a path defined by two RPN float expressions ([expressionX]
+ * sampled as X(t), [expressionY] as Y(t)) over `t ∈ [min, max]` with [count] samples; the returned id
+ * is consumed by `DRAW_PATH` (via [drawPath]) or chained into another path op.
+ *
+ * Wire layout (corpus-byte-anchored against `demo_path_expression_path_test1.rc` op #23, 69B): opcode(1)
+ * + id(4) + flags(4) + min(4) + max(4) + count(4) + lenX(4) + lenX×float + lenY(4) + lenY×float. Fixed
+ * 29-byte header + variable RPN payload; size = `29 + 4*(lenX + lenY)`.
+ *
+ * **NaN-bit fidelity (W14, intensive).** Every float field — [min] / [max] / [count] and each element of
+ * [expressionX] / [expressionY] — round-trips through `WireBuffer.writeFloat`'s `toRawBits()` write
+ * path. The RPN payload carries NaN-encoded operator ids (`RcExpression.ADD/SUB/MUL/...` family),
+ * NaN-encoded variable refs (`WireTypes.asNan(id)`), and IEEE literal floats interleaved. The corpus'
+ * `expressionX` for op #23 begins with `Float.fromBits(0xff800030)` (NaN var-ref to id 48), `1.0f`
+ * (raw 0x3f800000), `Float.fromBits(0xffb10046)` (RPN operator id 0x310046 — INV_PI per
+ * `RcExpression`); coercion through a `Number.toFloat()` intermediate would canonicalise NaN and
+ * break the corpus byte-anchor.
+ *
+ * **Flags semantics** (mirror upstream `PathExpression` companion constants):
+ *   `LOOP=0x1` · `mode = flags and 0x6` (0=SPLINE, 2=MONOTONIC, 4=LINEAR) · `POLAR=0x8`
+ *   · `winding = (flags and 0x3000000) ushr 24`. Reader-side at [PathExpression.apply].
+ *
+ * **id-allocation (E5 byte-contract).** [IdAllocator.nextId] returns the freshly-allocated path id;
+ * the returned `Int` is the bare region-0 id (no winding-in-high-byte). Use [drawPath] to render it.
+ *
+ * **Profile gating.** PATH_EXPRESSION is in the AndroidX overlay (`Operations.ANDROIDX_OVERLAY`) —
+ * documents opened with the default Baseline profile cannot decode this op. Open with a profile
+ * that carries PATH_EXPRESSION (e.g. `Profile(operationsProfiles = Operations.PROFILE_ANDROIDX, ...)`).
+ *
+ * **Defensive array copy.** Both expression arrays are `.copyOf()`'d into the op so a caller mutating
+ * their input after emission cannot drift the queued op's wire bytes (Q4 lock: structural identity
+ * of the queued op is stable through later mutations).
+ */
+fun RemoteComposeContext.pathExpression(
+    flags: Int,
+    min: Float,
+    max: Float,
+    count: Float,
+    expressionX: FloatArray,
+    expressionY: FloatArray,
+): Int {
+    val id = ids.nextId()
+    add(PathExpression(id, flags, min, max, count, expressionX.copyOf(), expressionY.copyOf()))
+    return id
 }
 
 /**
