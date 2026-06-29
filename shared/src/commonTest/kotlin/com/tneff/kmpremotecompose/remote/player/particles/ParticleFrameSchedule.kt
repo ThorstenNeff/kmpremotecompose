@@ -40,6 +40,15 @@ object ParticleFrameSchedule {
     const val DECAY_TAIL_FRAMES: Int = 4
 
     /**
+     * Cap on the captured frame count (REM-143 refinement). A few corpus docs (the maze systems) carry a
+     * near-infinite impulse duration (persistent particles), so `ceil(duration/dt)` would be hundreds of
+     * thousands of frames — impractical to capture/evolve (OOM). The early window + keyframes are where an
+     * evolution divergence surfaces, so a bounded window is a sound gate; flagged so it is not mistaken for
+     * full-duration coverage of a persistent system.
+     */
+    const val MAX_FRAMES: Int = 90
+
+    /**
      * The resolved schedule. [frameCount] is N (so there are N+1 paints, k=0..N). [times] is the per-frame
      * `frameTimeSeconds`. Frame 0 is the seed frame.
      */
@@ -65,7 +74,7 @@ object ParticleFrameSchedule {
     fun of(startAtRaw: Float, durationRaw: Float): Schedule {
         val duration = if (!durationRaw.isFinite() || durationRaw <= 0f) DEFAULT_DURATION_SECONDS else durationRaw
         val startAt = if (startAtRaw.isFinite()) startAtRaw else 0f
-        val frameCount = ceil(duration / DT).toInt() + DECAY_TAIL_FRAMES
+        val frameCount = minOf(ceil(duration / DT).toInt() + DECAY_TAIL_FRAMES, MAX_FRAMES)
         return Schedule(startAt = startAt, duration = duration, dt = DT, frameCount = frameCount)
     }
 
