@@ -78,4 +78,46 @@ class Rem143S2Test {
         val pos = firstParticlePerFrame(doc, listOf(0f, 0.1f, 0.2f), animate = false)
         assertEquals(1, pos.toSet().size, "static: seed frame must be stable across paints (no evolution), got $pos")
     }
+
+    /** REM-143 S2b — maze PARTICLE_COMPARE (per-particle conditional branch): the ball evolves live, and the
+     *  compare children draw conditionally (fire only in the process frames, never the seed). */
+    private class MazeRec(c: RemoteContext) : NoOpPaintContext(c) {
+        var tx = 0f; var ty = 0f
+        private val st = ArrayDeque<Pair<Float, Float>>()
+        var circles = 0; var firstCircle: Pair<Float, Float>? = null
+        override fun matrixSave() { st.addLast(tx to ty) }
+        override fun matrixRestore() { st.removeLastOrNull()?.let { tx = it.first; ty = it.second } }
+        override fun translate(translateX: Float, translateY: Float) { tx += translateX; ty += translateY }
+        override fun matrixTranslate(translateX: Float, translateY: Float) { tx += translateX; ty += translateY }
+        override fun drawCircle(centerX: Float, centerY: Float, radius: Float) {
+            circles++; if (firstCircle == null) firstCircle = (centerX + tx) to (centerY + ty)
+        }
+        override fun getTextBounds(textId: Int, start: Int, end: Int, flags: Int, bounds: FloatArray) { bounds[0] = 0f; bounds[1] = -11f; bounds[2] = 9f; bounds[3] = 3f }
+    }
+
+    @Test
+    fun maze_ballEvolvesLive_andCompareIsProcessOnly() {
+        Builtins.register()
+        val doc = DocumentReader.inflate(RcCorpus.readFixture("corpus/maze.rc"))
+        val ballPos = ArrayList<Pair<Float, Float>>()
+        for (t in listOf(0f, 0.1f, 0.2f, 0.3f)) { // decode-once → paint-N (fresh ctx+player, op-field carries)
+            val ctx = RemoteContext(); ctx.animationEnabled = true
+            val rec = MazeRec(ctx)
+            RemoteComposePlayer(ctx).paint(doc, rec, frameTimeSeconds = t, staticTimeSeconds = t)
+            ballPos += rec.firstCircle!!
+        }
+        val distinct = ballPos.map { (kotlin.math.round(it.first) to kotlin.math.round(it.second)) }.toSet().size
+        assertTrue(distinct >= 2, "maze ball must evolve live (Δt-driven), got $ballPos")
+
+        // The compare equations1 mutate state only on process frames (Δt>0); the static seed must be unchanged
+        // across paints (no premature compare firing) — guards the S1 seed-convergence the oracle checks.
+        val staticDoc = DocumentReader.inflate(RcCorpus.readFixture("corpus/maze.rc"))
+        val staticCircles = (0..1).map {
+            val ctx = RemoteContext(); ctx.animationEnabled = false
+            val rec = MazeRec(ctx)
+            RemoteComposePlayer(ctx).paint(staticDoc, rec, frameTimeSeconds = 0f, staticTimeSeconds = 0f)
+            rec.circles
+        }
+        assertEquals(staticCircles[0], staticCircles[1], "static maze must be stable across paints (compare process-only)")
+    }
 }

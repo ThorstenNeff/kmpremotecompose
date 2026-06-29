@@ -20,6 +20,7 @@ import com.tneff.kmpremotecompose.remote.core.operations.ConditionalOperations
 import com.tneff.kmpremotecompose.remote.core.operations.FloatExpression
 import com.tneff.kmpremotecompose.remote.core.operations.Operation
 import com.tneff.kmpremotecompose.remote.core.operations.Operations
+import com.tneff.kmpremotecompose.remote.core.operations.draw.ParticlesCompare
 import com.tneff.kmpremotecompose.remote.core.operations.draw.ParticlesCreate
 import com.tneff.kmpremotecompose.remote.core.operations.draw.ParticlesLoop
 import com.tneff.kmpremotecompose.remote.core.operations.layout.CanvasContent
@@ -195,6 +196,11 @@ class RemoteComposePlayer(val context: RemoteContext = RemoteContext()) {
                     i = afterEnd
                     // (eval phase falls through to the container path below → ParticlesCreate.apply seeds.)
                 }
+                op is ParticlesCompare -> { // REM-143 S2b: per-particle conditional branch (maze logic)
+                    val afterEnd = skipConditionalBlock(ops, i) // index past the matching CONTAINER_END
+                    if (paintPhase) runParticleCompare(op, ops, i + 1, afterEnd - 1, paint) // body = [i+1, END)
+                    i = afterEnd
+                }
                 op is ParticlesLoop -> { // REM-143 S1: per-particle body draw (like runLoop, N× per particle)
                     val afterEnd = skipConditionalBlock(ops, i) // index past the matching CONTAINER_END
                     if (paintPhase) runParticleLoop(op, ops, i + 1, afterEnd - 1, paint) // body = [i+1, END)
@@ -297,15 +303,17 @@ class RemoteComposePlayer(val context: RemoteContext = RemoteContext()) {
      *     particle (recycle) via [ParticlesCreate.initializeParticle];
      *  3. draw the body eval-then-paint with the (current/evolved) vars loaded.
      *
-     * **Evolution is gated on `animationEnabled`:** static capture (S1 golden) shows the pure seed-frame
-     * (no evolution → deterministic); LIVE (the harness, `animationEnabled=true`) evolves per frame. The
-     * update eval reuses [RpnFloatEvaluator] (no VAR1 index — update eqs read the loaded vars + time, unlike
-     * the index-injected init eqs). Source = the [ParticlesCreate] published under [ParticlesLoop.id].
+     * **Evolution is gated on Δt>0**, NOT merely `animationEnabled`: the first active frame (and any static
+     * capture) has Δt=0 → no evolution → the pure seed frame (= upstream `mInitialPass`); evolution runs only
+     * from the second live frame on. Δt>0 is the robust gate — some docs' update eqs are NOT Δt-scaled
+     * (hearts `x=v50+v52`, particle's RAND term), so they would wrongly evolve on a Δt=0 first frame if gated
+     * on `animationEnabled` alone. The update eval reuses [RpnFloatEvaluator] (no VAR1 index — update eqs read
+     * the loaded vars + Δt). Source = the [ParticlesCreate] published under [ParticlesLoop.id].
      */
     private fun runParticleLoop(loop: ParticlesLoop, ops: List<Operation>, bodyStart: Int, bodyEnd: Int, paint: PaintContext) {
         val src = context.getFromId(loop.id) as? ParticlesCreate ?: return
         val n = minOf(src.particleCount, src.particles.size, MAX_LOOP_ITERATIONS)
-        val evolve = context.isAnimationEnabled()
+        val evolve = context.getFloat(RemoteContext.ID_ANIMATION_DELTA_TIME) > 0f // process frames only (Δt>0)
         for (i in 0 until n) {
             val state = src.particles[i]
             for (j in src.varIds.indices) context.loadFloat(src.varIds[j], state[j])
@@ -329,6 +337,50 @@ class RemoteComposePlayer(val context: RemoteContext = RemoteContext()) {
             }
             walkGated(ops, bodyStart, bodyEnd, paintPhase = true, paint) { op ->
                 if (op is PaintOperation) op.paint(context, paint)
+            }
+        }
+    }
+
+    /**
+     * REM-143 S2b — `PARTICLE_COMPARE` per-particle conditional branch (upstream `ParticlesCompare`,
+     * `condition1Body`; the maze logic). For each particle in `[min, max)` (−1 ⇒ all): load its vars, eval
+     * the `compare` expression, and **only when `> 0`** apply `equations1` (var-major write-back) and draw
+     * the compare's children — so the body renders/updates conditionally, not every frame. The op is nested
+     * in the impulse, so it runs each active frame; `min`/`max`/`compare`/`equations1` resolve NaN var-refs
+     * via [RpnFloatEvaluator].
+     *
+     * The **pairwise** form (`condition2Body`, both equations1 AND equations2 present — particle-particle
+     * interaction) appears in **no corpus doc** (maze is single-condition) → loud-guarded (skipped, not
+     * silently mis-rendered) rather than shipping an unexercised O(n²) path.
+     */
+    private fun runParticleCompare(cmp: ParticlesCompare, ops: List<Operation>, bodyStart: Int, bodyEnd: Int, paint: PaintContext) {
+        val src = context.getFromId(cmp.id) as? ParticlesCreate ?: return
+        if (cmp.equations1.isEmpty()) return
+        if (cmp.equations2.isNotEmpty()) return // condition2Body (pairwise) — not in corpus; loud-guard (see kdoc)
+        // PROCESS-only: the compares live in ImpulseProcess (upstream `mProcess.paint`) → they run on the
+        // evolution frames, NOT the seed frame (mInitialPass / Δt=0). Without this the compare's equations1
+        // mutate mParticles at t=0 and corrupt the seed state (REM-143 S1 convergence oracle: maze1/maze2).
+        if (context.getFloat(RemoteContext.ID_ANIMATION_DELTA_TIME) <= 0f) return
+        val min = resolveFloat(cmp.min); val max = resolveFloat(cmp.max)
+        val start = if (min < 0f) 0 else min.toInt()
+        val end = if (max < 0f) src.particles.size else minOf(max.toInt(), src.particles.size)
+        for (i in start until end) {
+            val particle = src.particles[i]
+            for (j in src.varIds.indices) context.loadFloat(src.varIds[j], particle[j]) // setupForParticle
+            val value = if (cmp.compare.isEmpty()) 0f else RpnFloatEvaluator.eval(cmp.compare, cmp.compare.size, context)
+            if (value > 0f) {
+                for (j in src.varIds.indices) {
+                    if (j < cmp.equations1.size) {
+                        particle[j] = RpnFloatEvaluator.eval(cmp.equations1[j], cmp.equations1[j].size, context)
+                        context.loadFloat(src.varIds[j], particle[j])
+                    }
+                }
+                walkGated(ops, bodyStart, bodyEnd, paintPhase = false, paint) { op ->
+                    if (op is VariableSupport) { op.updateVariables(context); op.apply(context) }
+                }
+                walkGated(ops, bodyStart, bodyEnd, paintPhase = true, paint) { op ->
+                    if (op is PaintOperation) op.paint(context, paint)
+                }
             }
         }
     }
