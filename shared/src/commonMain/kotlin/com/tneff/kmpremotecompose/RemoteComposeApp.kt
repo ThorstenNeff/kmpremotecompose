@@ -46,6 +46,7 @@ import com.tneff.kmpremotecompose.remote.player.core.RemoteComposePlayer
 import com.tneff.kmpremotecompose.remote.player.core.renderOpaque
 import com.tneff.kmpremotecompose.remote.player.core.RemoteContext
 import com.tneff.kmpremotecompose.remote.player.core.SensorSource
+import com.tneff.kmpremotecompose.remote.player.core.seedHostPalette
 import com.tneff.kmpremotecompose.remote.player.core.systemAccentPalette
 import com.tneff.kmpremotecompose.remote.player.core.TouchState
 import kmpremotecompose.shared.generated.resources.Res
@@ -209,10 +210,13 @@ fun RemoteComposeApp(
                         val ctx = RemoteContext().also {
                             it.setDensity(density)
                             it.animationEnabled = live
-                            // REM-68 wiring: seed the host theme palette BEFORE paint (Phase A). Stored as
-                            // pending name→ARGB overrides; as NamedVariable.apply registers each name during
-                            // Phase A, the override binds to its colorId and wins over the ColorConstant fallback.
-                            it.setThemePaletteByName(themePalette)
+                            // REM-68/REM-135 wiring: seed the host theme palette BEFORE paint (Phase A) via
+                            // the shared seedHostPalette seam (the same one every render/golden harness must
+                            // use, so they don't drift). Stored as pending name→ARGB overrides; as
+                            // NamedVariable.apply registers each name during Phase A, the override binds to its
+                            // colorId and wins over the ColorConstant fallback. Passes the remembered palette so
+                            // the per-frame paint does not re-resolve the device colors each frame.
+                            it.seedHostPalette(themePalette)
                         }
                         // REM-56: render through an opaque surface (iOS only — Android renders direct) so a
                         // SRC_OUT/CLEAR draw composites to black, matching upstream's opaque Android View
