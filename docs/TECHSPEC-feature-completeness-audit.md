@@ -1,157 +1,182 @@
 # TechSpec — Feature-Completeness-Audit (gegen die Mensch-Definition)
 
-> **Autor:** PO-Assistent (Reviewer) · **Status:** Audit/Analyse (KEIN Code) · **Datum:** 2026-06-28
-> **Audit-Basis:** echte Klon-Kopie `KmpRemoteCompose` @ develop-Stand (HEAD 2026-06-28). Alle Zellen am Code/git verifiziert, nicht aus dem Gedächtnis. Peer-Inputs (dev-1/dev-2) **unabhängig am Code gegengeprüft** (eine Korrektur: jvm-actuals sind Test-Stubs, nicht render-real — siehe §2).
-> **Feature-complete (Mensch):** (a) ALLE Korpus-Docs rendern auf **iOS, Android, Desktop, WASM** + (b) Docs lassen sich auf einem **Server (JVM, headless)** erstellen. Aktiviert Desktop+WASM (vorher dormant) + die Server-Creation-Seite.
+> **Autor:** PO-Assistent (Reviewer) · **Status:** Audit/Analyse (KEIN Code) · **Datum:** 2026-06-29 (Refresh; Erst-Audit 2026-06-28)
+> **Audit-Basis:** echte Klon-Kopie `KmpRemoteCompose` @ develop `7e2f9b8` (87+ Merges, 2026-06-29). Zellen am Code/git + Jira (REM 1–141) verifiziert, reconciled gegen die gemergte git-Realität (NICHT nur Jira-Labels — s. Jira-Lag-Hinweis §9).
+> **Feature-complete (Mensch):** (a) ALLE Korpus-Docs rendern auf **iOS, Android, Desktop, WASM** + (b) Docs lassen sich auf einem **Server (JVM, headless)** erstellen (volle prozedurale Creation-DSL + Compose-Creation-DSL).
 
 ---
 
-## 0. Executive Summary
+## 0. Executive Summary (Refresh 2026-06-29)
 
-- **Layer-1 (binärer .rc Reader+Writer, 173 Ops) ist byte-bewiesen fertig** und liegt **rein in commonMain** → läuft auf JEDEM Target wo es compilet. Das ist das schwerste/risikoreichste Stück (die §2-Invariante) und es ist durch.
-- **Render läuft heute auf Android + iOS** (Layer-2-Adapter + Eval + Layout + Color, REM-31..70; on-device-Sweeps via test-1 laufend).
-- **Desktop + WASM sind NICHT „nur App-Wiring".** Beide brauchen **3 render-reale Plattform-actuals** (`decodeImageBitmap`, `createOffscreen`, `renderOpaque`). Desktop hat sie als **Test-Stubs** (compilet, rendert leer); WASM/JS haben sie **gar nicht** (compilet nicht). Die **iOS-Skiko-actuals sind die Wiederverwendungs-Vorlage** für alle drei (Desktop/wasm/js rendern alle via Skiko).
-- **Server-Creation low-level geht HEUTE** (Op-Liste + `RemoteComposeWriter.encodeToByteArray`, byte-bewiesen); die **ergonomische prozedurale Creation-API (`remote-creation`) fehlt**.
-- **„ALLE Docs" verlangt zusätzlich die Deferred-Render-Features** (Komplex-Text, Shader, Variable-Fonts, GraphicsLayer-advanced, Sensoren/Touch) — target-unabhängig, das lange Ende.
-- **Gemessene Velocity:** 52 REM-Tickets / 86 develop-Merges / 267 Commits über ~2,8 Kalendertage (5 Agenten parallel) ≈ **~17 Tickets/Tag**. **Rest-Backlog grob ~40–70 Ticket-Äquivalente** ≈ nochmal so viel wie bisher, dominiert von zwei L-Brocken (Deferred-Features + Creation-API). **🔴 Aber:** die bisherige Rate kam aus Politur auf fertiger Basis; der Rest ist Plattform-Bring-up + Greenfield-DSL (qualitativ anders, langsamer) → Schätzung als **Spanne ~3–7 aktive Tage**, nicht Punkt (§8).
+- **🟢 FC ist SUBSTANZIELL ERREICHT.** Der am 28.06. geschätzte Rest-Backlog (~3–7 Tage) ist
+  weitgehend abgearbeitet: **Desktop + WASM rendern real**, **Server-Creation komplett**, **Creation-DSL
+  korpus-komplett + deklarative Compose-Creation-DSL (E6)**, die **Deferred-Render-Features** (Komplex-
+  Text, Shader, Texture, PathEffect, FILL_AND_STROKE) sind gebaut, und die **Color-/Component-Content-
+  Welle** (REM-131…140) ist zu.
+- **Layer-1 (.rc Reader+Writer, 173 Ops) byte-bewiesen, rein commonMain** — unverändert die durch-
+  gezogene §2-Kern-Invariante.
+- **Render läuft auf allen 4 Mensch-Targets** (Android · iOS · Desktop(jvm) · WASM(wasmJs)) via dem
+  geteilten Skiko/CMP-Pfad. Die 3 Render-actuals (decode/offscreen/opaque) sind für Desktop+WASM
+  **real** (nicht mehr Stubs) — REM-75/76/78/79/80. Render-Sweep-Harnesses für Desktop + Web aktiv.
+- **Server-Creation komplett** (REM-126): JVM-headless `.rc`-Authoring auf der prozeduralen Creation-
+  DSL (REM-119 korpus-komplett) + Disk-Writer + Executable + CI.
+- **Live-Interaktivität** capability-gestaffelt: Touch on-device (REM-108 S2b Android+iOS), Sensor
+  Sim-Scope (Mensch-akzeptiert), Web-Live = Real-Browser-bewiesen (REM-114, Headless-Capture-Artefakt).
+- **Verbleibend = kurzer Schwanz** (§6): E6-T3 (Variablen-Primitive, in flight) · REM-139 compute/
+  lookup · Render-Backlog-Reste (Impulse/Particles-Subsystem deferred) · ein paar offene Tester-Render-
+  Gates auf gerade gemergten Wellen. **Kein großer L-Brocken mehr offen außer Particles (Mensch-Scope).**
 
 ---
 
-## 1. Modul × Target-Matrix
+## 1. Modul × Target-Matrix (Refresh)
 
 Legende: ✅ fertig/bewiesen · 🟡 teilweise/ungeprüft · ❌ offen/fehlt · n/a.
-Targets: **And**=Android · **iOS** · **Desk**=Desktop(jvm) · **WASM**=wasmJs · **JS**=js · **Srv**=Server-Creation(jvm headless).
+Targets: **And**=Android · **iOS** · **Desk**=Desktop(jvm) · **WASM**=wasmJs · **Srv**=Server-Creation(jvm headless).
+(js-Target per §0-Scope-Update entfernt — **wasmJs-only** für Web.)
 
-| Modul / Fähigkeit | And | iOS | Desk | WASM | JS | Srv | Beleg |
-|---|---|---|---|---|---|---|---|
-| **L1 Reader** (`remote-core`, .rc→Ops) | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | commonMain, byte/round-trip-bewiesen (173/173); kein Plattform-Layer |
-| **L1 Writer** (`RemoteComposeWriter`, Ops→.rc) | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | commonMain, 121 Ops `write()`, byte-identisch vs Orakel; **low-level** (`add`/`encodeToByteArray`) |
-| **L2 Geometrie-Adapter** (rect/oval/path/clip/matrix/gradient, CMP) | ✅ | ✅ | 🟡 | ❌ | ❌ | n/a | commonMain CMP; rendert wo Skiko+actuals da; Desk/WASM gated auf Render-actuals |
-| **Bitmap-Decode** (`decodeImageBitmap`) | ✅ | ✅ | ❌ | ❌ | ❌ | n/a | And BitmapFactory, iOS Skiko; **jvm=null (Stub)**; js/wasm fehlen |
-| **Offscreen/Render-to-Bitmap** (`createOffscreen`, REM-60) | ✅ | ✅ | ❌ | ❌ | ❌ | n/a | iOS Skia-Surface+Flush; **jvm=bare Canvas (kein Flush, Stub)**; js/wasm fehlen |
-| **Opaque-Surface** (`renderOpaque`, REM-56) | ✅ | ✅ | ❌ | ❌ | ❌ | n/a | iOS Raster-Surface; **jvm=passthrough (Stub)**; js/wasm fehlen |
-| **Density** (`platformDensityProvider`) | ✅ | ✅ | ✅ | ✅ | ✅ | n/a | actual in allen 5 |
-| **Platform-id** (`getPlatform`) | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | actual in allen 5 |
-| **Basis-Text** (CMP TextMeasurer/Paragraph) | ✅ | ✅ | 🟡 | ❌ | ❌ | n/a | commonMain CMP; Desk Skiko-plausibel ungeprüft; Web gated |
-| **Eval-Engine** (Var/RPN/Array/Expression) | ✅ | ✅ | ✅ | ✅ | ✅ | n/a | commonMain pure (REM-36/59); läuft wo es compilet |
-| **Layout** (Shallow-Measure/Arrangement/Modifier) | ✅ | ✅ | ✅ | ✅ | ✅ | n/a | commonMain pure (REM-37 E-Layout) |
-| **Color/Theme** (ColorConstant/Expression) | ✅ | ✅ | ✅ | ✅ | ✅ | n/a | REM-61/67; `system_accent`-Palette = REM-68 (Design, pending) |
-| **Prozedurale Creation-API** (`remote-creation` DSL) | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ | existiert NICHT (nur low-level Writer) |
-| **App/Harness** | ✅ | ✅ | 🟡 | 🟡 | 🟡 | 🟡 | androidApp/iosApp rendern; desktopApp `Window{App()}` verdrahtet (rendert leer bis Render-actuals); webApp `ComposeViewport{App()}` js+wasm verdrahtet (linkt nicht bis actuals) |
-| **Deferred-Render-Features** (Shader/VarFont/KomplexText/GfxLayer/Sensoren) | 🟡 | 🟡 | 🟡 | 🟡 | 🟡 | n/a | target-unabhängige Korpus-Lücke, §5 |
+| Modul / Fähigkeit | And | iOS | Desk | WASM | Srv | Beleg |
+|---|---|---|---|---|---|---|
+| **L1 Reader** (`remote-core`, .rc→Ops) | ✅ | ✅ | ✅ | ✅ | ✅ | commonMain, 173/173 byte/round-trip |
+| **L1 Writer** (`RemoteComposeWriter`, Ops→.rc) | ✅ | ✅ | ✅ | ✅ | ✅ | commonMain, byte-identisch vs Orakel |
+| **L2 Geometrie-Adapter** (rect/oval/path/clip/matrix/gradient) | ✅ | ✅ | ✅ | ✅ | n/a | Skiko/CMP; Desk+WASM Render-actuals real (REM-75/76) |
+| **Bitmap-Decode** (`decodeImageBitmap`) | ✅ | ✅ | ✅ | ✅ | n/a | jvm/wasm render-real (REM-75/76), nicht mehr Stub |
+| **Offscreen/Render-to-Bitmap** (`createOffscreen`) | ✅ | ✅ | ✅ | ✅ | n/a | Skia-Surface+Flush auf allen 4 |
+| **Opaque-Surface** (`renderOpaque`) | ✅ | ✅ | ✅ | ✅ | n/a | REM-56/75/76 |
+| **Density / Platform-id** | ✅ | ✅ | ✅ | ✅ | ✅ | actual in allen aktiven Targets |
+| **Basis- + Komplex-Text** (CMP/Skiko-Paragraph) | ✅ | ✅ | ✅ | ✅ | n/a | REM-32/74 (Komplex-Text-Layout) |
+| **Eval-Engine** (Var/RPN/Array/Expression) | ✅ | ✅ | ✅ | ✅ | n/a | commonMain pure (REM-36/59/92/109/127) |
+| **Layout** (Shallow-Measure/Arrangement/Modifier) | ✅ | ✅ | ✅ | ✅ | n/a | commonMain pure (REM-37 + REM-134-Span-Layout) |
+| **Color/Theme/Component-Content** | ✅ | ✅ | ✅ | ✅ | n/a | REM-61/67/68/131/133/134/135 (Host-Palette-Seed, AttributedString) |
+| **Prozedurale Creation-API** (`remote-creation` DSL) | ✅ | ✅ | ✅ | ✅ | ✅ | **korpus-komplett (REM-119, E1–E5)** |
+| **Compose-Creation-DSL** (deklarativ, E6) | ✅ | ✅ | ✅ | ✅ | ✅ | E6 MVP + T2-Modifier (REM-128/130); T3 in flight (REM-141) |
+| **App/Harness** | ✅ | ✅ | ✅ | ✅ | ✅ | androidApp/iosApp/desktopApp/webApp rendern; Server-Executable+CI (REM-126) |
+| **Deferred-Render-Features** (Shader/Texture/PathEffect/KomplexText/FILL_AND_STROKE) | ✅ | ✅ | ✅ | ✅ | n/a | REM-74/77/94/98/99 — s. §5 für den Rest-Schwanz |
 
 ---
 
 ## 2. Plattform-Schicht pro Target (expect/actual — am Code verifiziert)
 
-**5 commonMain-expects** (NICHT 6 — `systemAccentPalette` ist REM-68-Design, noch nicht im Code):
-`getPlatform`, `platformDensityProvider`, `decodeImageBitmap`, `renderOpaque`, `createOffscreen`.
+Die 3 Render-actuals (`decodeImageBitmap`, `createOffscreen`, `renderOpaque`) sind für **alle 4 aktiven
+Targets render-real** — der 28.06.-Befund „jvm/wasm = Stub/fehlt" ist mit **REM-75 (Desktop jvm-actuals
+render-real)** + **REM-76 (Web wasmJs actuals greenfield + js-Target raus + Link)** behoben.
 
-| expect | And | iOS | jvm/Desk | wasmJs | js |
-|---|---|---|---|---|---|
-| getPlatform | ✅ | ✅ | ✅ | ✅ | ✅ |
-| platformDensityProvider | ✅ | ✅ | ✅ | ✅ | ✅ |
-| decodeImageBitmap | ✅ real | ✅ real (Skiko) | 🟡 **Stub (=null)** | ❌ | ❌ |
-| createOffscreen | ✅ real | ✅ real (Skia-Surface+Flush) | 🟡 **Stub (bare Canvas)** | ❌ | ❌ |
-| renderOpaque | ✅ real | ✅ real (Raster) | 🟡 **Stub (passthrough)** | ❌ | ❌ |
-
-**🔴 Die Kern-Erkenntnis (dev-2-Flag, von mir am Code bestätigt):** jvm „hat alle 5 actuals" ist **Compile-Vollständigkeit, nicht Render-Vollständigkeit**. Die 3 Render-actuals sind headless-Test-geformt (decode=null, offscreen=Flush-los, opaque=passthrough) — korrekt für das jvmTest-Conformance-Harness, **unbrauchbar für ein echtes Desktop-Render-Target**. Desktop-Render = die 3 jvm-Stubs auf **render-real** heben (Skiko, iOS-Impl als nahe Vorlage), NICHT nur App-Wiring.
-
-**Apps:** androidApp ✅, iosApp ✅ (rendern). desktopApp ✅ verdrahtet (`Window{App()}`, compose.desktop.currentOs) — rendert leer bis Render-actuals real. webApp ✅ verdrahtet (`ComposeViewport{App()}`, js+wasmJs `binaries.executable()`, hängt an `:shared`) — **linkt nicht** bis js/wasm-actuals existieren.
-
----
-
-## 3. Render-Korrektheit: was läuft by-construction vs. was blockt
-
-**Geteilter Skiko-Vorteil:** iOS, Desktop(jvm/Compose-Desktop) UND WASM/JS rendern alle via **Skiko=Skia** (gleiche Engine). Die gesamte commonMain-CMP-Render-Logik (Geometrie/Text/Paint/Eval/Layout, ~15,5k LOC) ist **target-agnostisch** und läuft, sobald (i) die 3 Render-actuals real sind und (ii) das Target compilet/verlinkt. → **Der iOS-Render-Pfad ist die Blaupause; Desktop/WASM erben den Großteil.**
-
-**Konkret blockierend:**
-- **Desktop erster Render:** `ImageDecode.jvm` (Skia `Image.makeFromEncoded` statt null), `Offscreen.jvm` (Skia-Surface+`makeImageSnapshot`-Flush wie iOS REM-60 statt bare Canvas), `OpaqueSurface.jvm` (Raster-Surface wie iOS REM-56 statt passthrough). Alle drei = iOS-Impl quasi 1:1 (beide Skiko). + Desktop-Render-Sweep-Harness.
-- **WASM erster Render:** dieselben 3 actuals **greenfield** in wasmJsMain (Skiko-wasm hat die APIs; wasm-Bitmap-Decode + async Browser-`.rc`-Fetch statt okio-FileSystem sind die echten Knackpunkte) + compile-Target verifizieren + web-Render-Harness. JS analog (niedrigere Prio falls wasmJs der Web-Haupt-Target ist).
-
----
-
-## 4. Server-Creation (JVM headless)
-
-- **Low-level: FERTIG.** `RemoteComposeWriter(add(op) … encodeToByteArray())` in commonMain, 121 Ops mit `write()`, byte-identisch zum Orakel (Round-trip-bewiesen). Ein Server kann **heute** eine Op-Liste assemblieren und ein byte-korrektes `.rc` schreiben — auf jvm-headless (keine Render-actuals nötig).
-- **Fehlt: die prozedurale Creation-API.** Upstream `remote-creation` (ergonomische `rect()/circle()/text()/clock`-Prozedur-API) + optional `remote-creation-compose` (Compose-DSL für Creation) sind **nicht portiert**. Ohne sie ist „Doc von Grund auf erstellen" nur manuelle Op-Assemblierung (funktioniert, aber roh).
-- **Entscheidung Mensch/PO:** reicht Op-Listen-Creation (→ S, nur Wrapper+Doku) oder braucht „Server erstellt Docs" die volle DSL (→ L, eigenes Modul)?
-
----
-
-## 5. Deferred-Features (Korpus-Reichweite, target-unabhängig)
-
-Aus der L2-Korpus-Investigation (Generator-Grep) — nötig für „**ALLE** Docs rendern" auf JEDEM Target:
-- **Komplex-Text-Layout** (Hyphenation/Justification/LineBreak/BiDi): **mehrere Docs** (CanvasComponents, DslTextDemo, Text, Type) → größte Deferred-Lücke. **L.**
-- **DATA_SHADER (AGSL→SkSL)**: **~2 Docs** (AiAgent, TimeSphere) → klein aber spiky (Sprach-Übersetzung). **M.**
-- **Variable-Fonts (FONT_AXIS)**: wenige (DslFontAxis, VariableFont, Text) → Skiko-Interop. **M.**
-- **GraphicsLayer-advanced** (cameraDistance/3D/Shadow/Blur-tileMode): wenige. **M.**
-- **Sensoren/Touch/Interaktiv** (touch1/2, sensor_demo, haptic, wake): für **statischen Render** reicht ein Frame; **volle Interaktivität** ist jenseits „rendern". Klären: zählt „rendert einen Frame" als complete? **M (Render-Frame) / L (Interaktivität).**
-
-> Anmerkung: Deferred-Features sind **commonMain/Skiko-Lücken** → einmal gebaut wirken sie auf allen Skiko-Targets gleich. Sie sind orthogonal zu den Plattform-actuals (§2).
-
----
-
-## 6. Geordneter Rest-Backlog + Aufwand (S/M/L) — priorisiert
-
-| # | Brocken | Aufwand | Ticket-Äquiv (grob) | Abhängig |
+| expect | And | iOS | jvm/Desk | wasmJs |
 |---|---|---|---|---|
-| 1 | **Desktop render-real**: zuerst Desktop-Render-Sweep (Schiedsrichter) → die meisten Docs (Shapes/Text/Pfade/Farbe) rendern by-construction (Skiko); dann die jvm-actual-Real-Upgrades, die der Sweep aufdeckt — v.a. **Bitmap-Docs** (`ImageDecode.jvm=null`→leer) + **offscreen/opaque-sensitive** (bit_draw2/cube3d, brauchten auf iOS REM-55/56/60). iOS-Vorlage 1:1 | **S (Verify) + M (Upgrades)** | ~5–9 | iOS-actuals (Vorlage da) |
-| 2 | **WASM/JS render**: 3 actuals greenfield (Skiko-wasm/js) + compile/Link aktiv + webApp `.rc`-async-Loading + Web-Render-Sweep | **M–L** | ~7–12 | #1-Muster |
-| 3 | **Deferred-Render-Features** (Komplex-Text L, Shader M, VarFont M, GfxLayer M, Sensoren/Touch M) für Voll-Korpus-Parität | **L** | ~12–20 | — |
-| 4 | **Prozedurale Creation-API** (`remote-creation` Port) für ergonomische Server-Creation | **L** (S falls Op-Liste reicht) | ~10–18 (od. ~2) | L1-Writer (da) |
-| 5 | **Cross-Target-Test-Infra** (Desktop+Web-Render-Sweep-Harness; Conformance ist schon cross-platform) | **M** | ~4–7 | #1/#2 |
-| 6 | **REM-68 Theme-Palette** (system_accent, Design fertig) + lfd. Render-Parity-Restwelle (REM-70+ on-device) | **S–M** | ~3–6 | REM-68-Freigabe |
+| getPlatform | ✅ | ✅ | ✅ | ✅ |
+| platformDensityProvider | ✅ | ✅ | ✅ | ✅ |
+| decodeImageBitmap | ✅ real | ✅ real (Skiko) | ✅ real (REM-75) | ✅ real (REM-76) |
+| createOffscreen | ✅ real | ✅ real | ✅ real (REM-75) | ✅ real (REM-76) |
+| renderOpaque | ✅ real | ✅ real | ✅ real (REM-75) | ✅ real (REM-76) |
 
-**Summe grob: ~40–70 Ticket-Äquivalente** (Mitte ~50), dominiert von #3 (Deferred) + #4 (Creation-DSL).
-
----
-
-## 7. Gemessene Velocity (empirisch aus git)
-
-| Metrik | Wert |
-|---|---|
-| Commits gesamt | 267 |
-| distinkte REM-Tickets (Subjects) | 52 (REM-2 … REM-69, mit Lücken) |
-| develop-Merges (`-> develop`) | 86 |
-| commonMain Kotlin LOC | ~15 494 |
-| Op-Dateien | 129 |
-| Zeitspanne (Author-Dates) | 2026-06-25 15:47 → 2026-06-28 10:46 ≈ **2,8 Kalendertage** |
-| Commits/Tag | 94 / 124 / 33 / 16 (25./26./27./28.) |
-| develop-Merges/Tag | 15 / 56 / 13 / 2 |
-
-**Abgeleitete Rate:** ~**17 REM-Tickets/Tag** bzw. ~**29 Merges/Tag** im beobachteten Tempo (Spitze Tag 2: 124 Commits, 56 Merges).
-
-**🟡 Caveat (keine Scheinpräzision):** die Zeitspanne ist **stark komprimiert** (3 aktive Tage, 5 Agenten parallel, front-loaded). Das ist **agent-parallel-intensive** Zeit, nicht Team-Kalenderzeit. Die Merge-Kadenz fällt (56→13→2), aber das spiegelt **Annäherung an die in-scope-Feature-Grenze** (Android+iOS-Render fast fertig → Rest = Fixes), nicht sinkenden Durchsatz. Velocity daher robust nur als **Tickets-pro-aktivem-Tag / pro-Merge-Welle** ausgedrückt; jede Wall-Clock-Umrechnung hängt am Durchhalten dieser Intensität.
+**Apps:** androidApp/iosApp/desktopApp rendern; webApp (wasmJs, `ComposeViewport{App()}`, Browser-`.rc`-
+async-Fetch REM-82) rendert + linkt. Server-Creation als Executable + CI (REM-126).
 
 ---
 
-## 8. Zeit-Schätzung, kalibriert gegen die gemessene Velocity
+## 3. Render-Korrektheit: Status
 
-**Basis:** ~50 abgeschlossene Ticket-Äquiv. in ~3 aktiven, intensiven Tagen → ~17/Tag.
-**Rest:** ~40–70 Ticket-Äquiv. (§6, Mitte ~50).
+**Geteilter Skiko-Vorteil eingelöst:** iOS, Desktop(jvm) UND WASM rendern via Skiko=Skia — die gesamte
+commonMain-CMP-Render-Logik (~21,9k LOC) wirkt target-agnostisch. **Voll-173-Render-Sweeps laufen auf
+Desktop (REM-78) und Web (REM-79/80).** Render-Korrektheit ist über das **REM-123-Daten-Orakel-Gate**
+(in PROJECT_CONTEXT §6 ratifiziert) abgesichert: Docs mit dynamisch/akkumulierender Kurvengenerierung
+brauchen am Golden-Promote einen unabhängigen Daten-Orakel-/Upstream-Player-Check, NICHT nur Cross-
+Target-Self-Compare.
 
-**🔴 Arbeits-Typ-Caveat (entscheidend — die Rate überträgt sich NICHT 1:1):** die gemessenen ~17/Tag entstanden aus **Render-Debugging / Byte-Format / Paritäts-Politur auf einer FERTIGEN Plattform-Basis** (Android+iOS-actuals lagen, der Korpus war gebündelt, das Conformance-Harness stand). Die Restarbeit ist **qualitativ anders**: (i) Plattform-**Bring-up** (WASM 3 actuals greenfield + Browser-async-Loading, Desktop actual-Upgrades) und (ii) eine **Creation-DSL von Grund auf** (neues Modul, kein Render-Debugging). Solche Greenfield-/Bring-up-Arbeit läuft typischerweise **langsamer** als das bisherige Politur-Tempo. Deshalb: **Order-of-Magnitude-SPANNE, keine Punkt-Schätzung.**
+**🔴 Render-Gate-Lehre (REM-140, 29.06.):** Shared-Render-Path-Changes (z. B. LayoutMeasure) brauchen
+einen **Voll-173-Render-Sweep** — ein DrawLine-Fingerprint übersieht Text-Positions-Shifts. REM-134
+regressierte 2 Docs (player_info/text_baseline), gefangen erst vom Voll-Sweep, gefixt durch Scoping der
+Measure-Changes auf den TextLayout-Span-Fall. Verankert als Merge-Gate-Pflicht.
 
-→ **Differenzierte Spanne (statt einer Zahl):**
-- **Desktop** (#1, iOS-Vorlage 1:1, der Sweep zeigt wie viel by-construction läuft) → am NÄCHSTEN am bisherigen Tempo → ~1 aktiver Tag.
-- **WASM/JS** (#2, greenfield-Skiko + Browser-Loading) → LANGSAMER als die Rate → ~1–2 aktive Tage.
-- **Deferred-Features** (#3, neue Risiko-Klassen Komplex-Text/Shader) → Render-nah aber neu → ~1–2 aktive Tage.
-- **Creation-DSL** (#4) → eigene Achse, am wenigsten vom bisherigen Tempo gedeckt → S (~0,3 Tg, Op-Liste) bis L (~1,5–2,5 Tg, volle DSL) je nach Mensch-Scope.
-- **Summe: grob ~3–7 weitere aktive Tage** bei gehaltener 5-Agenten-Intensität — Mitte „**etwa nochmal so viel wie bisher**", aber die obere Hälfte ist realistischer als die untere, weil Bring-up/Greenfield langsamer ist als Politur. Untere Grenze (~3 Tg) nur, wenn der Mensch #4→Op-Liste und Sensoren→Render-Frame scopt.
+---
 
-**Annahmen + Unsicherheiten (transparent):**
-- **Dominante Unsicherheit = die zwei L-Brocken:** #3 Deferred-Features (besonders Komplex-Text + Shader-Übersetzung — neue Risiko-Klassen, kein Template) und #4 Creation-DSL (eigenes Modul). Wenn der Mensch #4 auf „Op-Liste reicht" (S) reduziert und Sensoren/Touch auf „Render-Frame statt Interaktivität" scopt, **fällt der Rest auf ~25–40 Ticket-Äquiv. ≈ ~1,5–2,5 Tage**.
-- **Desktop (#1) ist günstiger als es aussieht** (iOS-Skiko-Vorlage 1:1) trotz der Stub-Korrektur — der teure Teil (Skia-Render-Logik) ist schon da.
-- **WASM (#2)** trägt das größte Plattform-spezifische Risiko (wasm-Bitmap-Decode, async Resource-Loading) — könnte am oberen Rand landen.
-- **Die ~17/Tag-Rate ist intensiv** (Spitzentempo Tag 1-2); hält sie nicht durch, skaliert die Wall-Clock linear hoch. Velocity in Tickets gemessen ist robuster als in Tagen.
-- Render-Korrektheit verlangt weiterhin die on-device/cross-target-Sweeps als Gate (dispatch≠render) — in der Schätzung als Test-Infra (#5) enthalten.
+## 4. Server-Creation (JVM headless) — ✅ KOMPLETT (REM-126)
+
+- **Prozedurale Creation-DSL korpus-komplett (REM-119):** `rect()/circle()/text()/path()/…` + Layout-
+  Container-API (REM-96) + Expressions (REM-92) + Matrix/Clip (REM-90) — alle Korpus-Ops, byte-
+  gleichheits-conform (erzeugte Docs == Orakel, REM-84).
+- **Server-Creation-Epic (REM-126) ZU:** JVM-headless Authoring + Disk-Writer + Executable + CI. Ein
+  Server erstellt heute byte-korrekte `.rc`-Docs from scratch — ohne Render-actuals.
+- **Compose-Creation-DSL (E6, deklarativ):** MVP (Capture+Container+Modifier) + T2 (+7 Modifier, ~95%
+  Parität, REM-130) gemergt; T3 (Variablen-Primitive, REM-141) in flight.
+
+---
+
+## 5. Deferred-Features (Korpus-Reichweite, target-unabhängig) — Status
+
+- **Komplex-Text-Layout** (Hyphenation/Justification/LineBreak/BiDi): ✅ **REM-74**.
+- **DATA_SHADER (AGSL→SkSL)**: ✅ **REM-77**.
+- **Texture-Bitmap-Shader** ✅ REM-98 · **PATH_EFFECT** ✅ REM-99 · **FILL_AND_STROKE** ✅ REM-94.
+- **AttributedString / Component-Content** ✅ **REM-134** (24 Spans voll-styled, DrawContent-Delegation).
+- **Variable-Fonts (FONT_AXIS)**: 🟡 Skiko-Interop, wenige Docs — Rest-Schwanz (FALLBACK_TYPEFACE REM-106 offen).
+- **Sensoren/Touch/Interaktiv**: ✅ Touch on-device (REM-108) + Sensor Sim-Scope; **live-animiertes
+  Impulse/Particles-Subsystem** (confetti/hearts/maze) = deferred (§6, Mensch-Richtung offen).
+
+---
+
+## 6. Geordneter Rest-Backlog (Refresh — der kurze Schwanz)
+
+| # | Posten | Status | Aufwand | Anm. |
+|---|---|---|---|---|
+| 1 | **E6-T3** Variablen-Primitive (visibility-full + dynamic-color-border) | **IN FLIGHT** (REM-141, S1 gemergt, S2/S3 laufen) | S–M | dev-3, byte-gegated |
+| 2 | **compute/lookup** Render-Apply-Gap (procedure_look_up1) | **IN FLIGHT** (REM-139, S1 im Gate) | S–M | dev-2; S2 LayoutCompute danach |
+| 3 | **Offene Tester-Render-Gates** auf gemergten Wellen (REM-131/132/134-Voll-Render) | OFFEN | S | test-3; REM-134 4-TextLayout-Docs Voll-Render-Confirm |
+| 4 | **Impulse/Particles-Subsystem** (live-animiert) | DEFERRED | L | Mensch-Richtung offen |
+| 5 | **Render-Backlog-Tail** (AlignBy/DrawBitmap-Folge, paths_demos-Seed-Gap, VarFont/FALLBACK_TYPEFACE) | DEFERRED low/med | M | datenbasiert |
+| 6 | **Creation-DSL-Long-Tail** (G3/G6–9, 0-Korpus-Konsument) | DEPRIORISIERT | — | optional, kein Korpus-Bedarf |
+| 7 | **Cleanup/Hardening** (redundante rc-Kopien REM-100, Registry-Concurrency REM-11, CI-wasm-Guard, OFL.txt) | LOW | S | non-blocking |
+
+**Kein großer L-Brocken außer #4 (Particles, Mensch-Scope-Entscheidung).** Der 28.06.-Rest (~40–70
+Ticket-Äquiv.) ist auf einen kurzen Schwanz geschrumpft.
+
+---
+
+## 7. Gemessene Velocity (empirisch aus git, Refresh)
+
+| Metrik | 28.06. | **29.06. (jetzt)** |
+|---|---|---|
+| Commits gesamt | 267 | **544** |
+| distinkte REM-Tickets (git-Subjects) | 52 | **121** (REM-2 … REM-141) |
+| develop-Merges | 86 | **87+** |
+| commonMain Kotlin LOC | ~15 494 | **~21 873** |
+| Zeitspanne (Author-Dates) | ~2,8 Tage | **2026-06-25 → 2026-06-29 ≈ 4 Kalendertage** |
+
+**Rate gehalten:** ~277 Commits + ~69 REM-Tickets in ~1,2 weiteren Kalendertagen (5–7 Agenten parallel)
+= das Tempo aus §0 ist NICHT eingebrochen; die FC-Welle (Desktop/WASM-Render + Server-Creation + E6 +
+Color/Component-Content) lief im selben intensiven Takt durch.
+
+**🟡 Caveat (unverändert gültig):** komprimierte, agent-parallel-intensive Zeit, nicht Team-Kalenderzeit.
+Velocity robust nur als Tickets-pro-aktivem-Tag / pro-Merge-Welle; Wall-Clock hängt am Durchhalten der Intensität.
+
+---
+
+## 8. Zeit-Schätzung (Refresh — der Rest ist klein)
+
+Die 28.06.-Spanne (~3–7 aktive Tage Rest) ist eingelöst. **Verbleibend, konservativ:**
+- **E6-T3 (#1)** + **compute/lookup (#2)** + offene Render-Gates (#3): **~0,5–1 aktiver Tag** (in flight, byte-gegated, kleine Slices).
+- **Impulse/Particles (#4)**: eigener L-Brocken **nur falls Mensch es in FC-Scope zieht** — sonst deferred. ~1–2 aktive Tage wenn beauftragt.
+- **Render-Backlog-Tail + VarFont-Rest (#5)** + Cleanup (#7): **~0,5–1 aktiver Tag**, datenbasiert/non-blocking.
+
+→ **Kern-FC (a)+(b) der Mensch-Definition ist erreicht.** Was bleibt, ist Schwanz + eine
+Scope-Entscheidung (Particles). **Grob ~1–2 aktive Tage** für den non-Particles-Rest bei gehaltener Intensität.
+
+**Dominante Unsicherheit jetzt:** (i) die offenen Tester-Render-Gates könnten echte Render-Bugs
+aufdecken (REM-140-Klasse — ein Voll-Sweep fand schon 2 Regresse); (ii) Particles ist die einzige große
+offene Scope-Frage.
 
 ---
 
 ## 9. Empfehlung an PO/Mensch
 
-1. **Scope-Hebel zuerst klären** (halbiert potenziell den Rest): (a) Creation = Op-Liste (S) vs volle DSL (L)? (b) Sensoren/Touch = Render-Frame (M) vs Interaktivität (L)? (c) JS zwingend oder reicht wasmJs als Web-Target?
-2. **Sequenz:** #1 Desktop (billigster echter neuer Target, iOS-Vorlage) → #2 WASM → #3 Deferred (Komplex-Text zuerst, meiste Docs) ‖ #4 Creation (parallel, unabhängige Lane). #5 Test-Infra zieht mit #1/#2.
-3. **Lanes:** Render-actuals (Desk/WASM) = dev-2/shared; Creation-API = dev-1; Deferred-Features split dev-1/dev-2; Cross-Target-Sweep = test-1/test-2.
-4. Größte Brocken (#3, #4) nach Mensch-Scope in Stories/Epics splitten.
+1. **FC-Kern als erreicht ratifizieren** (a: 4-Target-Render via Sweeps · b: Server-Creation + DSLs) —
+   nach Abschluss der offenen Tester-Render-Gates (#3) als formaler Abnahme-Schritt.
+2. **Eine offene Scope-Entscheidung:** Impulse/Particles-Subsystem (live-animiert) in FC-Scope, oder
+   bewusst deferred? Das ist der einzige verbleibende L-Brocken.
+3. **In flight zu Ende führen:** REM-141 (E6-T3) + REM-139 (compute/lookup) per byte-gegateten Slices.
+4. **Render-Gate-Disziplin halten** (REM-140-Lehre): Shared-Render-Path-Changes → Voll-173-Render-Sweep,
+   nicht DrawLine-Fingerprint; REM-123-Daten-Orakel am Golden-Promote.
+5. **Jira-Hygiene:** mehrere gemergte Tickets stehen wegen des dev-2/dev-3-Jira-Auth-Lochs noch auf
+   „Zu erledigen" (z. B. REM-133/137/138) — bei gelöstem Auth einen Transition-Sync-Pass; bis dahin ist
+   git-`develop` die Quelle der Wahrheit, nicht die Jira-Labels.
+
+**Offene Mensch-Flags:** Particles-Scope · dev-2-Jira-Auth (Access, out-of-band). **Ratifiziert (29.06.):**
+iOS-Sensor-Sim-Scope · REM-114/S4 (Headless-Artefakt, kein Bug) · §6-Daten-Orakel-Gate + §8 · E6-T2/T3.
