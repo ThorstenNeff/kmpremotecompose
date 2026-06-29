@@ -1,0 +1,7 @@
+url: http://localhost:8080
+---
+- openLink: "http://localhost:8080/?rc=${RC}&t=${T}"
+- waitForAnimationToEnd: { timeout: 8000 }
+- assertTrue: { condition: "(c=>!!c)(document.querySelector('canvas'))", label: "canvas exists" }
+- assertTrue: { condition: "(c=>!!c && c.getAttribute('data-rc-rendered')==='true' && parseInt(c.getAttribute('data-rc-draw-count')||'0')>0)(document.querySelector('[data-rc-rendered]'))", label: "honest-render gate" }
+- takeScreenshot: shot_${RC}
