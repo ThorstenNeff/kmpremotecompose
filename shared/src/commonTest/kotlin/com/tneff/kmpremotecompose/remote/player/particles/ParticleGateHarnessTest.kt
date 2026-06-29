@@ -32,22 +32,32 @@ import kotlin.test.assertTrue
  */
 class ParticleGateHarnessTest {
 
-    /** A minimal PaintOperation that draws one circle at a fixed point each paint. */
-    private class FakeCircleOp(val cx: Float, val cy: Float) : PaintOperation {
+    /**
+     * A minimal fake particle body: matrix-translate to (px,py) then draw a LOCAL circle — mirrors the
+     * real corpus bodies (MATRIX_TRANSLATE placement + local shape), so the matrix-aware capture must
+     * record (px,py) as the anchor, NOT the local draw coords.
+     */
+    private class FakeBodyOp(val px: Float, val py: Float) : PaintOperation {
         override val opcode: Int get() = -1
         override fun write(buffer: WireBuffer) {}
-        override fun dump(): String = "FAKE_CIRCLE($cx,$cy)"
-        override fun paint(context: RemoteContext, paint: PaintContext) = paint.drawCircle(cx, cy, 5f)
+        override fun dump(): String = "FAKE_BODY($px,$py)"
+        override fun paint(context: RemoteContext, paint: PaintContext) {
+            paint.matrixSave()
+            paint.matrixTranslate(px, py)
+            paint.drawCircle(0f, 0f, 5f) // local origin — anchor comes from the matrix
+            paint.matrixRestore()
+        }
     }
 
-    @Test fun captureFrames_paintsNPlus1Frames_capturingPerFrame() {
-        val doc = RemoteComposeDocument(listOf(FakeCircleOp(10f, 20f), FakeCircleOp(30f, 40f)))
+    @Test fun captureFrames_paintsNPlus1Frames_capturingMatrixAnchorPerFrame() {
+        val doc = RemoteComposeDocument(listOf(FakeBodyOp(10f, 20f), FakeBodyOp(30f, 40f)))
         val schedule = ParticleFrameSchedule.of(startAtRaw = 0f, durationRaw = 0.1f) // small N
         val frames = ParticleGateHarness.captureFrames(doc, schedule)
 
         assertEquals(schedule.times.size, frames.size, "one capture per scheduled frame (N+1, incl. seed)")
         for ((k, f) in frames.withIndex()) {
-            assertEquals(2, f.size, "frame $k captured both circles")
+            assertEquals(2, f.size, "frame $k captured both bodies")
+            // anchor = the matrix translate (NOT the local (0,0) draw coords), and save/restore isolates them.
             assertEquals(RecordingParticlePaintContext.Draw(10f, 20f), f[0])
             assertEquals(RecordingParticlePaintContext.Draw(30f, 40f), f[1])
         }
