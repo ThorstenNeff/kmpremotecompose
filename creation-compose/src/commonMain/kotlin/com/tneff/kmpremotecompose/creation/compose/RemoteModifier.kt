@@ -192,6 +192,43 @@ open class RemoteModifier private constructor(internal val elements: List<Remote
         RemoteModifier(elements + SpacedByElement(value.toFloat()))
 
     /**
+     * REM-141 T3 — `MODIFIER_VISIBILITY` referencing a [slot] previously bound by a
+     * [RemoteFloatExpression] composable. The slot's id is resolved at Phase-B apply time:
+     * the primitive composable runs earlier in the tree-walk and writes its allocated region-0
+     * id into the slot; this element's `applyToLayoutModifier(lm)` reads `slot.id` and forwards
+     * to the procedural-DSL [LayoutModifier.visibility].
+     *
+     * **W4 misuse guard:** if the slot is unbound at apply time (the primitive composable is
+     * missing or placed AFTER this consumer in tree order), the apply hook throws with a clear
+     * error rather than silently emitting `valueId=-1`.
+     *
+     * **Q4 lock:** element equality compares the slot REFERENCE — `update { set(modifier) }`
+     * recomposition skips correctly because [rememberRemoteFloatSlot] keeps the slot reference
+     * stable across recompositions.
+     */
+    fun visibility(slot: RemoteFloatSlot): RemoteModifier =
+        RemoteModifier(elements + VisibilityFromSlotElement(slot))
+
+    /**
+     * REM-141 T3 — `MODIFIER_BORDER` dynamic-color form (`flags=2 / colorId / rgba=(0,0,0,0)`)
+     * referencing a [colorIdSlot] previously bound by one of the `RemoteColorExpression*`
+     * composables. Routes through the REM-141 S1 procedural helper
+     * [LayoutModifier.borderColorRef] at apply time. See [visibility] for the slot-binding /
+     * W4-misuse contract — same shape.
+     */
+    fun border(
+        borderWidth: Number,
+        roundedCorner: Number,
+        colorIdSlot: RemoteColorSlot,
+        shape: Int = 0,
+        useLegacy: Boolean = true,
+    ): RemoteModifier = RemoteModifier(
+        elements + BorderColorRefFromSlotElement(
+            borderWidth.toFloat(), roundedCorner.toFloat(), colorIdSlot, shape, useLegacy,
+        ),
+    )
+
+    /**
      * Convert to a REM-96 [LayoutModifier] for emission. Each element registers itself via the
      * public chain API of [LayoutModifier] — no `@PublishedApi internal` access, no separate
      * code path: the bytes the procedural helpers produce here are byte-identical to bytes a
@@ -314,5 +351,32 @@ internal data class AlignByElement(val line: Float, val flags: Int) : RemoteModi
 internal data class SpacedByElement(val value: Float) : RemoteModifierElement {
     override fun applyToLayoutModifier(lm: LayoutModifier) {
         lm.spacedBy(value)
+    }
+}
+
+internal data class VisibilityFromSlotElement(val slot: RemoteFloatSlot) : RemoteModifierElement {
+    override fun applyToLayoutModifier(lm: LayoutModifier) {
+        check(slot.id >= 0) {
+            "RemoteFloatSlot is unbound — the RemoteFloatExpression composable that owns this " +
+                "slot must execute BEFORE the consumer modifier in tree order (Phase-B render walks " +
+                "in Compose source order). Place RemoteFloatExpression(slot, ...) earlier in the tree."
+        }
+        lm.visibility(slot.id)
+    }
+}
+
+internal data class BorderColorRefFromSlotElement(
+    val borderWidth: Float,
+    val roundedCorner: Float,
+    val slot: RemoteColorSlot,
+    val shape: Int,
+    val useLegacy: Boolean,
+) : RemoteModifierElement {
+    override fun applyToLayoutModifier(lm: LayoutModifier) {
+        check(slot.id >= 0) {
+            "RemoteColorSlot is unbound — a RemoteColorExpression* composable that owns this " +
+                "slot must execute BEFORE the consumer modifier in tree order."
+        }
+        lm.borderColorRef(borderWidth, roundedCorner, slot.id, shape, useLegacy)
     }
 }

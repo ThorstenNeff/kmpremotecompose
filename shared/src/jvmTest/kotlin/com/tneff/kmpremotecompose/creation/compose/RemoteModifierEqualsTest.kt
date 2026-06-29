@@ -183,4 +183,61 @@ class RemoteModifierEqualsTest {
             "Chain order is emit order is wire order — two orders must NOT compare equal.",
         )
     }
+
+    // -------------------------------------------------------------------------------------------
+    // REM-141 T3 — Slot-element equality (Q4-lock for slot-based modifier overloads)
+    // -------------------------------------------------------------------------------------------
+
+    @Test
+    fun visibilityFromSlot_sameSlotInstance_isEqual() {
+        // Slot identity drives element equality — same slot instance in both modifiers must
+        // produce equal elements so Compose `update { set(modifier) }` change-detection can
+        // skip identical compositions (Q4 lock, REM-128 §2 Q4).
+        val slot = RemoteFloatSlot()
+        val a = RemoteModifier.visibility(slot)
+        val b = RemoteModifier.visibility(slot)
+        assertEquals(a, b, "Same slot reference → equal VisibilityFromSlotElement → equal RemoteModifier")
+        assertEquals(a.hashCode(), b.hashCode())
+    }
+
+    @Test
+    fun visibilityFromSlot_differentSlotInstances_notEqual() {
+        // Even if both slots are "empty" (id=-1), they are distinct instances → different elements.
+        // This is correct: at render time they'll resolve to different ids (different primitive
+        // composables emitted at different tree positions), so wire bytes will differ.
+        val a = RemoteModifier.visibility(RemoteFloatSlot())
+        val b = RemoteModifier.visibility(RemoteFloatSlot())
+        assertNotEquals(a, b, "Different slot instances → different elements (distinct wire byte sources)")
+    }
+
+    @Test
+    fun visibilityFromSlot_isDistinctFromIntForm() {
+        // The Int-form visibility(valueId=42) and the slot-form visibility(slot) are DIFFERENT
+        // element types — they can't be equal even if the slot eventually resolves to id=42,
+        // because identity is structural (the element type itself differs).
+        val slot = RemoteFloatSlot()
+        val viaSlot = RemoteModifier.visibility(slot)
+        val viaInt = RemoteModifier.visibility(valueId = 42)
+        assertNotEquals(viaSlot, viaInt, "Slot-form and int-form visibility are structurally distinct elements")
+    }
+
+    @Test
+    fun borderColorRefFromSlot_sameSlotAndParams_isEqual() {
+        val slot = RemoteColorSlot()
+        val a = RemoteModifier.border(borderWidth = 5f, roundedCorner = 1f, colorIdSlot = slot, shape = 1)
+        val b = RemoteModifier.border(borderWidth = 5f, roundedCorner = 1f, colorIdSlot = slot, shape = 1)
+        assertEquals(a, b)
+        assertEquals(a.hashCode(), b.hashCode())
+    }
+
+    @Test
+    fun borderColorRefFromSlot_differentParams_notEqual() {
+        val slot = RemoteColorSlot()
+        val a = RemoteModifier.border(5f, 1f, slot, shape = 1)
+        val b = RemoteModifier.border(5f, 1f, slot, shape = 2)
+        assertNotEquals(a, b, "shape is part of equality")
+        val c = RemoteModifier.border(5f, 1f, slot, shape = 1, useLegacy = true)
+        val d = RemoteModifier.border(5f, 1f, slot, shape = 1, useLegacy = false)
+        assertNotEquals(c, d, "useLegacy (=reserve1 flip) is part of equality")
+    }
 }
