@@ -185,6 +185,24 @@ class LayoutModifier {
     }
 
     /**
+     * REM-144 S1 — `MODIFIER_BACKGROUND` **dynamic-color form**: colour drawn from a colour id
+     * (system theme id like `1` per `c_modifier_background_id.rc`, or a region-0 id allocated by
+     * a prior `ColorExpression`). Emits the upstream `flags=2 / colorId / rgba=(0,0,0,0)` wire
+     * shape — distinct from [background] which hardcodes `flags=0` and decomposes a literal ARGB.
+     *
+     * **Separate name (NOT an overload of `background`)** — same `(Int)` signature would be
+     * ambiguous with `background(color: Int)`. Mirrors REM-141 S1 [borderColorRef] precedent.
+     * The byte-faithful sub-span anchor against `c_modifier_background_id.rc` (REM-144 S1) pins
+     * exactly this wire shape — see `LayoutModifierByteTest.backgroundColorRef_*`.
+     */
+    fun backgroundColorRef(colorId: Int, shape: Int = 0): LayoutModifier {
+        emitters.add { ctx ->
+            ctx.add(BackgroundModifier(2, colorId, 0, 0, 0f, 0f, 0f, 0f, shape))
+        }
+        return this
+    }
+
+    /**
      * `MODIFIER_BORDER` — solid border (ARGB int form). Mirrors upstream
      * `addModifierBorder(borderWidth, borderRoundedCorner, color, shape)`
      * (`RemoteComposeBuffer.java:1794-1815`): decompose ARGB; default `useLegacy=true` writes
