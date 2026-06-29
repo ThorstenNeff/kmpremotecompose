@@ -40,7 +40,11 @@ import com.tneff.kmpremotecompose.remote.core.operations.layout.RoundedClipRectM
 import com.tneff.kmpremotecompose.remote.core.operations.layout.RowLayout
 import com.tneff.kmpremotecompose.remote.core.operations.layout.ScrollModifier
 import com.tneff.kmpremotecompose.remote.core.operations.layout.StateLayout
+import com.tneff.kmpremotecompose.remote.core.operations.layout.TouchCancelModifier
+import com.tneff.kmpremotecompose.remote.core.operations.layout.TouchDownModifier
 import com.tneff.kmpremotecompose.remote.core.operations.layout.TouchExpression
+import com.tneff.kmpremotecompose.remote.core.operations.layout.TouchUpModifier
+import com.tneff.kmpremotecompose.remote.core.operations.layout.ValueIntegerChangeAction
 import com.tneff.kmpremotecompose.remote.core.operations.layout.VisibilityModifier
 import com.tneff.kmpremotecompose.remote.core.operations.layout.WidthInModifier
 import com.tneff.kmpremotecompose.remote.core.operations.layout.WidthModifier
@@ -400,6 +404,54 @@ class LayoutModifier {
         return this
     }
 
+    /**
+     * REM-145 S1 — `MODIFIER_TOUCH_DOWN` (opcode `0xdb`). Opens a `ListActionsOperation` scope; the
+     * [actions] block emits action ops (e.g. [valueIntegerChange]) that fire on a touch-down event.
+     * A trailing `CONTAINER_END` is emitted automatically to close the action-list scope — same
+     * shape as [scroll]'s group emission (REM-96; without the trailing end, the following modifier
+     * would be sucked into the action list, W13).
+     *
+     * **Profile-gated:** `MODIFIER_TOUCH_DOWN` (and `_UP`, `_CANCEL`) live in the AndroidX-
+     * experimental overlay — the document must be opened with `PROFILE_ANDROIDX |
+     * PROFILE_EXPERIMENTAL` (map-form api=7). Mirrors corpus `c_modifier_on_touch_down.rc`.
+     */
+    fun onTouchDown(actions: RemoteComposeContext.() -> Unit): LayoutModifier {
+        emitters.add { ctx ->
+            ctx.add(TouchDownModifier())
+            ctx.actions()
+            ctx.add(ContainerEnd())
+        }
+        return this
+    }
+
+    /**
+     * REM-145 S1 — `MODIFIER_TOUCH_UP` (opcode `0xdc`). Symmetric to [onTouchDown]; fires on a
+     * touch-release event. Same `ListActionsOperation` + trailing `CONTAINER_END` shape.
+     * Profile-gated like [onTouchDown]. Mirrors corpus `c_modifier_on_touch_up.rc`.
+     */
+    fun onTouchUp(actions: RemoteComposeContext.() -> Unit): LayoutModifier {
+        emitters.add { ctx ->
+            ctx.add(TouchUpModifier())
+            ctx.actions()
+            ctx.add(ContainerEnd())
+        }
+        return this
+    }
+
+    /**
+     * REM-145 S1 — `MODIFIER_TOUCH_CANCEL` (opcode `0xe1`). Symmetric to [onTouchDown] / [onTouchUp];
+     * fires on a touch-cancel event. Same `ListActionsOperation` + trailing `CONTAINER_END` shape.
+     * Profile-gated. Mirrors corpus `c_modifier_on_touch_cancel.rc`.
+     */
+    fun onTouchCancel(actions: RemoteComposeContext.() -> Unit): LayoutModifier {
+        emitters.add { ctx ->
+            ctx.add(TouchCancelModifier())
+            ctx.actions()
+            ctx.add(ContainerEnd())
+        }
+        return this
+    }
+
     companion object {
         /** Default empty modifier — equivalent to upstream `Modifier`. */
         operator fun invoke(): LayoutModifier = LayoutModifier()
@@ -650,4 +702,19 @@ inline fun RemoteComposeContext.root(block: RemoteComposeContext.() -> Unit) {
     } finally {
         add(ContainerEnd())
     }
+}
+
+/**
+ * REM-145 S1 — emit a `VALUE_INTEGER_CHANGE_ACTION(valueId, value)` action body op. Designed for
+ * use inside the [LayoutModifier.onTouchDown] / `onTouchUp` / `onTouchCancel` actions block to
+ * mutate an integer-id-bound state in response to a touch event. Mirrors upstream
+ * `addValueIntegerChangeAction(valueId, value)` (`RemoteComposeBuffer.java`).
+ *
+ * Wire shape: opcode + int valueId + int value (9 bytes). [valueId] addresses a previously
+ * allocated region-0 integer (e.g. `addInt(0)` at root level — see corpus
+ * `c_modifier_on_touch_down.rc` for the canonical pattern). [value] is the new integer to store
+ * when the action fires.
+ */
+fun RemoteComposeContext.valueIntegerChange(valueId: Int, value: Int) {
+    add(ValueIntegerChangeAction(valueId, value))
 }
