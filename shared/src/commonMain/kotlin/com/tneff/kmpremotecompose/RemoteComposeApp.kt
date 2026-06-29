@@ -226,6 +226,14 @@ fun RemoteComposeApp(
                             )
                             // Geometry shares the context's one PlayerPaintState (REM-32) with the text half.
                             paintContext.geometry = GeometryPaintDelegate(ctx, target, paintContext.paintState)
+                            // REM-101 S4 note (intentional — do NOT "fix" by wiring surfaceWidth/Height):
+                            // surfaceWidth/Height are omitted on purpose, so the player's RootContentBehavior
+                            // SIZING_SCALE block is skipped. The canvas is pinned to the doc's EXACT pixel dims
+                            // (REM-51 pxSize), so the surface always equals doc-space → that scale would be the
+                            // identity (scale=1, translate=0) and skipping it is a pure no-op (pixel-verified via
+                            // the wasm full-pipeline render probe). Wiring them only matters if this app ever
+                            // renders at a NON-native surface size (e.g. responsive web fit-to-viewport) — then
+                            // pass size.width/height here so doc-space scales into the surface.
                             RemoteComposePlayer(ctx).paint(
                                 d, paintContext,
                                 frameTimeSeconds = renderTime,
