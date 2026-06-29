@@ -13,9 +13,12 @@ ERSTEN Paint, NICHT den fortlaufenden Live-Present-Layer.** Ein live/animiertes 
 Headless-Capture statisch eingefroren, **obwohl es im echten Browser korrekt tickt**. Das ist ein
 **Capture-/Tooling-Artefakt des Headless-Pfads**, kein CMP-wasm-Frame-Clock-Bug und kein Render-Defekt.
 
-**→ Web-Live/Animation-Checks brauchen einen REAL-Browser ODER eine CDP-Present-Capture im rAF-Loop
-(`Page.captureScreenshot` wiederholt / Playwright-Video). Der Headless-Screenshot-Sweep ist dafür NICHT gültig.
-Statische Render-Verifikation (REM-80) bleibt headless voll gültig.**
+**→ Web-Live/Animation-Checks brauchen einen REAL-Browser (headed, Mensch). Der Headless-Screenshot-Sweep ist
+dafür NICHT gültig. Statische Render-Verifikation (REM-80) bleibt headless voll gültig.**
+**🔴 Empirisch korrigiert (REM-111, 2026-06-29): „CDP-rAF-Capture" ist KEIN gangbarer Web-Live-Pfad** — rohes
+system-Chrome via `--remote-debugging-port`/CDP bootet den skiko-`<canvas>` gar nicht (silent, headless+headed;
+nur Maestros Selenium/ChromeDriver-Launch bootet die App). Und Maestro-headless liefert nur den ersten Paint
+(keine Live-Frames). Der einzige verlässliche Live-Pfad bleibt der headed Real-Browser (Mensch).
 
 ---
 
@@ -41,23 +44,26 @@ pixel-/empirisch widerlegt bis zur Framework-Grenze:
 
 **Lektion (durable):** ein field-korrekter Marker ist *necessary-but-not-sufficient* für „was sichtbar ist";
 und ein Headless-Einzelshot ist *necessary-but-not-sufficient* für „der Live-Loop läuft". Nur Pixel + Liveness +
-Real-Browser (oder CDP-rAF-Capture) entscheiden Live-Korrektheit.
+headed Real-Browser (Mensch) entscheiden Live-Korrektheit (raw-CDP bootet die App nicht — s. §1).
 
 ---
 
 ## 3. Gate-Regel (verbindlich für künftige Web-Verifikation)
 
-| Verifikations-Art | Headless-Sweep (Maestro-chromium Einzelshot) | Real-Browser / CDP-rAF-Capture |
+| Verifikations-Art | Headless-Sweep (Maestro-headless Einzelshot) | Headed Real-Browser (Mensch) |
 |---|---|---|
 | **Statischer Render** (`live` aus, `t`-pinned) — REM-80 | ✅ **gültig** (erster Paint == finaler Frame) | nicht nötig |
-| **Live/Animation** (`live=1`, tickende Frame-Clock) | ❌ **NICHT gültig** (nur erster Paint, friert ein) | ✅ **erforderlich** |
+| **Live/Animation** (`live=1`, tickende Frame-Clock) | ❌ **NICHT gültig** (nur erster Paint, friert ein) | ✅ **erforderlich** (einziger Pfad) |
 | **Live-Sensor** (devicemotion-getrieben) | ❌ nicht gültig + kein Accelerometer auf Desktop | ✅ **echtes Mobil-Gerät mit Sensor** |
+
+*(„CDP-rAF-Capture" wurde als Live-Pfad gestrichen: raw-CDP/`--remote-debugging-port` bootet den skiko-`<canvas>` nicht — nur Maestro/ChromeDriver, und das nur für den ersten Paint. REM-111-Befund.)*
 
 **Konkret für die Harness:**
 - Animierte/Live-Docs (Clocks, Sensor-Demos, `heart_rate`, `moon_phases`, `text_refresh_bug`, `thumb_wheel*`,
   alle `&live=1`) **nicht** mit dem Headless-Screenshot-Sweep als „bewegt sich / live korrekt" claimen.
-- Optionen für Live-Verifikation: **(a)** Real-Browser-Visual-Check (Mensch, wie REM-114), **(b)** CDP
-  `Page.captureScreenshot` wiederholt im rAF-Loop und Δ>0 über N Frames asserten, **(c)** Playwright-Video.
+- Live-Verifikation: **headed Real-Browser-Visual-Check (Mensch, wie REM-114)** ist der einzige verlässliche Pfad.
+  ~~CDP-rAF / `Page.captureScreenshot`-Loop~~ scheidet aus (raw-CDP bootet die App nicht). Falls je automatisiert
+  gewünscht: ein ChromeDriver-/Maestro-getriebener Headed-Lauf mit echter rAF-Δ-Assertion müsste erst bewiesen werden.
 - **Statik bleibt headless:** für REM-80-Render-Parität immer mit pinned `&t=<sec>` capturen, nie `&live=1`.
 
 ---
