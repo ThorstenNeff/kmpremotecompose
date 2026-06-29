@@ -13,6 +13,10 @@ kotlin {
 }
 dependencies {
     implementation(projects.shared)
+    // REM-144 S4 — E6 §6 Maestro-Proof: the proof screen builds an `.rc` document at runtime via
+    // the Compose-Creation-DSL (captureSingleRemoteDocument) and hands the bytes to the existing
+    // RemoteComposePlayer for in-app render → Maestro flow asserts the visual.
+    implementation(projects.creationCompose)
 
     implementation(libs.androidx.activity.compose)
 
