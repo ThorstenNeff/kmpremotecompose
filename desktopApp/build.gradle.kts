@@ -49,3 +49,18 @@ tasks.register<JavaExec>("desktopRenderSweep") {
     args = (project.findProperty("sweepArgs") as? String).orEmpty()
         .split(' ').filter { it.isNotBlank() }
 }
+
+// REM-143-S2 3rd-Leg Process-Frame Harness — pre-staged against the dev-2 S2-tip. Renders the FIRST
+// process frame (decode-once → paint-prime-t=0 → paint-capture-t=Δt) of each particle doc. Out goes to
+// a SEPARATE dir from the static goldens so the static-render gate is never accidentally polluted; the
+// formal process-frame golden gate is dev-1's independent LIVE data-oracle + this harness's capture
+// converging at the same Δt-Pin (§6 / REM-123).
+tasks.register<JavaExec>("desktopProcessFrameSweep") {
+    group = "verification"
+    description = "REM-143-S2 — render the first process frame of the 6 particle docs (Δt-Pin-gated)."
+    mainClass.set("com.tneff.kmpremotecompose.sweep.DesktopProcessFrameSweepKt")
+    classpath = sourceSets["main"].runtimeClasspath
+    workingDir = rootProject.projectDir
+    args = (project.findProperty("sweepArgs") as? String).orEmpty()
+        .split(' ').filter { it.isNotBlank() }
+}
