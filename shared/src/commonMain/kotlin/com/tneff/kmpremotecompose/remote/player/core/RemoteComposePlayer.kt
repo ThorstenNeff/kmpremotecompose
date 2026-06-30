@@ -31,6 +31,8 @@ import com.tneff.kmpremotecompose.remote.core.operations.layout.LayoutContent
 import com.tneff.kmpremotecompose.remote.core.operations.layout.LoopStart
 import com.tneff.kmpremotecompose.remote.core.operations.layout.RootContentBehavior
 import com.tneff.kmpremotecompose.remote.core.operations.layout.ScrollModifier
+import com.tneff.kmpremotecompose.remote.core.operations.layout.ValueIntegerChangeAction
+// (TapState is in the same package — no import needed)
 import com.tneff.kmpremotecompose.remote.core.operations.layout.TouchExpression
 import com.tneff.kmpremotecompose.remote.wire.WireTypes
 
@@ -48,6 +50,11 @@ class RemoteComposePlayer(val context: RemoteContext = RemoteContext()) {
     // REM-108 (Epic-F) S1: the interaction-callback sink for the current paint pass (set in [paint] from its
     // `callbacks` param). Render-only — never serialized (§2). Default NoOp until a pass sets it.
     private var interactionCallbacks: RcInteractionCallbacks = RcInteractionCallbacks.NoOp
+
+    // REM-108 (Epic-F) S2: the last click-action echo "<valueId>=<value>" produced THIS paint pass (null if
+    // no action fired), for the app's `rc-action-echo` hook. Render-only; reset at the top of [paint].
+    var lastActionEcho: String? = null
+        private set
 
     /**
      * Render [document] into [paint] for the single frame at [frameTimeSeconds].
@@ -74,13 +81,17 @@ class RemoteComposePlayer(val context: RemoteContext = RemoteContext()) {
         touchState: TouchState? = null,
         hapticActuator: HapticActuator = NoOpHapticActuator,
         // REM-108 (Epic-F) S0/S1: the public interaction-callback sink (default NoOp = §0 floor). S1 consumes
-        // it for onScroll (see [openScrollBracket]); S2 will add onClick. Stored for this pass below.
+        // it for onScroll (see [openScrollBracket]); S2 for onClick (see [dispatchClick]).
         callbacks: RcInteractionCallbacks = RcInteractionCallbacks.NoOp,
+        // REM-108 (Epic-F) S2: the persistent tap/click gesture state (null ⇒ no click dispatch; S0/S1
+        // behaviour). Consumed LIVE-only after Phase A so a tapped value renders this frame and persists.
+        tapState: TapState? = null,
     ): Float {
         context.paintContext = paint
         // REM-108 S1: hold the sink for this paint pass so the walk (openScrollBracket) can emit onScroll.
         // A fresh player is built per frame by the app, so a plain field scoped to the pass is sufficient.
         interactionCallbacks = callbacks
+        lastActionEcho = null // REM-108 S2: reset per pass; set if a click action fires this frame.
         context.resetPass(frameTimeSeconds)
         paint.reset()
         // The document authors its content in DOC-space (header dims). For SIZING_SCALE the player
@@ -166,6 +177,12 @@ class RemoteComposePlayer(val context: RemoteContext = RemoteContext()) {
                 op.updateVariables(context)
                 op.apply(context)
             }
+        }
+        // REM-108 S2: click dispatch — AFTER Phase A (doc DATA_INT defaults applied) and BEFORE the paint
+        // walk, so a tap-mutated value (1) overrides the default and (2) renders this same frame. LIVE-only
+        // (a static render never dispatches → determinism / golden-stable). Null tapState ⇒ S0/S1 behaviour.
+        if (context.isAnimationEnabled() && tapState != null) {
+            dispatchClick(ops, tapState, measured.clickTargets)
         }
         walkGated(ops, 0, ops.size, paintPhase = true, paint, measured.scrollBrackets, measured.spanBrackets) { op ->
             if (op is PaintOperation) {
@@ -277,6 +294,71 @@ class RemoteComposePlayer(val context: RemoteContext = RemoteContext()) {
         // §0 floor + determinism hold (this walk runs only in the paint phase, once per holder per frame).
         if (context.isAnimationEnabled()) {
             interactionCallbacks.onScroll(RcScrollEvent(componentId = holderId, offset = offset, axis = b.scroll.direction))
+        }
+    }
+
+    /**
+     * REM-108 S2 — drain the tap queue and dispatch click/touch-modifier actions (Option B: a flat walk from
+     * the modifier to its matching `CONTAINER_END`). DOWN hit-tests the registry (topmost = last in doc
+     * order) and records the down-span; UP/CANCEL route to that **same** span — never a re-hit-test at
+     * up-time (the drag-off mandate, PO/assist) — and a UP that lands back inside the target is also a CLICK.
+     * Each fired modifier runs its action block, signals the app, and records the echo. Finally re-applies
+     * the persistent int overrides over the doc's Phase-A defaults so a tapped value survives the per-frame
+     * context.
+     */
+    private fun dispatchClick(ops: List<Operation>, tap: TapState, targets: List<LayoutMeasure.ClickTarget>) {
+        for (ev in tap.drain()) {
+            when (ev.phase) {
+                TapState.Phase.DOWN -> {
+                    val hit = targets.lastOrNull { it.contains(ev.x, ev.y) }
+                    tap.activeSpanId = hit?.componentId ?: TapState.NO_SPAN
+                    if (hit != null) fireModifiers(ops, tap, hit, Operations.MODIFIER_TOUCH_DOWN, ev)
+                }
+                TapState.Phase.UP -> {
+                    // Route to the DOWN-span (no re-hit-test); a release back inside the target is a CLICK.
+                    val span = targets.lastOrNull { it.componentId == tap.activeSpanId }
+                    if (span != null) {
+                        fireModifiers(ops, tap, span, Operations.MODIFIER_TOUCH_UP, ev)
+                        if (span.contains(ev.x, ev.y)) fireModifiers(ops, tap, span, Operations.MODIFIER_CLICK, ev)
+                    }
+                    tap.activeSpanId = TapState.NO_SPAN
+                }
+                TapState.Phase.CANCEL -> {
+                    val span = targets.lastOrNull { it.componentId == tap.activeSpanId }
+                    if (span != null) fireModifiers(ops, tap, span, Operations.MODIFIER_TOUCH_CANCEL, ev)
+                    tap.activeSpanId = TapState.NO_SPAN
+                }
+            }
+        }
+        // Persist click-mutated ints across the per-frame-fresh context (override the Phase-A defaults).
+        for ((id, v) in tap.intOverrides) context.loadInt(id, v)
+    }
+
+    /** Fire every [opcode] modifier on [target]: run its action block (Option B walk to the matching
+     *  `CONTAINER_END`), then signal the app via onClick (cancel is routed but not surfaced as a click). */
+    private fun fireModifiers(ops: List<Operation>, tap: TapState, target: LayoutMeasure.ClickTarget, opcode: Int, ev: TapState.Event) {
+        var fired = false
+        for (m in target.modifiers) {
+            if (m.opcode != opcode) continue
+            val end = skipConditionalBlock(ops, m.opIndex) - 1 // index of the modifier's matching CONTAINER_END
+            for (j in m.opIndex + 1 until end) runAction(ops[j], tap)
+            fired = true
+        }
+        if (fired && opcode != Operations.MODIFIER_TOUCH_CANCEL) {
+            interactionCallbacks.onClick(RcClickEvent(elementId = target.componentId, metadata = 0, docX = ev.x, docY = ev.y))
+        }
+    }
+
+    /** Execute one action op (Option B runtime). S2 wires the integer-set action (the corpus click payload),
+     *  recording it into the persistent overrides + the `<valueId>=<value>` echo. Other action types
+     *  (`ValueFloatExpressionChange` / `ValueStringChange` / `HostAction`) are deferred (D2) and skipped. */
+    private fun runAction(op: Operation, tap: TapState) {
+        when (op) {
+            is ValueIntegerChangeAction -> {
+                tap.intOverrides[op.valueId] = op.value
+                lastActionEcho = "${op.valueId}=${op.value}"
+            }
+            else -> {}
         }
     }
 

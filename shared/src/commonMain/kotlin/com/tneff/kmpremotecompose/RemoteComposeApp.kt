@@ -17,6 +17,7 @@ package com.tneff.kmpremotecompose
 
 import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.gestures.detectDragGestures
+import androidx.compose.foundation.gestures.detectTapGestures
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.safeContentPadding
@@ -51,6 +52,7 @@ import com.tneff.kmpremotecompose.remote.player.core.RemoteComposePlayer
 import com.tneff.kmpremotecompose.remote.player.core.renderOpaque
 import com.tneff.kmpremotecompose.remote.player.core.RemoteContext
 import com.tneff.kmpremotecompose.remote.player.core.SensorSource
+import com.tneff.kmpremotecompose.remote.player.core.TapState
 import com.tneff.kmpremotecompose.remote.player.core.baselineHostPalette
 import com.tneff.kmpremotecompose.remote.player.core.seedHostPalette
 import com.tneff.kmpremotecompose.remote.player.core.systemAccentPalette
@@ -125,13 +127,20 @@ fun RemoteComposeApp(
     // Present so Maestro can address them, but render-invariant (hook nodes below the canvas, outside the
     // cropped render area; the canvas renders independently at pxSize → zero pixel shift). §2-safe: render-only
     // state, no `.rc` bytes. The producing slices flip these via their own state writes.
-    val actionEcho by remember { mutableStateOf("none") }
+    // S2 feeds this from the player's lastActionEcho (below) in "<valueId>=<value>" form; S0 sentinel "none".
+    var actionEcho by remember { mutableStateOf("none") }
     // S1 feeds this from the player's onScroll (below); S0 left it at the "0" sentinel.
     var scrollOffset by remember { mutableStateOf(0) }
     // REM-108 S1: a stable per-frame capture cell the observing sink writes during paint (the draw phase),
     // settled into [scrollOffset] once after the render lambda — the same write-during-draw → settle-after
     // idiom as `drawCount`/`frameCount` (avoids a recompose storm). intArrayOf is a GC-light mutable holder.
     val scrollCapture = remember { intArrayOf(0) }
+    // REM-108 S2: per-frame capture cell for the click-action echo ("<valueId>=<value>"), settled into
+    // [actionEcho] after the render lambda. Null ⇒ no action fired this frame (the state keeps its last value).
+    val actionEchoCapture = remember { arrayOfNulls<String>(1) }
+    // REM-108 S2: persistent tap/click gesture state (down-span + click int-overrides survive across frames),
+    // fed by the detectTapGestures detector below, drained by the player's click dispatch each live frame.
+    val tapState = remember { TapState() }
     // REM-108 S1: the player's interaction sink, wrapping the app-supplied [callbacks]. It forwards every
     // event to the consumer's sink (the public contract) AND captures the scroll offset for the
     // `rc-scroll-offset` test hook. onClick is pass-through here (wired in S2). Remembered on [callbacks] so
@@ -155,6 +164,11 @@ fun RemoteComposeApp(
         drawCount = 0
         frameCount = 0
         lastCountedFrame = Float.NaN
+        // REM-108 (assist S1 nit + S2): reset the interaction hooks + persistent gesture state on a doc
+        // switch, so a previous doc's scroll offset / click override / down-span never bleeds into the new one.
+        scrollCapture[0] = 0; scrollOffset = 0
+        actionEchoCapture[0] = null; actionEcho = "none"
+        tapState.intOverrides.clear(); tapState.activeSpanId = TapState.NO_SPAN
         try {
             Builtins.register()
             doc = DocumentReader.inflate(loadRc(docName))
@@ -241,14 +255,29 @@ fun RemoteComposeApp(
     // offset ≈ doc-space (the SIZING_SCALE-doc inverse is a deferred note).
     val gestureModifier: Modifier = remember(d, live) {
         if (live && d != null) {
-            Modifier.pointerInput(d) {
-                detectDragGestures(
-                    onDragStart = { off -> touchState.down(off.x, off.y) },
-                    onDrag = { change, _ -> touchState.move(change.position.x, change.position.y) },
-                    onDragEnd = { touchState.up(touchState.x, touchState.y) },
-                    onDragCancel = { touchState.cancel() },
-                )
-            }
+            Modifier
+                .pointerInput(d) {
+                    detectDragGestures(
+                        onDragStart = { off -> touchState.down(off.x, off.y) },
+                        onDrag = { change, _ -> touchState.move(change.position.x, change.position.y) },
+                        onDragEnd = { touchState.up(touchState.x, touchState.y) },
+                        onDragCancel = { touchState.cancel() },
+                    )
+                }
+                // REM-108 S2: a SECOND detector (separate pointerInput → coexists with the drag detector) for
+                // discrete taps/clicks — a no-move tap never trips detectDragGestures' slop. onPress = the
+                // DOWN (fires MODIFIER_TOUCH_DOWN); onTap = a clean release position (fires MODIFIER_TOUCH_UP +
+                // MODIFIER_CLICK); a drag-release (not a tap) → tryAwaitRelease(false) → cancel (the player
+                // routes it to the down-span). CMP unifies touch/mouse/pointer. Live-only → static stays inert.
+                .pointerInput(d) {
+                    detectTapGestures(
+                        onPress = { off ->
+                            tapState.down(off.x, off.y)
+                            if (!tryAwaitRelease()) tapState.cancel()
+                        },
+                        onTap = { off -> tapState.up(off.x, off.y) },
+                    )
+                }
         } else {
             Modifier
         }
@@ -292,7 +321,8 @@ fun RemoteComposeApp(
                             // the wasm full-pipeline render probe). Wiring them only matters if this app ever
                             // renders at a NON-native surface size (e.g. responsive web fit-to-viewport) — then
                             // pass size.width/height here so doc-space scales into the surface.
-                            RemoteComposePlayer(ctx).paint(
+                            val player = RemoteComposePlayer(ctx)
+                            player.paint(
                                 d, paintContext,
                                 frameTimeSeconds = renderTime,
                                 // REM-62: static-mode frame pin (deep-link `&t=N`); the player reads it
@@ -308,7 +338,12 @@ fun RemoteComposeApp(
                                 // REM-108 (S0/S1): the interaction sink. The observing wrapper forwards to the
                                 // app-supplied callbacks AND captures the scroll offset for rc-scroll-offset.
                                 callbacks = observingCallbacks,
+                                // REM-108 (S2): live tap/click gesture state (consumed LIVE-only; null ⇒ static).
+                                tapState = if (live) tapState else null,
                             )
+                            // REM-108 S2: capture the click-action echo this frame (draw-phase write; settled
+                            // outside the lambda like scrollCapture). Null ⇒ no action fired this frame.
+                            actionEchoCapture[0] = player.lastActionEcho
                         }
                         // Draw-phase writes: read only outside this lambda → one settling recompose.
                         if (drawCount != ctx.drawCount) drawCount = ctx.drawCount
@@ -316,6 +351,8 @@ fun RemoteComposeApp(
                         // only; static never emits → stays at the 0 sentinel). Same one-settling-recompose
                         // discipline as drawCount → rc-scroll-offset reflects the latest live offset.
                         if (scrollOffset != scrollCapture[0]) scrollOffset = scrollCapture[0]
+                        // REM-108 S2: settle the action echo if an action fired this frame (null ⇒ keep last).
+                        actionEchoCapture[0]?.let { if (actionEcho != it) actionEcho = it }
                         // REM-143 S3-prep: bump the committed-frame counter once per distinct LIVE frame
                         // (renderTime advances every frame in live mode; static mode keeps renderTime=0f so
                         // the `live` gate + the dedup leave it at its reset 0 → deterministic, no storm).
