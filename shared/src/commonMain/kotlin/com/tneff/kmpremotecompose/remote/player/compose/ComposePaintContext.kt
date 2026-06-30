@@ -235,6 +235,51 @@ class ComposePaintContext(
         // Approximated/deferred (flagged): needs a built Path (dev-2) + PathMeasure — L2-D1 follow-on.
     }
 
+    /**
+     * REM-156 — single-line draw at baseline (x,y) clamped to [maxWidth]: ellipsize (`…`) instead of
+     * letting long anchored text run off the surface edge. Measures arbitrary `prefix + …` strings via
+     * the existing public [ComposeTextRenderer] surface — **no change to that shared text seam**. When the
+     * full run already fits [maxWidth] the draw is identical to plain [drawTextRun] (golden-safe: only
+     * genuinely overflowing text changes). The largest fitting prefix is found by binary search and kept
+     * surrogate-pair-safe; the ellipsis is appended (LTR; RTL leading-ellipsis is a flagged follow-up).
+     */
+    override fun drawTextRunClipped(
+        textId: Int,
+        start: Int, end: Int,
+        x: Float, y: Float,
+        rtl: Boolean,
+        maxWidth: Float,
+    ) {
+        val c = canvas ?: return
+        val r = textRenderer ?: return
+        val text = context.getText(textId) ?: return
+        if (text.isEmpty() || maxWidth <= 0f) return
+        val bounds = FloatArray(4)
+        fun width(s: String): Float { r.getTextBounds(s, 0, -1, 0, bounds); return bounds[2] - bounds[0] }
+
+        // Fits as-is → identical to the plain path (no golden shift for non-overflowing text).
+        if (width(text) <= maxWidth) {
+            if (r.drawTextRun(c, text, 0, -1, x, y, rtl)) context.incrementDrawCount()
+            return
+        }
+        val ellipsis = "…"
+        if (width(ellipsis) > maxWidth) return // not even "…" fits → draw nothing (clipped away)
+
+        // Largest prefix length n such that text[0,n) + "…" fits maxWidth (binary search).
+        var lo = 0
+        var hi = text.length
+        while (lo < hi) {
+            val mid = (lo + hi + 1) / 2
+            if (width(text.substring(0, surrogateSafe(text, mid)) + ellipsis) <= maxWidth) lo = mid else hi = mid - 1
+        }
+        val truncated = text.substring(0, surrogateSafe(text, lo)) + ellipsis
+        if (r.drawTextRun(c, truncated, 0, -1, x, y, rtl)) context.incrementDrawCount()
+    }
+
+    /** Don't cut a surrogate pair: if index [n] would split one, step back to before the high surrogate. */
+    private fun surrogateSafe(text: String, n: Int): Int =
+        if (n in 1..text.length && text[n - 1].isHighSurrogate()) n - 1 else n
+
     override fun drawBitmapFontText(
         textId: Int,
         bitmapFontId: Int,

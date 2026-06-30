@@ -85,7 +85,19 @@ class DrawTextAnchored(
                 if (baselineRelative) textHeight / 2f else -bounds[1]
             ry + vOffset
         }
-        paint.drawTextRun(textId, 0, -1, 0, 1, px, py, flags and ANCHOR_TEXT_RTL == 1)
+        val rtl = flags and ANCHOR_TEXT_RTL == 1
+        // REM-156 overflow policy: long anchored text used to run off the surface edge with no
+        // wrap/ellipsis/indicator (audit-P1). When the run, placed at its left edge px, would extend past
+        // the document's right edge (ID_WINDOW_WIDTH, seeded per render), draw it ellipsized to the width
+        // that remains (px → doc-right) instead of clipping edgelessly. Guarded so the common fitting case
+        // (and any render where the window width isn't seeded → 0) takes the unchanged path → golden-safe.
+        // Left-edge (px < 0) / vertical overflow keep today's behavior (flagged follow-up: leading-ellipsis).
+        val windowWidth = context.getFloat(RemoteContext.ID_WINDOW_WIDTH)
+        if (windowWidth > 0f && px >= 0f && px + textWidth > windowWidth) {
+            paint.drawTextRunClipped(textId, 0, -1, px, py, rtl, windowWidth - px)
+        } else {
+            paint.drawTextRun(textId, 0, -1, 0, 1, px, py, rtl)
+        }
     }
 
     override fun dump(): String = "DRAW_TEXT_ANCHOR textId=$textId x=$x y=$y panX=$panX panY=$panY flags=$flags"
