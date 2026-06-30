@@ -15,6 +15,7 @@
  */
 package com.tneff.kmpremotecompose.remote.creation
 
+import com.tneff.kmpremotecompose.conformance.IgnoreOnWasm
 import com.tneff.kmpremotecompose.conformance.RcCorpus
 import com.tneff.kmpremotecompose.remote.core.document.DocumentReader
 import com.tneff.kmpremotecompose.remote.core.document.RemoteComposeWriter
@@ -108,6 +109,7 @@ class G4TextTrimTest {
     }
 
     @Test
+    @IgnoreOnWasm
     fun textMerge_matchesCorpusFixtureRegion_tripleAnchor() {
         runCorpusFixtureMatch(
             opcode = Operations.TEXT_MERGE,
@@ -180,6 +182,7 @@ class G4TextTrimTest {
     }
 
     @Test
+    @IgnoreOnWasm
     fun textLookup_matchesCorpusFixtureRegion_tripleAnchor() {
         runCorpusFixtureMatch(
             opcode = Operations.TEXT_LOOKUP,
@@ -247,6 +250,7 @@ class G4TextTrimTest {
     }
 
     @Test
+    @IgnoreOnWasm
     fun addIntegerExpression_matchesCorpusFixtureRegion_tripleAnchor() {
         // Variable-size op — read count first, then size out the byte region.
         // findOpcode is fooled by 0x90 bytes in HEADER operand data, so we search ALL candidate
@@ -352,6 +356,7 @@ class G4TextTrimTest {
     // ─── visible-skip degradation pin (order-INDEPENDENT, own-scan) ───────────
 
     @Test
+    @IgnoreOnWasm
     fun g4TextTrim_fixtureCoverage_visibilityCheck() {
         // Order-INDEPENDENT scan with control-positive (REM-113-followup-redo standard).
         // All 3 ops are corpus-PRESENT per the empirical scan that justified REM-119's trim

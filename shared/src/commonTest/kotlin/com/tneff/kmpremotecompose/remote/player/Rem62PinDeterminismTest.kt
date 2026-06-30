@@ -16,6 +16,7 @@
 package com.tneff.kmpremotecompose.remote.player
 
 import com.tneff.kmpremotecompose.RcRouter
+import com.tneff.kmpremotecompose.conformance.IgnoreOnWasm
 import com.tneff.kmpremotecompose.conformance.RcCorpus
 import com.tneff.kmpremotecompose.remote.core.document.DocumentReader
 import com.tneff.kmpremotecompose.remote.core.operations.Builtins
@@ -31,6 +32,7 @@ import kotlin.test.assertEquals
  * platform. Proves `&t=0` is a real pin (NOT treated as falsy/unpinned): t=0 seeds TIME_IN_SEC=0 → the
  * `(TIME_IN_SEC%3)-1` predicate = -1 → LT branch (the green circle), exactly like the explicit t=3.
  */
+@IgnoreOnWasm
 class Rem62PinDeterminismTest {
 
     private fun timeInSecForDeepLinkT(value: String): Float {

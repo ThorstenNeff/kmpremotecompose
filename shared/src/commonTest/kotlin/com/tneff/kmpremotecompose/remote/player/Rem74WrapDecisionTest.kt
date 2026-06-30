@@ -15,6 +15,7 @@
  */
 package com.tneff.kmpremotecompose.remote.player
 
+import com.tneff.kmpremotecompose.conformance.IgnoreOnWasm
 import com.tneff.kmpremotecompose.conformance.RcCorpus
 import com.tneff.kmpremotecompose.remote.core.document.DocumentReader
 import com.tneff.kmpremotecompose.remote.core.operations.Builtins
@@ -163,6 +164,7 @@ class Rem74WrapDecisionTest {
      * `TextAlign.Justify`=4) must NOT appear in any of the 173 corpus docs — so the CMP limit is cosmetic.
      */
     @Test
+    @IgnoreOnWasm
     fun corpusNeverExercisesCmpLimitedGranularParams() {
         Builtins.register()
         val offenders = mutableListOf<String>()
@@ -201,6 +203,7 @@ class Rem74WrapDecisionTest {
      * stale silently — this fails instead.
      */
     @Test
+    @IgnoreOnWasm
     fun corpusExercisesEndEllipsis_soForceComplexRoutingIsReal() {
         Builtins.register()
         val endEllipsisDocs = mutableListOf<String>()
@@ -226,6 +229,7 @@ class Rem74WrapDecisionTest {
     }
 
     @Test
+    @IgnoreOnWasm
     fun corpusHasComplexTextToRender() {
         Builtins.register()
         val docsWithText = RcCorpus.corpusNames().count { name ->

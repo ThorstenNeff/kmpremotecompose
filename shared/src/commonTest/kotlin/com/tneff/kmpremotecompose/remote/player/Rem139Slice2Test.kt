@@ -15,6 +15,7 @@
  */
 package com.tneff.kmpremotecompose.remote.player
 
+import com.tneff.kmpremotecompose.conformance.IgnoreOnWasm
 import com.tneff.kmpremotecompose.conformance.RcCorpus
 import com.tneff.kmpremotecompose.remote.core.document.DocumentReader
 import com.tneff.kmpremotecompose.remote.core.operations.Builtins
@@ -51,6 +52,7 @@ class Rem139Slice2Test {
     }
 
     @Test
+    @IgnoreOnWasm
     fun measureType_computesComponentHeight() {
         // c_modifier_compute_measure: Box WIDTH=100 (exact), HEIGHT computed via the bounds list (slot 3).
         // The box background draws at the computed bounds → a 100-wide, computed-tall rect (NOT fill-500).
@@ -62,6 +64,7 @@ class Rem139Slice2Test {
     }
 
     @Test
+    @IgnoreOnWasm
     fun positionType_computesComponentXY() {
         // c_modifier_compute_position: the box's x/y are computed (centered ~200,200 in the 500 doc).
         val (_, rec) = play("c_modifier_compute_position")
@@ -71,6 +74,7 @@ class Rem139Slice2Test {
     }
 
     @Test
+    @IgnoreOnWasm
     fun reconciliation_measureComputedListSurvivesPhaseA() {
         // PO-mandated: measure() seeds+computes the LayoutCompute child list BEFORE Phase-A; DynamicFloatList's
         // allocate-if-absent apply must NOT re-zero it → the computed value is still in the store after paint.

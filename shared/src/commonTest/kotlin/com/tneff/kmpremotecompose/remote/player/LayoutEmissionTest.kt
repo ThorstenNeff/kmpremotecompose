@@ -15,6 +15,7 @@
  */
 package com.tneff.kmpremotecompose.remote.player
 
+import com.tneff.kmpremotecompose.conformance.IgnoreOnWasm
 import com.tneff.kmpremotecompose.conformance.RcCorpus
 import com.tneff.kmpremotecompose.remote.core.document.DocumentReader
 import com.tneff.kmpremotecompose.remote.core.operations.Builtins
@@ -31,6 +32,7 @@ import kotlin.test.assertTrue
  * with a background → two stacked 100×100 background rects at y=0 and y=100. This is the c_* flip the
  * whole slice targets (visual golden = test-2 sweep; this asserts the geometry headlessly).
  */
+@IgnoreOnWasm
 class LayoutEmissionTest {
 
     private class RecordingPaintContext(context: RemoteContext) : NoOpPaintContext(context) {

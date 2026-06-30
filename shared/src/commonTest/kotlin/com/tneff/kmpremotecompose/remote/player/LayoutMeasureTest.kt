@@ -15,6 +15,7 @@
  */
 package com.tneff.kmpremotecompose.remote.player
 
+import com.tneff.kmpremotecompose.conformance.IgnoreOnWasm
 import com.tneff.kmpremotecompose.conformance.RcCorpus
 import com.tneff.kmpremotecompose.remote.core.document.DocumentReader
 import com.tneff.kmpremotecompose.remote.core.operations.Builtins
@@ -29,6 +30,7 @@ import kotlin.test.assertEquals
  * canvas-content component dims (valueIds 43/44) must measure to the doc size — the input the clock-hand
  * expressions need (they were 0 before the measure pass → degenerate → blank).
  */
+@IgnoreOnWasm
 class LayoutMeasureTest {
 
     @Test

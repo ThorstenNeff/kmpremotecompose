@@ -15,6 +15,7 @@
  */
 package com.tneff.kmpremotecompose.remote.player
 
+import com.tneff.kmpremotecompose.conformance.IgnoreOnWasm
 import com.tneff.kmpremotecompose.conformance.RcCorpus
 import com.tneff.kmpremotecompose.remote.core.document.DocumentReader
 import com.tneff.kmpremotecompose.remote.core.operations.Builtins
@@ -32,6 +33,7 @@ import kotlin.test.assertTrue
  * Uses a realistic-ascent fake context (jvmTest has no real text renderer; ascent=0 would make AlignBy a
  * headless no-op and mask the regression — the REM-134/140 lesson). Real pixels = test-3's full-render gate.
  */
+@IgnoreOnWasm
 class Rem140ScopeTest {
     private class AscentText(context: RemoteContext) : NoOpPaintContext(context) {
         var tx = 0f; var ty = 0f

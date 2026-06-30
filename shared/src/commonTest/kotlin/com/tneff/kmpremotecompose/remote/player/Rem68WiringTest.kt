@@ -15,6 +15,7 @@
  */
 package com.tneff.kmpremotecompose.remote.player
 
+import com.tneff.kmpremotecompose.conformance.IgnoreOnWasm
 import com.tneff.kmpremotecompose.conformance.RcCorpus
 import com.tneff.kmpremotecompose.remote.core.document.DocumentReader
 import com.tneff.kmpremotecompose.remote.core.operations.Builtins
@@ -32,6 +33,7 @@ import kotlin.test.assertTrue
  * `ColorConstant` fallback. clock.rc: id 59 = `NamedVariable("color.system_accent2_50")` + `ColorConstant
  * 0xff113311` (debug). With the palette wired, `getColor(59)` = the palette tone, not the debug green.
  */
+@IgnoreOnWasm
 class Rem68WiringTest {
 
     @Test

@@ -15,6 +15,7 @@
  */
 package com.tneff.kmpremotecompose.remote.player
 
+import com.tneff.kmpremotecompose.conformance.IgnoreOnWasm
 import com.tneff.kmpremotecompose.conformance.RcCorpus
 import com.tneff.kmpremotecompose.remote.core.document.DocumentReader
 import com.tneff.kmpremotecompose.remote.core.operations.Builtins
@@ -99,6 +100,7 @@ class Rem134ComponentContentTest {
     }
 
     @Test
+    @IgnoreOnWasm
     fun allSpansRender_inDocumentOrder() {
         val draws = render().draws
         assertEquals(24, draws.size, "all 24 AttributedString spans must draw (was 0 pre-REM-134)")
@@ -108,6 +110,7 @@ class Rem134ComponentContentTest {
     }
 
     @Test
+    @IgnoreOnWasm
     fun spansAdvanceHorizontally_withinARow() {
         val rows = rows(render().draws)
         val multiSpan = rows.first { it.size > 1 } // e.g. "This is "/"Bold"/", this is "/"Italic"/"."
@@ -120,6 +123,7 @@ class Rem134ComponentContentTest {
     }
 
     @Test
+    @IgnoreOnWasm
     fun mixedFontSizes_shareOneBaseline_viaAlignBy() {
         // The "Big" line mixes a 92px span with 46px spans; AlignBy(line=NaN) must put them on ONE baseline.
         val bigRow = rows(render().draws).first { row -> row.any { it.text == "Big" } }
@@ -131,6 +135,7 @@ class Rem134ComponentContentTest {
     }
 
     @Test
+    @IgnoreOnWasm
     fun rows_stackVertically_downTheColumn() {
         val rowBaselines = rows(render().draws).map { it[0].baseline }
         for (i in 1 until rowBaselines.size) {
@@ -139,6 +144,7 @@ class Rem134ComponentContentTest {
     }
 
     @Test
+    @IgnoreOnWasm
     fun allRows_fitWithinCanvasHeight() {
         // REM-134 regression guard for the test-3 RED (rows had no height modifier → each FILLED the column
         // → 6 rows stacked ~492px apart → only line 1 on the 500px canvas). With Row/Column wrap-content the
@@ -152,6 +158,7 @@ class Rem134ComponentContentTest {
     }
 
     @Test
+    @IgnoreOnWasm
     fun underlineAndStrike_drawAtTheirSpanRow_notDocOrigin() {
         // REM-134 (a): the 2 decoration DrawLines (Underlined/Strikethrough, in row 5 — base≈257) must be
         // bracketed to their span's absolute position, NOT collapsed to doc-origin (y≈32–45) where the

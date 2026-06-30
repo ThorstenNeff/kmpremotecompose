@@ -15,6 +15,7 @@
  */
 package com.tneff.kmpremotecompose.remote.player
 
+import com.tneff.kmpremotecompose.conformance.IgnoreOnWasm
 import com.tneff.kmpremotecompose.conformance.RcCorpus
 import com.tneff.kmpremotecompose.remote.core.document.DocumentReader
 import com.tneff.kmpremotecompose.remote.core.operations.Builtins
@@ -60,6 +61,7 @@ class Rem143S1Test {
     }
 
     @Test
+    @IgnoreOnWasm
     fun confetti_drawsBitmapPerParticle_atDistinctPositions() {
         val rec = play("impulse_demo_confetti_demo")
         assertEquals(100, rec.bitmaps, "100-particle confetti must draw one bitmap sprite per particle (was 0 pre-S1)")
@@ -69,6 +71,7 @@ class Rem143S1Test {
     }
 
     @Test
+    @IgnoreOnWasm
     fun hearts_drawsGlyphPerParticle() {
         val rec = play("impulse_demo_hearts_demo")
         assertTrue(rec.texts >= 50, "50-particle hearts must draw a glyph per particle, got ${rec.texts} (was 0 pre-S1)")

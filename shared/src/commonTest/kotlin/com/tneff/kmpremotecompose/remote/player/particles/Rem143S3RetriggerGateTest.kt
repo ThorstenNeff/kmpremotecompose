@@ -4,6 +4,7 @@
  */
 package com.tneff.kmpremotecompose.remote.player.particles
 
+import com.tneff.kmpremotecompose.conformance.IgnoreOnWasm
 import com.tneff.kmpremotecompose.conformance.RcCorpus
 import com.tneff.kmpremotecompose.remote.core.document.DocumentReader
 import com.tneff.kmpremotecompose.remote.core.document.RemoteComposeDocument
@@ -55,6 +56,7 @@ import kotlin.test.assertTrue
  * actually triggers in a tractable schedule. maze docs carry duration=20000s (never elapse in any practical
  * window), so Re-Trigger is not exercisable on them — explicitly out of scope here.
  */
+@IgnoreOnWasm
 class Rem143S3RetriggerGateTest {
 
     private val DT: Float = ParticleFrameSchedule.DT

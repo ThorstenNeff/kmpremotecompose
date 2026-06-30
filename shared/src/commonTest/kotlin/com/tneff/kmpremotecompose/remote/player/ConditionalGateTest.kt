@@ -15,6 +15,7 @@
  */
 package com.tneff.kmpremotecompose.remote.player
 
+import com.tneff.kmpremotecompose.conformance.IgnoreOnWasm
 import com.tneff.kmpremotecompose.conformance.RcCorpus
 import com.tneff.kmpremotecompose.remote.core.document.DocumentReader
 import com.tneff.kmpremotecompose.remote.core.document.RemoteComposeDocument
@@ -81,6 +82,7 @@ class ConditionalGateTest {
     }
 
     @Test
+    @IgnoreOnWasm
     fun realFixture_gateSelectsExactlyOneBranch() {
         // flow_control_checks_test_conditional has two branches: type=GT(a>0) and type=LT(a<0), each
         // gating a DRAW_CIRCLE. Ungated, BOTH circles drew (wrong); the gate must select **at most one**.

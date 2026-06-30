@@ -15,6 +15,7 @@
  */
 package com.tneff.kmpremotecompose.remote.player
 
+import com.tneff.kmpremotecompose.conformance.IgnoreOnWasm
 import com.tneff.kmpremotecompose.conformance.RcCorpus
 import com.tneff.kmpremotecompose.remote.player.core.RenderTimePins
 import kotlin.test.Test
@@ -55,6 +56,7 @@ class RenderTimePinsTest {
         }
     }
 
+    @IgnoreOnWasm
     @Test fun rem138Clocks_areAllRealCorpusDocs() {
         // verify-don't-trust: a pin for a non-existent doc would be a dead entry. Each must exist in corpus.
         val corpus = RcCorpus.corpusNames().map { it.removeSuffix(".rc") }.toSet()

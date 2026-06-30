@@ -15,6 +15,7 @@
  */
 package com.tneff.kmpremotecompose.remote.creation
 
+import com.tneff.kmpremotecompose.conformance.IgnoreOnWasm
 import com.tneff.kmpremotecompose.conformance.RcCorpus
 import com.tneff.kmpremotecompose.remote.core.document.DocumentReader
 import com.tneff.kmpremotecompose.remote.core.operations.Operations
@@ -65,6 +66,7 @@ class BoxLeafByteAnchorTest {
     }
 
     @Test
+    @IgnoreOnWasm
     fun boxLeaf_matchesCBoxOracle_byteForByte() {
         // c_box.rc — decoded shape (REM-96-followup probe, verified):
         //   Header(w=400, h=400, apiLevel=7, profiles=0x200 = PROFILE_ANDROIDX → map-form header),

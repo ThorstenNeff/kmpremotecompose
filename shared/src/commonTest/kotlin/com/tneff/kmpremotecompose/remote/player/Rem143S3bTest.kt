@@ -15,6 +15,7 @@
  */
 package com.tneff.kmpremotecompose.remote.player
 
+import com.tneff.kmpremotecompose.conformance.IgnoreOnWasm
 import com.tneff.kmpremotecompose.conformance.RcCorpus
 import com.tneff.kmpremotecompose.remote.core.document.DocumentReader
 import com.tneff.kmpremotecompose.remote.core.document.RemoteComposeDocument
@@ -37,6 +38,7 @@ import kotlin.test.assertTrue
  * Fresh ctx + player per frame (live-app reality); the SAME inflated doc + [TouchState] carry the
  * cross-frame op-field state (impulse lastFrameTime, touchEventTime).
  */
+@IgnoreOnWasm
 class Rem143S3bTest {
     private class FakeHaptic : HapticActuator {
         val fired = ArrayList<Int>()

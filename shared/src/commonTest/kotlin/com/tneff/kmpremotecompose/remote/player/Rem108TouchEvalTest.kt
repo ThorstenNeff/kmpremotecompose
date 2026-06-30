@@ -15,6 +15,7 @@
  */
 package com.tneff.kmpremotecompose.remote.player
 
+import com.tneff.kmpremotecompose.conformance.IgnoreOnWasm
 import com.tneff.kmpremotecompose.conformance.RcCorpus
 import com.tneff.kmpremotecompose.remote.core.document.DocumentReader
 import com.tneff.kmpremotecompose.remote.core.document.RemoteComposeDocument
@@ -39,6 +40,7 @@ import kotlin.test.assertTrue
  * Deferred (honest scope): the post-release **velocity glide** animation (snap is immediate here) and the
  * live `pointerInput` UI hookup — verified on-device/mouse by test-1/2/3.
  */
+@IgnoreOnWasm
 class Rem108TouchEvalTest {
 
     private fun doc(name: String): RemoteComposeDocument {

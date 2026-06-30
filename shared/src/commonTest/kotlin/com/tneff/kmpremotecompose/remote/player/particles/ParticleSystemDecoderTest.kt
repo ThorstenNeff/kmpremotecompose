@@ -15,6 +15,7 @@
  */
 package com.tneff.kmpremotecompose.remote.player.particles
 
+import com.tneff.kmpremotecompose.conformance.IgnoreOnWasm
 import com.tneff.kmpremotecompose.remote.core.document.DocumentReader
 import com.tneff.kmpremotecompose.remote.core.operations.Operations
 import com.tneff.kmpremotecompose.conformance.RcCorpus
@@ -23,6 +24,7 @@ import kotlin.test.assertEquals
 import kotlin.test.assertTrue
 
 /** REM-143 — the particle-system decoder, validated against the real corpus doc particle.rc. */
+@IgnoreOnWasm
 class ParticleSystemDecoderTest {
 
     @Test fun decodesParticleRcSystems() {

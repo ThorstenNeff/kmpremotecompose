@@ -15,6 +15,7 @@
  */
 package com.tneff.kmpremotecompose.remote.player
 
+import com.tneff.kmpremotecompose.conformance.IgnoreOnWasm
 import com.tneff.kmpremotecompose.conformance.RcCorpus
 import com.tneff.kmpremotecompose.remote.core.document.DocumentReader
 import com.tneff.kmpremotecompose.remote.core.operations.Builtins
@@ -61,6 +62,7 @@ class Rem139Slice1Test {
     }
 
     @Test
+    @IgnoreOnWasm
     fun lookup_resolvesText_andMeasureProducesNonZeroDims() {
         // procedure_look_up1: DataMapLookup loads text into 50; TextMeasure(51 width / 52 height) measure it.
         val ctx = play("procedure_look_up1")
@@ -72,6 +74,7 @@ class Rem139Slice1Test {
     }
 
     @Test
+    @IgnoreOnWasm
     fun dynamicFloatList_isAllocated_andUpdated() {
         // c_modifier_compute_measure: DynamicFloatList(6) allocated; UpdateDynamicFloatList writes index 3.
         val ctx = play("c_modifier_compute_measure")
@@ -81,6 +84,7 @@ class Rem139Slice1Test {
     }
 
     @Test
+    @IgnoreOnWasm
     fun computePosition_listAllocatedWithTwoUpdates() {
         val ctx = play("c_modifier_compute_position")
         val list = ctx.getFloatArray(2097194)

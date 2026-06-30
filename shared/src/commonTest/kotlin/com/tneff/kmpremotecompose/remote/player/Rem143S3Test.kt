@@ -15,6 +15,7 @@
  */
 package com.tneff.kmpremotecompose.remote.player
 
+import com.tneff.kmpremotecompose.conformance.IgnoreOnWasm
 import com.tneff.kmpremotecompose.conformance.RcCorpus
 import com.tneff.kmpremotecompose.remote.core.document.DocumentReader
 import com.tneff.kmpremotecompose.remote.core.document.RemoteComposeDocument
@@ -40,6 +41,7 @@ import kotlin.test.assertTrue
  * Fresh ctx + fresh player per frame (live-app reality); the SAME inflated doc + the SAME [TouchState]
  * carry the cross-frame op-field state (impulse lastFrameTime, particle seed, touchEventTime).
  */
+@IgnoreOnWasm
 class Rem143S3Test {
     private class Rec(c: RemoteContext) : NoOpPaintContext(c) {
         var tx = 0f; var ty = 0f

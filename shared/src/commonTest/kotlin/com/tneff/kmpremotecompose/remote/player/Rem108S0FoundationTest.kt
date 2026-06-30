@@ -15,6 +15,7 @@
  */
 package com.tneff.kmpremotecompose.remote.player
 
+import com.tneff.kmpremotecompose.conformance.IgnoreOnWasm
 import com.tneff.kmpremotecompose.conformance.RcCorpus
 import com.tneff.kmpremotecompose.remote.core.document.DocumentReader
 import com.tneff.kmpremotecompose.remote.core.document.RemoteComposeDocument
@@ -79,6 +80,7 @@ class Rem108S0FoundationTest {
         assertEquals(4, s.componentId); assertEquals(-12.5f, s.offset); assertEquals(1, s.axis)
     }
 
+    @IgnoreOnWasm
     @Test fun paint_defaultVsExplicitNoOp_isRenderIdentical() {
         // The additive `callbacks` param must not perturb the render: defaulted == explicit NoOp, draw-for-draw.
         for (name in listOf("touch1.rc", "touch_wrap.rc", "c_modifier_on_touch_down.rc", "procedure_simple1.rc")) {
@@ -90,6 +92,7 @@ class Rem108S0FoundationTest {
         }
     }
 
+    @IgnoreOnWasm
     @Test fun paint_emitsNothingInS0_evenToARecordingSink() {
         // S0 wires the surface but no producing path: a recording sink must see zero calls through a full paint.
         val sink = RecordingCallbacks()

@@ -15,6 +15,7 @@
  */
 package com.tneff.kmpremotecompose.remote.creation
 
+import com.tneff.kmpremotecompose.conformance.IgnoreOnWasm
 import com.tneff.kmpremotecompose.conformance.RcCorpus
 import com.tneff.kmpremotecompose.remote.core.document.DocumentReader
 import com.tneff.kmpremotecompose.remote.core.document.RemoteComposeWriter
@@ -315,6 +316,7 @@ class MatrixTripletTest {
     // ─── Triple-Pin against corpus fixtures (graceful skip if absent) ─────────
 
     @Test
+    @IgnoreOnWasm
     fun matrixConstant_matchesCorpusFixtureRegion_doubleAnchor_visibleSkip() {
         // Double-pin: MATRIX_CONSTANT (186) is corpus-ABSENT per the order-independent
         // visibility-check below. This test stays as a marker — a future corpus extension
@@ -345,6 +347,7 @@ class MatrixTripletTest {
     }
 
     @Test
+    @IgnoreOnWasm
     fun matrixExpression_matchesCorpusFixtureRegion_tripleAnchor() {
         runCorpusFixtureMatch(
             opcode = Operations.MATRIX_EXPRESSION,
@@ -369,6 +372,7 @@ class MatrixTripletTest {
     }
 
     @Test
+    @IgnoreOnWasm
     fun matrixVectorMath_matchesCorpusFixtureRegion_tripleAnchor() {
         // REM-113-followup-redo (REM-115 leg, assist 2026-06-28): assist's full-inflate scan
         // found MATRIX_VECTOR_MATH(188) corpus-present in cube3d.rc. Real triple-pin against
@@ -456,6 +460,7 @@ class MatrixTripletTest {
     }
 
     @Test
+    @IgnoreOnWasm
     fun matrixTriplet_fixtureCoverage_visibilityCheck() {
         // Order-INDEPENDENT scan: this test does its own corpus inflation; no shared mutable
         // state with the other tests, no empty-escape, no alphabetical-order assumption.

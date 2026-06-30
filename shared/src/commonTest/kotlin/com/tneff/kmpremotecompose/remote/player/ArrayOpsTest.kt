@@ -15,6 +15,7 @@
  */
 package com.tneff.kmpremotecompose.remote.player
 
+import com.tneff.kmpremotecompose.conformance.IgnoreOnWasm
 import com.tneff.kmpremotecompose.remote.core.operations.DataListFloat
 import com.tneff.kmpremotecompose.remote.player.core.RemoteContext
 import com.tneff.kmpremotecompose.remote.player.core.RpnFloatEvaluator
@@ -97,6 +98,7 @@ class ArrayOpsTest {
     }
 
     @Test
+    @IgnoreOnWasm
     fun realFixture_pieChart2_loopBoundResolves() {
         com.tneff.kmpremotecompose.remote.core.operations.Builtins.register()
         val doc = com.tneff.kmpremotecompose.remote.core.document.DocumentReader.inflate(

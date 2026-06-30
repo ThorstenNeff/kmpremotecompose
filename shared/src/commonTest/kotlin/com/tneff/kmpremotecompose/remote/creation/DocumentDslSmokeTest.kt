@@ -15,6 +15,7 @@
  */
 package com.tneff.kmpremotecompose.remote.creation
 
+import com.tneff.kmpremotecompose.conformance.IgnoreOnWasm
 import com.tneff.kmpremotecompose.conformance.RcCorpus
 import com.tneff.kmpremotecompose.conformance.RcDocumentCodec
 import com.tneff.kmpremotecompose.remote.core.operations.draw.DrawCircle
@@ -77,6 +78,7 @@ class DocumentDslSmokeTest {
      * bytes — proves the lifecycle prolog + writer auto-form land the corpus byte-contract.
      */
     @Test
+    @IgnoreOnWasm
     fun procedureSimple1_fullDocument_matchesOracleByteForByte() {
         val oracle = RcCorpus.readFixture("corpus/procedure_simple1.rc")
 
@@ -105,6 +107,7 @@ class DocumentDslSmokeTest {
      * `DrawOval` float slots.
      */
     @Test
+    @IgnoreOnWasm
     fun procedureSimple2_fullDocument_matchesOracleByteForByte() {
         val oracle = RcCorpus.readFixture("corpus/procedure_simple2.rc")
 

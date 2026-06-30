@@ -15,6 +15,7 @@
  */
 package com.tneff.kmpremotecompose.remote.player
 
+import com.tneff.kmpremotecompose.conformance.IgnoreOnWasm
 import com.tneff.kmpremotecompose.conformance.RcCorpus
 import com.tneff.kmpremotecompose.remote.core.document.DocumentReader
 import com.tneff.kmpremotecompose.remote.core.operations.Builtins
@@ -29,6 +30,7 @@ import kotlin.test.assertEquals
  * is in the store when the FloatExpressions that reference it evaluate. server_clock's canvas-content
  * dims (valueIds 43/44 = 500) were 0 before this (→ degenerate → blank).
  */
+@IgnoreOnWasm
 class LayoutWiringTest {
 
     @Test

@@ -15,6 +15,7 @@
  */
 package com.tneff.kmpremotecompose.remote.player
 
+import com.tneff.kmpremotecompose.conformance.IgnoreOnWasm
 import com.tneff.kmpremotecompose.conformance.RcCorpus
 import com.tneff.kmpremotecompose.remote.core.document.DocumentReader
 import com.tneff.kmpremotecompose.remote.core.operations.Builtins
@@ -31,6 +32,7 @@ import kotlin.test.assertTrue
  * → a flat disc. Here we assert the projected vertices are **distinct and non-degenerate** (a real cube
  * projection), proving the matrix engine runs. Visual golden (the wireframe cube) = test-2 sweep.
  */
+@IgnoreOnWasm
 class CubeMatrixTest {
 
     @Test
