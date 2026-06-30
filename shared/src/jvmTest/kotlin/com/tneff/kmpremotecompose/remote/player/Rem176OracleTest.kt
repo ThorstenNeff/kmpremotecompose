@@ -52,17 +52,22 @@ import kotlin.test.assertTrue
  *  - We assert against the RESOLVED text strings (read from `getText(textId)` after Phase-A apply)
  *    instead of comparing PNG bytes — simpler, denser, no font-renderer dependency.
  *
- * **Pinned epoch:** `EPOCH_SAFE_PIN = 1751529600L` is 2026-07-03 00:00:00 UTC. Anchorage's GMT-8h
- * civil offset puts local midnight at `epoch - 8h = epoch - 28800s = 1751500800` (= 2026-07-02
- * 16:00 UTC) — but the doc displays GMT sunrise/sunset (the test verifies the GMT-aligned value
- * the doc encodes). At this date Anchorage has a near-polar-summer day (sun up ~04:30 GMT-8 →
- * ~12:30 UTC; sun down ~23:00 GMT-8 → ~07:00 UTC next day). The pin avoids the polar-day
- * mathematical breakdown that would force `acos(cos_hour_angle)` outside [-1, 1].
+ * **Pinned epoch:** `EPOCH_SAFE_PIN = 1751529600L` is 2025-07-03 00:00:00 UTC (REM-177-Korrektur:
+ * earlier KDoc miscalculated this as "2026-07-03"; the actual epoch-to-civil conversion via the
+ * REM-177 [CivilFromDays] port AND any standard converter is 2025-07-03 — Thursday). Anchorage's
+ * GMT-8h civil offset puts local midnight at `epoch - 8h = epoch - 28800s = 1751500800` (=
+ * 2025-07-02 16:00 UTC) — but the doc displays GMT sunrise/sunset (the test verifies the
+ * GMT-aligned value the doc encodes). At this date Anchorage has a near-polar-summer day (sun up
+ * ~04:30 GMT-8 → ~12:30 UTC; sun down ~23:00 GMT-8 → ~07:00 UTC next day). The pin avoids the
+ * polar-day mathematical breakdown that would force `acos(cos_hour_angle)` outside [-1, 1]. Note:
+ * both 2025-07-03 and 2026-07-03 have day-of-year 184 and effectively identical Anchorage solar
+ * parameters, so the goldens are unaffected by the year-label correction.
  */
 class Rem176OracleTest {
 
     companion object {
-        /** REM-176 pinned epoch — 2026-07-03 00:00:00 UTC. Deterministic golden seed. */
+        /** REM-176 pinned epoch — 2025-07-03 00:00:00 UTC (Thursday). Deterministic golden seed.
+         *  (REM-177-Korrektur: earlier label said "2026-07-03"; CivilFromDays-verified actual.) */
         const val EPOCH_SAFE_PIN: Long = 1751529600L
         // Anchorage coords.
         const val ANCHORAGE_LAT: Double = 61.2181
@@ -133,7 +138,7 @@ class Rem176OracleTest {
         val sunsetHour = ctx.getFloat(98)
         println("[REM-176-Oracle solar_gmt] doc sunrise hour (id=97): $sunriseHour")
         println("[REM-176-Oracle solar_gmt] doc sunset hour  (id=98): $sunsetHour")
-        // Independent oracle: compute sunrise/sunset for Anchorage on 2026-07-03 via standard
+        // Independent oracle: compute sunrise/sunset for Anchorage on 2025-07-03 via standard
         // astronomical formula (Spencer's solar declination + hour-angle).
         val oracle = computeSolarOracle(EPOCH_SAFE_PIN, ANCHORAGE_LAT, ANCHORAGE_LON)
         println("[REM-176-Oracle solar_gmt] oracle sunrise GMT: ${oracle.sunriseHourGMT}")

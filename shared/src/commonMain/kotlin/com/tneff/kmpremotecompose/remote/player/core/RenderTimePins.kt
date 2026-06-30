@@ -81,8 +81,13 @@ object RenderTimePins {
     // -------------------------------------------------------------------------------------------
 
     /**
-     * **REM-176 EPOCH_SAFE_PIN**: 1751529600 = **2026-07-03 00:00:00 UTC**. Chosen because:
-     *  - **Post-merge-date** (golden captured in the future, won't drift as real-time advances).
+     * **REM-176 EPOCH_SAFE_PIN**: 1751529600 = **2025-07-03 00:00:00 UTC** (Thursday). Chosen because:
+     *  - **Past-fixed-date** (Jul-2025): the goldens are pinned to a specific historical instant so
+     *    real-time advancement never drifts them. (REM-177-Korrektur 2026-06-30: an earlier KDoc
+     *    miscalculated this as "2026-07-03"; the actual Unix-epoch-to-civil conversion — verified
+     *    independently via the [CivilFromDays] port AND any standard epoch converter — is
+     *    2025-07-03. Goldens are unaffected: both 2025-07-03 and 2026-07-03 are non-leap July 3s
+     *    with day-of-year 184 and effectively identical solar parameters for Anchorage.)
      *  - **Polar-safe** at Anchorage (61°N): the `acos(cos_hour_angle)` formula in
      *    `experimental_solar_gmt.rc`'s RPN stays in [-1, 1] (no polar-day math break).
      *  - **CLOCK_SAFE-aligned** philosophy: a single shared deterministic timestamp matches the

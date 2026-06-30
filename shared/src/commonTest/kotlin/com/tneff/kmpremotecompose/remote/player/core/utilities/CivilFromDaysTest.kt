@@ -35,15 +35,17 @@ class CivilFromDaysTest {
     @Test
     fun epochSafePin_actualDate_is_2025_07_03_UTC() {
         // REM-177 calendar-correctness pin for EPOCH_SAFE_PIN = 1751529600L (the value REM-176
-        // introduced — but the merged KDoc miscalculated it as "2026-07-03 00:00:00 UTC"; the
-        // actual epoch-second-to-civil-date conversion (verified independently via this Hinnant
-        // port AND any standard epoch converter) is **2025-07-03 00:00:00 UTC**. The miscount
-        // doesn't break the REM-176 goldens — both 2025-07-03 and 2026-07-03 are non-leap July 3s
-        // with day-of-year 184 and (close enough) solar parameters for Anchorage — but the
-        // doc-comment needs a follow-up correction. Pinned here as the **algorithmic truth**.
+        // introduced — and the value REM-177 corrected the KDoc labels for after this Hinnant
+        // port caught the miscalculation). The actual epoch-second-to-civil-date conversion
+        // (verified independently via this port AND any standard epoch converter) is
+        // **2025-07-03 00:00:00 UTC** (Thursday). The original mislabel as "2026-07-03" did not
+        // break the REM-176 goldens — both 2025-07-03 and 2026-07-03 are non-leap July 3s with
+        // day-of-year 184 and effectively identical Anchorage solar parameters — but the labels
+        // are now corrected in RenderTimePins / DesktopRenderSweep / Rem176OracleTest KDocs to
+        // match the algorithmic truth pinned here.
         val days = 1751529600L / 86400L // = 20272
         val (year, month, day) = CivilFromDays.civilFromDays(days)
-        assertEquals(2025L, year, "EPOCH_SAFE_PIN's actual year is 2025 (merged REM-176 KDoc said 2026 — to be corrected)")
+        assertEquals(2025L, year, "EPOCH_SAFE_PIN's actual year is 2025 (REM-176-KDoc-Korrektur via REM-177)")
         assertEquals(7, month)
         assertEquals(3, day)
         assertEquals(184, CivilFromDays.dayOfYear(days)) // Jan=31, Feb=28, Mar=31, Apr=30, May=31, Jun=30, Jul=3 → 184

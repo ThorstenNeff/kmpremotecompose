@@ -94,7 +94,7 @@ fun main(args: Array<String>) {
         val pinnedTime = RenderTimePins.timeFor(name, default = cfg.staticTime)
         // REM-176 — per-doc Unix-epoch pin (defaults to 0L = legacy-Jan-1970 for non-epoch-using
         // docs; the 2 epoch-sensitive docs experimental_solar_gmt + moon_phases resolve via
-        // RenderTimePins.epochFor to EPOCH_SAFE_PIN = 1751529600 = 2026-07-03 00:00:00 UTC).
+        // RenderTimePins.epochFor to EPOCH_SAFE_PIN = 1751529600 = 2025-07-03 00:00:00 UTC).
         // Without this pin those two docs would still render 1970-Werte = misleading 0-shift in
         // the sweep — exactly what test-3's PNG diff would NOT flag.
         val pinnedEpoch = RenderTimePins.epochFor(name, default = 0L)
