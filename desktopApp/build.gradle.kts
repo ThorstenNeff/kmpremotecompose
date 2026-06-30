@@ -21,6 +21,13 @@ dependencies {
     // PROJECT_CONTEXT §5/§8 "kein Dep ohne iOS-Target"-Regel greift nicht (jvm-Test-Scope).
     testImplementation(libs.compose.uiTestJunit4)
     testImplementation(libs.junit)
+
+    // REM-169 S3 — literal serve→fetch→render e2e: the :server HTTP layer + a real Ktor client. Test
+    // scope only (no prod/UI dep on :server); the e2e starts the localhost server, GETs over real HTTP,
+    // and renders the fetched .rc via RemoteComposeApp (this module already has Compose-Desktop/Skiko).
+    testImplementation(projects.server)
+    testImplementation(libs.ktor.client.core)
+    testImplementation(libs.ktor.client.cio)
 }
 
 compose.desktop {

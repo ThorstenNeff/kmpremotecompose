@@ -22,8 +22,10 @@ import io.ktor.http.HttpHeaders
 import io.ktor.http.HttpStatusCode
 import io.ktor.server.application.Application
 import io.ktor.server.application.install
+import io.ktor.server.engine.EmbeddedServer
 import io.ktor.server.engine.embeddedServer
 import io.ktor.server.netty.Netty
+import kotlinx.coroutines.runBlocking
 import io.ktor.server.plugins.statuspages.StatusPages
 import io.ktor.server.request.header
 import io.ktor.server.response.respond
@@ -91,18 +93,36 @@ private fun sha256Hex(bytes: ByteArray): String =
     MessageDigest.getInstance("SHA-256").digest(bytes).joinToString("") { "%02x".format(it) }
 
 /**
- * Start the Dev/Local `.rc` server.
+ * A started Dev/Local server handle: the actual bound [port] (resolves an ephemeral `port = 0`) plus
+ * [close] for clean shutdown. Wraps the Ktor [EmbeddedServer] so callers (e.g. the `:desktopApp` e2e
+ * test) get a Ktor-type-free lifecycle handle.
+ */
+class LocalRcServer internal constructor(
+    val port: Int,
+    private val server: EmbeddedServer<*, *>,
+) : AutoCloseable {
+    override fun close() {
+        server.stop(gracePeriodMillis = 100, timeoutMillis = 500)
+    }
+}
+
+/**
+ * Start the Dev/Local `.rc` server (non-blocking) and return a [LocalRcServer] handle.
  *
  * **🔴 SECURITY (hard, REM-169 §5):** binds **ONLY `127.0.0.1`** (localhost) — **no auth, no TLS**.
  * **NOT `0.0.0.0`, NOT publicly exposed.** Public exposure (auth / rate-limit / TLS / `0.0.0.0` behind a
  * reverse proxy / size+DoS limits) is the **human-gated REM-170**, deliberately NOT shipped here.
+ *
+ * @param port the local port; `0` binds an ephemeral port (read back via [LocalRcServer.port]).
  */
 fun startLocalRcServer(
     port: Int = 8080,
     registry: RcPageRegistry = defaultRcPageRegistry(),
-    wait: Boolean = true,
-) {
-    embeddedServer(Netty, port = port, host = "127.0.0.1") {
+): LocalRcServer {
+    val server = embeddedServer(Netty, port = port, host = "127.0.0.1") {
         rcServingModule(registry)
-    }.start(wait = wait)
+    }
+    server.start(wait = false)
+    val boundPort = runBlocking { server.engine.resolvedConnectors().first().port }
+    return LocalRcServer(boundPort, server)
 }
