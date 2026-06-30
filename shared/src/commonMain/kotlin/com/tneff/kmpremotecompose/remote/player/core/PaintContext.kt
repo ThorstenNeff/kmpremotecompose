@@ -147,6 +147,10 @@ abstract class PaintContext(context: RemoteContext) {
      * [maxWidth], so no caller's behavior changes unless the rendering adapter overrides it. The real
      * ellipsizing implementation lives in the CMP adapter, where the resolved string + text engine are
      * available (it needs to measure arbitrary `prefix + …` strings, not just text-resource substrings).
+     *
+     * REM-160: [leadingEllipsis] truncates from the **front** (`… + suffix`, keeping the right edge) for
+     * left-/centered-overflow (and RTL leading), vs the default trailing `prefix + …` (keeping the left
+     * edge). The base default ignores it.
      */
     open fun drawTextRunClipped(
         textId: Int,
@@ -154,6 +158,7 @@ abstract class PaintContext(context: RemoteContext) {
         x: Float, y: Float,
         rtl: Boolean,
         maxWidth: Float,
+        leadingEllipsis: Boolean = false,
     ) {
         drawTextRun(textId, start, end, 0, 1, x, y, rtl)
     }
