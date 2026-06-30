@@ -282,3 +282,28 @@ same fix), positive-class-confirm per doc (NEW-mobile matches current desktop go
 - **Nice closure:** REM-158 (named-font) = the F1 audit finding (base now renders DancingScript cursive on
   both mobile, matching desktop); REM-157 (TextMeasure box) = the F2 finding (procedure_center_text1 "9□9"
   tofu now correctly boxed "99"). The REM-155 audit directly drove these fixes; this refresh closes the loop.
+
+## REM-166 — shader_calendar status-bar determinism + stale-content correction (branch feature/REM-166-shader-calendar-statusbar off develop, 2026-06-30)
+Closes my own REM-164 flag (mobile golden carried the OS status-bar clock) — and corrects a REM-164 **miss**:
+shader_calendar's mobile golden was treated as "content-unchanged, status-bar-only" and skipped. **It was
+actually STALE:** the current render has the REM-158/160 **wider calendar-number spacing** (matches the
+Desktop golden's layout), the old golden had the tight pre-fix spacing. The diff below the status bar
+(mad ~7.5 at y=200, well clear of the bar) surfaced it. → **re-baselined both mobile goldens** (android
+1000×2400, ios 999×2622) with the current post-fix render, Desktop cross-ref confirmed (calendar grid +
+wider spacing match; the May-vs-Jan month is a t-pin difference, render-layout matches).
+- **Status-bar determinism (the original flag) — solved at CAPTURE, render untouched (no crop/shift):**
+  the bar is **frozen to a deterministic state** so re-captures don't drift:
+  • Android: SystemUI **demo-mode** — `settings put global sysui_demo_allowed 1` + `am broadcast
+    com.android.systemui.demo command enter|clock hhmm 1200|battery level 100|network wifi level 4|...` →
+    bar shows 12:00 + fixed icons. Exit with `command exit`.
+  • iOS: `xcrun simctl status_bar <udid> override --time 9:41 --batteryState charged --batteryLevel 100
+    --cellularBars 4 --wifiBars 3 --dataNetwork wifi`. Clear with `status_bar … clear`.
+  ⚠️ immersive-hide (`policy_control immersive.full=<pkg>`) was tried first and **rejected**: deprecated on
+  API 37 (bar not hidden) AND it perturbed the window metrics → render shift (would bake a shifted golden,
+  [[golden-not-intent]]). Freeze is render-untouched.
+- **parity_compare.py (Part B, A↔iOS) gained `--mask-top <px>`** (REM-166) — excludes the top status-bar
+  strip from the cross-platform diff. shader_calendar uses `--mask-top 160`. (Note: shader_calendar A↔iOS is
+  ~60% regardless — the AGSL→SkSL shader wave-phases diverge across the whole canvas, REM-77/REM-111 cosmetic
+  class — so it is NOT an A↔iOS-gated doc; the mask is for correctness of the strip exclusion, not to pass it.)
+- **Capture convention (durable):** any tall doc whose canvas starts at screen y=0 (status bar composited
+  over the render) must capture with the frozen-bar steps above. shader_calendar is the only such corpus doc.

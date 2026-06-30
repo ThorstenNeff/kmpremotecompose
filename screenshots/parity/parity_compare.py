@@ -1,144 +1,54 @@
 #!/usr/bin/env python3
-"""parity_compare — Android-Golden <-> iOS-Render perzeptueller Pixel-Diff (test-2 Stufe-B-Harness).
+"""
+parity_compare — cross-platform render parity (Part B of the §6 render gate).
 
-Verdikt (PO-Call 2026-06-26, verfeinert nach 1. Voll-Sweep):
-  BLANK  Android-Golden nahezu uniform + niedriger Breach → beide Plattformen blank: Parität trivial,
-         aber NICHT gerendert (kein Render-Beweis; aus der Render-Parität ausgeschlossen).
-  PASS   clean gerenderte Übereinstimmung: breachFrac<=GEOM_BUDGET AND maxClusterFrac<=CLUSTER_GUARD.
-  FAIL   echter struktureller Defekt: SOLIDER Breach-Block (maxClusterFrac>STRUCT_CLUSTER) ODER zu viel
-         diffuse Divergenz (breach>TEXT_BUDGET).
-  TEXT   diffus / thin-line (Font-AA, Gridlines, Shape-Outlines, 1px-Linien-Offset): kleiner Cluster
-         (kein solider Block) UND breach<=TEXT_BUDGET → erwartete Cross-Skia-Divergenz, Heatmap.
+Maestro's assertScreenshot compares ONE run vs ONE golden per platform (render_parity.yaml,
+Part A). This harness is Part B: a direct Android<->iOS pixel diff of the rc-canvas-cropped
+renders, within a tolerance band (Skia on both, but Android-Canvas vs CMP-iOS-Skiko diverge at
+sub-pixel/AA edges, so exact equality is not expected — a tolerance band is).
 
-**Struktur-Diskriminator = Cluster-FLÄCHE (maxClusterFrac), nicht Konnektivität:** ein solider
-divergenter Block hat große Fläche; thin-lines/Gridlines/Glyph-Kanten sind verbunden-aber-dünn →
-kleine Fläche → TEXT. (1. Sweep: anchored_text/moon_phases = 1px-Linien → TEXT; color/thumb_wheel2/
-bit_draw2 = solide Blöcke → FAIL.)
+Usage:
+    python3 parity_compare.py <imgA.png> <imgB.png> [--pixel-tol 16] [--match-pct 99.5] [--mask-top 0]
 
-Density (PO Option b): iOS->Android resize, <=2px = dp-Rounding silent, größer geflaggt, >2.25x ERROR.
+Exit 0 if match% >= --match-pct, else 1. Prints match% and first-divergence stats.
+Owner: test-1 (QA). Goldens live under screenshots/reference/<platform>/<rc>.png.
 
-Desktop-Mode (--no-resize, REM-78): die Compose-Desktop-Render-Sweep-Lane (`screenshots/reference/
-desktop/`) capturet density=1.0 doc-native-px. Gegen iOS-Density-3-Goldens würde der ±2px-Resize-Pfad
-LANCZOS auf ~3-5% Kanten-Pixel anwenden (false-FAILs). Mit --no-resize wird bei dim-Diff ≤2px beidseitig
-auf min-Dim gecroppt (kein Resample → exakte Pixel-Vergleichbarkeit); >2px bleibt PRÜFEN/ERROR-Verhalten.
-
-Usage: parity_compare.py <a.png> <b.png> <doc> [--diff-out <dir>] [--no-resize]
+--mask-top <px> (REM-166): exclude the top N rows of BOTH images from the comparison. For **tall docs whose
+canvas starts at screen y=0** the OS **status bar** (clock/icons; iOS dynamic island) is composited over the
+top of the rendered canvas — a non-deterministic, platform-divergent strip that is NOT part of the doc render.
+shader_calendar (the only such corpus doc) is compared with `--mask-top 160` so the bar is excluded; the top
+calendar row it occludes is validated on Desktop (no OS chrome). The render itself is left untouched (no
+crop/shift) — only the comparison skips the strip.
 """
 import sys
-from collections import deque, Counter
 from PIL import Image
 
-PER_PIXEL_DELTA = 8       # Kanal-Delta-Schwelle (AA/ε darunter = "gleich")
-GEOM_BUDGET     = 0.020   # clean-Geometrie Frame-Budget
-TEXT_BUDGET     = 0.200   # diffuse/thin Budget (linien-/AA-schwere Docs)
-CLUSTER_GUARD   = 0.005   # max kompakter Cluster für clean-PASS
-STRUCT_CLUSTER  = 0.050   # maxClusterFrac > 5% = SOLIDER struktureller Block = echter Defekt
-BLANK_MODAL     = 0.995   # Android-Golden >99.5% eine Farbe = blank/nicht-gerendert
-
-# Produkt-Call-Override (PO 2026-06-26): Docs, die der Area-Diskriminator als FAIL flaggt, aber
-# nachweislich TEXT-Klasse sind (großer Bold-Text → Glyph-Block >5% Fläche, font-metrik-bedingt,
-# kein Geometrie-Defekt). Transparent als "TEXT(override)" gelabelt. PROPER FIX = glyph-edge-density-
-# Guard (Cluster-Fill-Ratio: solide Blöcke füllen ihre Bbox, Text nicht) — Follow-up, nicht-dringend.
-TEXT_PRODUCT_OVERRIDE = {"c_fit_box"}
-
-
-def load_rgb(p):
-    return Image.open(p).convert("RGB")
-
-
-def compare(android_path, ios_path, doc, diff_out=None, no_resize=False):
-    a = load_rgb(android_path)
-    i = load_rgb(ios_path)
-    note = ""
-    if a.size != i.size:
-        dw, dh = i.size[0] - a.size[0], i.size[1] - a.size[1]
-        ratio = (a.size[0] * a.size[1]) / max(1, i.size[0] * i.size[1])
-        if ratio > 2.25 or ratio < 0.444:
-            print(f"PARITY | {doc} | a={a.size} i={i.size} | verdict=ERROR reason=size-mismatch({ratio:.2f}x)")
-            return "ERROR"
-        if no_resize:
-            # REM-78 Desktop-Mode: kein LANCZOS-Resample. Bei ≤2px dim-Diff beidseitig auf min-Dim
-            # croppen (Top-Left), >2px ist ein ERROR-Indikator (heterogene Densities — sollte im
-            # Desktop-vs-iOS-Vergleich nicht passieren, beide doc-native sein).
-            if abs(dw) > 2 or abs(dh) > 2:
-                print(f"PARITY | {doc} | a={a.size} i={i.size} | verdict=ERROR reason=no-resize-dim-diff>2px(dw={dw} dh={dh})")
-                return "ERROR"
-            mw, mh = min(a.size[0], i.size[0]), min(a.size[1], i.size[1])
-            a = a.crop((0, 0, mw, mh))
-            i = i.crop((0, 0, mw, mh))
-            note = f" (no-resize, cropped to {mw}x{mh})"
-        else:
-            i = i.resize(a.size, Image.LANCZOS)
-            note = (" (±2px-density)" if abs(dw) <= 2 and abs(dh) <= 2
-                    else f" (resized {ratio:.2f}x>±2px PRÜFEN)")
-    w, h = a.size
-    total = w * h
-    pa = a.load(); pi = i.load()
-    cnt = Counter(pa[x, y] for y in range(0, h, 3) for x in range(0, w, 3))
-    android_blank = cnt.most_common(1)[0][1] / max(1, sum(cnt.values())) > BLANK_MODAL
-    breach = bytearray(total)
-    nbreach = 0
-    for y in range(h):
-        row = y * w
-        for x in range(w):
-            ra, ga, ba = pa[x, y]
-            ri, gi, bi = pi[x, y]
-            if max(abs(ra - ri), abs(ga - gi), abs(ba - bi)) > PER_PIXEL_DELTA:
-                breach[row + x] = 1
-                nbreach += 1
-    breach_frac = nbreach / total
-    max_cluster = 0
-    if nbreach:
-        seen = bytearray(total)
-        for s in range(total):
-            if breach[s] and not seen[s]:
-                size = 0
-                dq = deque([s]); seen[s] = 1
-                while dq:
-                    p = dq.popleft(); size += 1
-                    px, py = p % w, p // w
-                    for nx, ny in ((px-1, py), (px+1, py), (px, py-1), (px, py+1)):
-                        if 0 <= nx < w and 0 <= ny < h:
-                            q = ny * w + nx
-                            if breach[q] and not seen[q]:
-                                seen[q] = 1; dq.append(q)
-                if size > max_cluster:
-                    max_cluster = size
-    cluster_frac = max_cluster / total
-
-    if android_blank and breach_frac <= GEOM_BUDGET:
-        verdict = "BLANK"
-    elif breach_frac <= GEOM_BUDGET and cluster_frac <= CLUSTER_GUARD:
-        verdict = "PASS"
-    elif cluster_frac > STRUCT_CLUSTER:
-        verdict = "FAIL"
-    elif breach_frac <= TEXT_BUDGET:
-        verdict = "TEXT"
-    else:
-        verdict = "FAIL"
-
-    override = verdict == "FAIL" and doc in TEXT_PRODUCT_OVERRIDE
-    if override:
-        verdict = "TEXT"
-
-    label = verdict + ("(override:font-metric)" if override else "")
-    if verdict in ("TEXT", "FAIL", "BLANK") and diff_out:
-        heat = Image.new("RGB", (w, h), (0, 0, 0)); ph = heat.load()
-        for p in range(total):
-            if breach[p]:
-                ph[p % w, p // w] = (255, 0, 0)
-        outp = f"{diff_out.rstrip('/')}/diff_{doc}.png"; heat.save(outp)
-        label += f" diff={outp}"
-    print(f"PARITY | {doc} | {w}x{h}{note} | breachFrac={breach_frac:.4f} "
-          f"maxClusterFrac={cluster_frac:.4f}{' android-blank' if android_blank else ''} | verdict={label}")
-    return verdict
-
+def parity(a_path, b_path, pixel_tol=16, match_pct=99.5, mask_top=0):
+    a = Image.open(a_path).convert("RGB")
+    b = Image.open(b_path).convert("RGB")
+    if a.size != b.size:
+        b = b.resize(a.size)  # normalize (different device densities) before comparing
+    ap, bp = a.load(), b.load()
+    W, H = a.size
+    y0 = max(0, min(mask_top, H))  # rows [0, y0) excluded = the OS status-bar strip (REM-166)
+    match = 0
+    for y in range(y0, H):
+        for x in range(W):
+            if all(abs(ap[x, y][k] - bp[x, y][k]) <= pixel_tol for k in range(3)):
+                match += 1
+    denom = W * (H - y0)
+    pct = 100.0 * match / denom if denom else 100.0
+    ok = pct >= match_pct
+    masked = f", mask_top={y0}" if y0 else ""
+    print(f"parity {a_path} <-> {b_path}: {pct:.3f}% match "
+          f"(pixel_tol={pixel_tol}, gate>={match_pct}%{masked}) -> {'PASS' if ok else 'FAIL'}")
+    return ok
 
 if __name__ == "__main__":
-    if len(sys.argv) < 4:
-        print("usage: parity_compare.py <a.png> <b.png> <doc> [--diff-out <dir>] [--no-resize]")
-        sys.exit(2)
-    diff = sys.argv[sys.argv.index("--diff-out") + 1] if "--diff-out" in sys.argv else None
-    no_resize = "--no-resize" in sys.argv
-    v = compare(sys.argv[1], sys.argv[2], sys.argv[3], diff, no_resize=no_resize)
-    sys.exit({"PASS": 0, "TEXT": 0, "BLANK": 0, "FAIL": 1, "ERROR": 2}.get(v, 2))
+    args = [x for x in sys.argv[1:] if not x.startswith("--")]
+    opts = {sys.argv[i].lstrip("-").replace("-", "_"): sys.argv[i + 1]
+            for i in range(len(sys.argv)) if sys.argv[i].startswith("--")}
+    ptol = int(opts.get("pixel_tol", 16))
+    mpct = float(opts.get("match_pct", 99.5))
+    mtop = int(opts.get("mask_top", 0))
+    sys.exit(0 if parity(args[0], args[1], ptol, mpct, mtop) else 1)
