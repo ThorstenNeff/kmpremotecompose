@@ -20,6 +20,7 @@ import com.tneff.kmpremotecompose.remote.core.operations.TextFromFloat
 import com.tneff.kmpremotecompose.remote.core.operations.TextLookup
 import com.tneff.kmpremotecompose.remote.core.operations.TextMeasure
 import com.tneff.kmpremotecompose.remote.core.operations.TextMerge
+import com.tneff.kmpremotecompose.remote.core.operations.TextTransform
 import com.tneff.kmpremotecompose.remote.core.operations.draw.DrawText
 import com.tneff.kmpremotecompose.remote.core.operations.draw.DrawTextAnchored
 import com.tneff.kmpremotecompose.remote.core.operations.draw.DrawTextOnPath
@@ -219,3 +220,35 @@ fun coreTextBoolParam(id: Int, value: Boolean): CoreText.Param =
 private fun coreTextIntBeBytes(v: Int): ByteArray = byteArrayOf(
     (v ushr 24).toByte(), (v ushr 16).toByte(), (v ushr 8).toByte(), v.toByte(),
 )
+
+/**
+ * `TEXT_TRANSFORM` (REM-149-S2) — apply [operation] (e.g. upper/lower/capitalize/...) to the
+ * substring `[start, start + len)` of the text registered at [srcId1], binding the result to a
+ * freshly-allocated region-0 text id. Returns the allocated id.
+ *
+ * Wire shape (21B fixed-width BE):
+ *   `opcode 0xC7 (1B) + textId 4B + srcId1 4B + start 4B float + len 4B float + operation 4B int`.
+ *
+ * **Inputs are `Float`-typed (W14).** [start] / [len] may be NaN-encoded variable refs
+ * (`Float.fromBits(...)`) — the wire's `WireBuffer.writeFloat(v) = writeInt(v.toRawBits())` write
+ * path preserves signaling-NaN payloads byte-exact. A `Number.toFloat()` intermediate would
+ * canonicalise NaN payloads and break the corpus byte-anchor.
+ *
+ * **Profile.** TEXT_TRANSFORM lives in the AndroidX overlay — the surrounding `document(...)` must
+ * open with a profile carrying it (e.g. `Profile(operationsProfiles = Operations.PROFILE_ANDROIDX,
+ * ...)`).
+ *
+ * **Corpus convention** (empirically decoded from `demo_text_transform.rc`): the `len = -1.0f`
+ * literal means "to end of source" (the standard "rest of string" sentinel mirrored from upstream
+ * `String.substring` semantics).
+ */
+fun RemoteComposeContext.textTransform(
+    srcId1: Int,
+    start: Float,
+    len: Float,
+    operation: Int,
+): Int {
+    val id = ids.nextId()
+    add(TextTransform(textId = id, srcId1 = srcId1, start = start, len = len, operation = operation))
+    return id
+}
