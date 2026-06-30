@@ -92,7 +92,13 @@ fun main(args: Array<String>) {
         // fällt sie auf den user/cfg-Wert (default 0) zurück. Eliminiert explizit-`--t`-Workaround
         // (REM-137-Successor: shared seam, kein per-target-Drift). Capture-Determinismus.
         val pinnedTime = RenderTimePins.timeFor(name, default = cfg.staticTime)
-        val result = renderOne(rcFile.readBytes(), pinnedTime, cfg.density)
+        // REM-176 — per-doc Unix-epoch pin (defaults to 0L = legacy-Jan-1970 for non-epoch-using
+        // docs; the 2 epoch-sensitive docs experimental_solar_gmt + moon_phases resolve via
+        // RenderTimePins.epochFor to EPOCH_SAFE_PIN = 1751529600 = 2026-07-03 00:00:00 UTC).
+        // Without this pin those two docs would still render 1970-Werte = misleading 0-shift in
+        // the sweep — exactly what test-3's PNG diff would NOT flag.
+        val pinnedEpoch = RenderTimePins.epochFor(name, default = 0L)
+        val result = renderOne(rcFile.readBytes(), pinnedTime, cfg.density, pinnedEpoch)
         val status = when {
             result.throwMsg != null -> "ERROR"
             result.drawCount == 0   -> "BLANK"
@@ -132,7 +138,7 @@ private data class RenderResult(
     val throwMsg: String?,
 )
 
-private fun renderOne(rcBytes: ByteArray, staticTime: Float, density: Float): RenderResult {
+private fun renderOne(rcBytes: ByteArray, staticTime: Float, density: Float, epochSeconds: Long = 0L): RenderResult {
     val doc: RemoteComposeDocument = try {
         DocumentReader.inflate(rcBytes)
     } catch (t: Throwable) {
@@ -168,7 +174,7 @@ private fun renderOne(rcBytes: ByteArray, staticTime: Float, density: Float): Re
     // ImageComposeScene's local Density — so density-referencing ops AND CMP dp-conversion see
     // the same density (mirrors what Android/iOS device-rendering does).
     val scene = ImageComposeScene(width = w, height = h, density = Density(density)) {
-        RenderDocCanvas(doc, ctx, w, h, staticTime, { pc -> paintContextRef = pc }) { thrown = it }
+        RenderDocCanvas(doc, ctx, w, h, staticTime, epochSeconds, { pc -> paintContextRef = pc }) { thrown = it }
     }
     return try {
         val skiaImage = scene.render(nanoTime = 0L)
@@ -190,6 +196,7 @@ private fun RenderDocCanvas(
     pxW: Int,
     pxH: Int,
     staticTime: Float,
+    epochSeconds: Long,
     onPaintContext: (ComposePaintContext) -> Unit,
     onThrow: (String) -> Unit,
 ) {
@@ -209,6 +216,7 @@ private fun RenderDocCanvas(
                     doc, pc,
                     frameTimeSeconds = 0f,
                     staticTimeSeconds = staticTime,
+                    epochSeconds = epochSeconds,
                 )
             }
         } catch (t: Throwable) {
