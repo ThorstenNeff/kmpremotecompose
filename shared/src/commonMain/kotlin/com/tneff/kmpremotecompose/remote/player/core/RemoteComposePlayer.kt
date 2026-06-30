@@ -78,6 +78,15 @@ class RemoteComposePlayer(val context: RemoteContext = RemoteContext()) {
         surfaceWidth: Float = -1f,
         surfaceHeight: Float = -1f,
         staticTimeSeconds: Float = 0f,
+        // REM-176 — Unix-epoch seconds for `ID_EPOCH_SECOND` seeding. Distinct from `staticTimeSeconds`
+        // (player-relative time, clocks pin to 12:00 at 0f) — epoch is wall-clock absolute Unix-time
+        // and drives time-of-year-dependent docs (`experimental_solar_gmt.rc` solar position,
+        // `moon_phases.rc` moon phase). Default 0L = the existing "Jan 1 1970" semantics, byte-faithful
+        // for callers that never set epoch (preserves the 173-conformance for non-epoch-using docs).
+        // The render-sweep harness MUST pin a fixed `EPOCH_SAFE_PIN` for the 2 affected docs so the
+        // goldens are deterministic (real-now would rebase goldens daily — golden-not-intent-oracle).
+        // The live app passes real Unix-epoch from `System.currentTimeMillis()/1000`.
+        epochSeconds: Long = 0L,
         sensorSource: SensorSource = NoOpSensorSource,
         touchState: TouchState? = null,
         hapticActuator: HapticActuator = NoOpHapticActuator,
@@ -114,7 +123,7 @@ class RemoteComposePlayer(val context: RemoteContext = RemoteContext()) {
         // REM-93: seed ID_DENSITY with the doc's GENERATION density (header.density), not the device
         // density — the doc-px canvas (REM-51) is generation-density space, so FLOAT_DENSITY-referencing
         // coords must resolve against it for cross-target parity. Fallback 1f if a doc carries no header.
-        context.seedSystemVariables(docW, docH, timeSeed, document.header?.density ?: 1f)
+        context.seedSystemVariables(docW, docH, timeSeed, document.header?.density ?: 1f, epochSeconds)
         // REM-101 (D5): seed the sensor ids this doc reads (17–26) from the host [sensorSource] — LIVE
         // mode ONLY, so static renders stay deterministic (goldens / REM-78 sweep / 173-conformance
         // untouched). An axis the source can't provide (read==null) is left at its 0f default
