@@ -16,12 +16,15 @@
 package com.tneff.kmpremotecompose.remote.player.compose
 
 import androidx.compose.ui.graphics.Canvas
+import androidx.compose.ui.graphics.PathMeasure
 import androidx.compose.ui.text.font.FontFamily
 import com.tneff.kmpremotecompose.remote.core.operations.BitmapFontData
 import com.tneff.kmpremotecompose.remote.core.operations.draw.PaintData
 import com.tneff.kmpremotecompose.remote.player.core.ComputedTextLayout
 import com.tneff.kmpremotecompose.remote.player.core.PaintContext
 import com.tneff.kmpremotecompose.remote.player.core.RemoteContext
+import kotlin.math.PI
+import kotlin.math.atan2
 
 /**
  * The single Compose-Multiplatform paint adapter (L2-S1 scaffold) — **Android and iOS from one
@@ -231,8 +234,64 @@ class ComposePaintContext(
         if (r.drawTextRun(c, text, start, end, x, y, rtl)) context.incrementDrawCount()
     }
 
+    /**
+     * REM-45 — draw text along a path (`DRAW_TEXT_ON_PATH`). Upstream defers to Android's native
+     * `Canvas.drawTextOnPath(text, path, hOffset, vOffset, paint)`; CMP has no such primitive, so we
+     * replicate it per glyph via [PathMeasure] (the same Skiko path API the geometry adapter already uses
+     * for `matrixFromPath` / stamped path effects):
+     *
+     * - [hOffset] is the start distance **along** the path; each glyph advances the pen by its measured
+     *   width, and is placed with its horizontal **centre** on the path at `pen + w/2` (Android advances
+     *   glyph-by-glyph along the curve). The glyph is rotated to the path **tangent** at that point.
+     * - [vOffset] is the perpendicular offset from the path (the glyph baseline in the rotated frame).
+     * - A glyph whose centre falls outside `[0, pathLength]` is skipped (text running past the path end is
+     *   not drawn — Android clips it), so an `hOffset` past the end yields nothing rather than wrapping.
+     *
+     * NaN-id offsets are already resolved upstream (`DrawTextOnPath.updateVariables` → `mOut*`), so the
+     * floats arriving here are concrete. **Parity is approximate (flagged, GAP-class):** exact per-glyph
+     * hinting/spacing vs Android's native shaper can sub-pixel diverge; the render-sweep oracle gates the
+     * visual result. Surrogate pairs are kept intact (advanced as one cluster). No `.rc`/wire touch.
+     */
     override fun drawTextOnPath(textId: Int, pathId: Int, hOffset: Float, vOffset: Float) {
-        // Approximated/deferred (flagged): needs a built Path (dev-2) + PathMeasure — L2-D1 follow-on.
+        val c = canvas ?: return
+        val r = textRenderer ?: return
+        val text = context.getText(textId) ?: return
+        if (text.isEmpty()) return
+        val path = PathGeometry.buildPath(context, pathId, 0f, 1f, null)
+        if (path.isEmpty) return
+        val measure = PathMeasure().apply { setPath(path, false) }
+        val len = measure.length
+        if (len <= 0f) return
+
+        val bounds = FloatArray(4)
+        var pen = hOffset
+        var drew = false
+        var i = 0
+        while (i < text.length) {
+            // Keep a surrogate pair together as one glyph cluster (BMP chars advance by one).
+            val clusterLen =
+                if (text[i].isHighSurrogate() && i + 1 < text.length && text[i + 1].isLowSurrogate()) 2 else 1
+            val glyph = text.substring(i, i + clusterLen)
+            r.getTextBounds(glyph, 0, -1, 0, bounds)
+            val w = bounds[2]
+            val mid = pen + w / 2f
+            if (mid in 0f..len) {
+                val pos = measure.getPosition(mid)
+                val tangent = measure.getTangent(mid)
+                val angleDegrees = (atan2(tangent.y, tangent.x) * 180.0 / PI).toFloat()
+                c.save()
+                c.translate(pos.x, pos.y)
+                c.rotate(angleDegrees)
+                // Centre the glyph on the path point (x = -w/2) and offset perpendicular by vOffset.
+                if (r.drawTextRun(c, glyph, 0, -1, -w / 2f, vOffset, rtl = false)) drew = true
+                c.restore()
+            }
+            pen += w
+            i += clusterLen
+        }
+        // REM-120: one text-on-path primitive that emitted at least one glyph = one honest draw (mirrors
+        // drawTextRun/geometry emit). A path/text that produced nothing counts zero.
+        if (drew) context.incrementDrawCount()
     }
 
     override fun drawBitmapFontText(
