@@ -31,6 +31,7 @@ import com.tneff.kmpremotecompose.remote.core.operations.layout.LayoutContent
 import com.tneff.kmpremotecompose.remote.core.operations.layout.LoopStart
 import com.tneff.kmpremotecompose.remote.core.operations.layout.RootContentBehavior
 import com.tneff.kmpremotecompose.remote.core.operations.layout.ScrollModifier
+import com.tneff.kmpremotecompose.remote.core.operations.layout.ValueFloatExpressionChangeAction
 import com.tneff.kmpremotecompose.remote.core.operations.layout.ValueIntegerChangeAction
 // (TapState is in the same package — no import needed)
 import com.tneff.kmpremotecompose.remote.core.operations.layout.TouchExpression
@@ -172,11 +173,37 @@ class RemoteComposePlayer(val context: RemoteContext = RemoteContext()) {
         // (CONDITIONAL_OPERATIONS skips its block when false — REM-41); LOOP_START is intercepted by an
         // isolated branch (REM-58) that triggers ONLY on a loop, so non-loop docs walk byte-identically.
         val ops = document.operations
+        // REM-175 cross-frame counter-pattern: a tap-mutated value (e.g. a hochzählenden Counter
+        // bound to a DATA_FLOAT) must SURVIVE the next frame's Phase-A reset. Without this, every
+        // Phase-A walk would re-apply DATA_FLOAT(initial) and the floatExpression(`c + 1`) would
+        // always evaluate against the initial → counter plateaus at `initial + 1`. The fix: each
+        // VariableSupport.apply() is **skipped** for an id that an override owns this frame; the
+        // overrides themselves are then materialised on the store BEFORE the FloatExpression reads
+        // them. Same pattern for the int side (no current corpus exercises it, but symmetry +
+        // future-proofing). Null tapState (S0/S1 paths) ⇒ no override map, behaviour unchanged.
         walkGated(ops, 0, ops.size, paintPhase = false, paint) { op ->
             if (op is VariableSupport) {
                 op.updateVariables(context)
-                op.apply(context)
+                val skip = when (op) {
+                    is com.tneff.kmpremotecompose.remote.core.operations.FloatConstant ->
+                        tapState?.floatOverrides?.containsKey(op.id) == true
+                    is com.tneff.kmpremotecompose.remote.core.operations.IntegerConstant ->
+                        tapState?.intOverrides?.containsKey(op.id) == true
+                    else -> false
+                }
+                if (!skip) op.apply(context)
             }
+        }
+        // REM-175 — overrides land into the store BEFORE any downstream FloatExpression / etc. would
+        // read them. We re-apply here AFTER the Phase-A walk's data-binders skipped overridden ids,
+        // so the override beats the would-be reset. FloatExpression's own apply() above already ran
+        // with the previous (override-fresh) store; that's correct for a counter because the
+        // expression `counter + 1` reads `counter` directly and we want the FRESH overridden value
+        // to be the basis for next-frame's run. The current frame's expression result reflects
+        // last frame's counter value, which is what the dispatch action will then snapshot below.
+        if (tapState != null) {
+            for ((id, v) in tapState.floatOverrides) context.loadFloat(id, v)
+            for ((id, v) in tapState.intOverrides) context.loadInt(id, v)
         }
         // REM-108 S2: click dispatch — AFTER Phase A (doc DATA_INT defaults applied) and BEFORE the paint
         // walk, so a tap-mutated value (1) overrides the default and (2) renders this same frame. LIVE-only
@@ -332,6 +359,10 @@ class RemoteComposePlayer(val context: RemoteContext = RemoteContext()) {
         }
         // Persist click-mutated ints across the per-frame-fresh context (override the Phase-A defaults).
         for ((id, v) in tap.intOverrides) context.loadInt(id, v)
+        // REM-175 — same persistence for click-mutated floats (Path-A counter pattern). Re-applied
+        // here AFTER Phase-A's DATA_FLOAT defaults so subsequent reads (e.g. next frame's
+        // FloatExpression evaluating `counter + 1`) see the accumulated value, not the initial.
+        for ((id, v) in tap.floatOverrides) context.loadFloat(id, v)
     }
 
     /** Fire every [opcode] modifier on [target]: run its action block (Option B walk to the matching
@@ -350,13 +381,25 @@ class RemoteComposePlayer(val context: RemoteContext = RemoteContext()) {
     }
 
     /** Execute one action op (Option B runtime). S2 wires the integer-set action (the corpus click payload),
-     *  recording it into the persistent overrides + the `<valueId>=<value>` echo. Other action types
-     *  (`ValueFloatExpressionChange` / `ValueStringChange` / `HostAction`) are deferred (D2) and skipped. */
+     *  recording it into the persistent overrides + the `<valueId>=<value>` echo. REM-175 adds the
+     *  float-expression-change dispatch (the Path-A counter-pattern action: read the CURRENT value
+     *  of `expressionId` from the float store — which a FloatExpression Phase-A producer just
+     *  evaluated this frame as e.g. `counter + 1` — and persist it onto `targetValueId` so the next
+     *  frame's Phase-A walk re-reads the accumulated counter). Other action types
+     *  (`ValueStringChange` / `HostAction`) are deferred (D2) and skipped. */
     private fun runAction(op: Operation, tap: TapState) {
         when (op) {
             is ValueIntegerChangeAction -> {
                 tap.intOverrides[op.valueId] = op.value
                 lastActionEcho = "${op.valueId}=${op.value}"
+            }
+            is ValueFloatExpressionChangeAction -> {
+                // op.valueId = target float-id to write; op.value = id of a FloatExpression whose
+                // current evaluated value we read (computed earlier this frame by FloatExpression's
+                // Phase-A apply()). Snapshot it into floatOverrides for cross-frame persistence.
+                val v = context.getFloat(op.value)
+                tap.floatOverrides[op.valueId] = v
+                lastActionEcho = "${op.valueId}=$v"
             }
             else -> {}
         }

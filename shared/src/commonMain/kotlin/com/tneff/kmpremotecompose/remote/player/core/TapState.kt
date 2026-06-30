@@ -46,6 +46,15 @@ class TapState {
     /** Click-mutated integer values (`valueId → value`), re-applied each frame so a tap's effect persists. */
     val intOverrides: MutableMap<Int, Int> = mutableMapOf()
 
+    /**
+     * REM-175 — click-mutated float values (`valueId → value`), re-applied each frame so a tap's
+     * effect persists. Symmetric to [intOverrides] for the float-store side: the float-counter
+     * Path-A pattern (DATA_FLOAT + FloatExpression `c+1` + `VALUE_FLOAT_EXPRESSION_CHANGE_ACTION(c,
+     * c+1)`) writes its accumulating result here, so subsequent frames keep counting from the new
+     * value instead of resetting to the DATA_FLOAT initial.
+     */
+    val floatOverrides: MutableMap<Int, Float> = mutableMapOf()
+
     /** Enqueue a press at doc-space ([x], [y]). */
     fun down(x: Float, y: Float) { queue.addLast(Event(Phase.DOWN, x, y)) }
 
