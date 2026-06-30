@@ -55,19 +55,37 @@ class Rem143S3bTest {
         )
     }
 
+    /**
+     * REM-152: the t=0 auto-start (our `id29=0` §0 *visual*-floor default) must NOT auto-buzz at launch —
+     * the haptic fire is gated on a real touch (upstream waits for touch). This is the cold-launch-flakiness
+     * fix: no race-prone auto-fire at all.
+     */
     @Test
-    fun haptic_firesOncePerTrigger_notOnProcessFrames() {
+    fun haptic_doesNotAutoFireAtLaunch_withoutTouch() {
         Builtins.register()
         val doc = DocumentReader.inflate(RcCorpus.readFixture("corpus/haptic_demo_demo_haptic1.rc"))
         val touch = TouchState(); val haptic = FakeHaptic()
-        frame(doc, touch, haptic, 0f)                  // initial pass (Δt=0) → fire once (type 8)
-        assertEquals(listOf(8), haptic.fired, "haptic must fire once on the impulse initial pass")
-        frame(doc, touch, haptic, 0.05f)               // process frame within [0,0.1] → must NOT refire
+        // Live cold-launch frames, NO touch — the impulse auto-starts (id29=0) but the haptic must stay silent.
+        for (t in listOf(0f, 0.05f, 0.2f, 1.0f)) frame(doc, touch, haptic, t)
+        assertTrue(haptic.fired.isEmpty(), "no auto-buzz at launch without a touch (REM-152), got ${haptic.fired}")
+    }
+
+    @Test
+    fun haptic_firesOnTouch_oncePerTrigger_notOnProcessFrames() {
+        Builtins.register()
+        val doc = DocumentReader.inflate(RcCorpus.readFixture("corpus/haptic_demo_demo_haptic1.rc"))
+        val touch = TouchState(); val haptic = FakeHaptic()
+        frame(doc, touch, haptic, 0f)                  // launch, no touch → silent
+        frame(doc, touch, haptic, 0.2f)                // window elapsed → re-arm, still silent
+        assertTrue(haptic.fired.isEmpty(), "pre-touch must be silent, got ${haptic.fired}")
+        frame(doc, touch, haptic, 0.3f, tapAt = 150f to 150f) // tap (id29=0.3) → touch-triggered fire
+        assertEquals(listOf(8), haptic.fired, "a touch must fire the haptic once (type 8)")
+        frame(doc, touch, haptic, 0.35f)               // process frame within [0.3,0.4] → must NOT refire
         assertEquals(listOf(8), haptic.fired, "haptic must NOT refire on process frames")
-        frame(doc, touch, haptic, 0.2f)                // 0.2 > 0.1 → window elapsed → re-arm, no fire
+        frame(doc, touch, haptic, 0.5f)                // 0.5 > 0.4 → window elapsed → re-arm, no fire
         assertEquals(listOf(8), haptic.fired, "elapsed window must not fire haptic")
-        frame(doc, touch, haptic, 0.3f, tapAt = 150f to 150f) // tap re-triggers (id29=0.3) → fire again
-        assertEquals(listOf(8, 8), haptic.fired, "a re-trigger tap must fire the haptic again (one per trigger)")
+        frame(doc, touch, haptic, 0.6f, tapAt = 150f to 150f) // second tap → fire again (one per trigger)
+        assertEquals(listOf(8, 8), haptic.fired, "a re-trigger tap must fire the haptic again")
     }
 
     @Test

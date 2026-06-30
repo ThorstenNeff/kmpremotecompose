@@ -116,6 +116,11 @@ class RemoteComposePlayer(val context: RemoteContext = RemoteContext()) {
             // its [startAt, startAt+duration] window; a tap moves the window to the tap time. Default 0f ⇒
             // auto-animation from t=0 (§0 floor). Static mode never runs this → id29 stays 0 (deterministic).
             context.loadFloat(RemoteContext.ID_TOUCH_EVENT_TIME, touchState.touchEventTime)
+            // REM-152: gate the haptic fire on a real touch having occurred (latched in TouchState). The
+            // visual auto-animation (§0 floor) ignores this; only runImpulse's HapticFeedback fire consults
+            // it → no t=0 auto-buzz at launch (upstream waits for touch), and the reliable in-window
+            // touch-fire is the only path that buzzes.
+            context.touchOccurred = touchState.hasTouched
         }
         // RootContentBehavior doc→surface scaling (REM-36): when a surface box is given, apply
         // translate(align) then scale(doc→surface) — upstream `CoreDocument` order — so doc-space
@@ -438,11 +443,15 @@ class RemoteComposePlayer(val context: RemoteContext = RemoteContext()) {
         val isInitialPass = impulse.lastFrameTime.isNaN()
         val dt = if (live && !isInitialPass) now - impulse.lastFrameTime else 0f
         context.loadFloat(RemoteContext.ID_ANIMATION_DELTA_TIME, dt)
-        // REM-143 S3b: on the INITIAL pass (the (re-)trigger frame), fire the body's HapticFeedback (mList)
-        // ONCE — upstream runs mList (incl. HapticFeedback.apply → context.hapticEffect) on mInitialPass.
-        // LIVE only (no buzz on static/golden); process frames (lastFrameTime set) don't refire → exactly
-        // one pulse per (re-)trigger. Desktop/Web actuators are no-ops (capability-floor).
-        if (live && isInitialPass) {
+        // REM-143 S3b / REM-152: on the INITIAL pass (the (re-)trigger frame), fire the body's HapticFeedback
+        // (mList) ONCE — upstream runs mList (incl. HapticFeedback.apply → context.hapticEffect) on
+        // mInitialPass. LIVE only (no buzz on static/golden); process frames (lastFrameTime set) don't refire
+        // → exactly one pulse per (re-)trigger. **REM-152: gated on [RemoteContext.touchOccurred]** so the
+        // t=0 auto-start (our id29=0 §0 *visual*-floor default) does NOT auto-buzz at launch — upstream waits
+        // for touch (id29=-MAX). The visual auto-animation above is unaffected (floor unchanged); only a real
+        // touch-triggered impulse buzzes (and that path is in-window/same-paint → reliable, fixing the ~25%
+        // cold-launch flakiness). Desktop/Web actuators are no-ops (capability-floor).
+        if (live && isInitialPass && context.touchOccurred) {
             for (j in bodyStart until mListEnd) (ops[j] as? HapticFeedback)?.let { context.hapticEffect(it.hapticFeedbackType) }
         }
         walkGated(ops, bodyStart, bodyEnd, paintPhase = true, paint) { op ->
