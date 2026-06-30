@@ -63,6 +63,18 @@ object RcRouter {
         private set
 
     /**
+     * REM-178 — explicit Unix-epoch-seconds override for the player (deep-link `&epoch=<sec>`).
+     * **Default `0L`** = no override; the app falls back to [RenderTimePins.epochFor] (which
+     * returns `EPOCH_SAFE_PIN` for the 2 epoch-pinned docs and `0L` for the other 171, mirroring
+     * the desktop-sweep discipline). A live-mode app that wants real-now time would set this from
+     * a platform clock seed (TODO when REM-178-S2 wires live `Clock.System.now()`); for now
+     * `0L` + the static `RenderTimePins.epochFor` lookup gives deterministic mobile goldens, which
+     * is the REM-178 scope. Parsed/clamped via [setEpochSeconds].
+     */
+    var epochSeconds: Long by mutableStateOf(0L)
+        private set
+
+    /**
      * Forced render density (REM-91): set from a deep-link `&density=<f>` to override the platform density
      * ([RemoteComposeApp] uses `forcedDensity ?: LocalDensity`). **Default `null` = use the real platform
      * density** (untouched behavior). Cross-target parity needs a uniform density: iOS-Sim is fixed @3x with
@@ -116,6 +128,17 @@ object RcRouter {
     }
 
     /**
+     * REM-178 — parse a deep-link `&epoch=<sec>` value into [epochSeconds]. **Fail-safe to `0L`**
+     * (no override → `RenderTimePins.epochFor` lookup): `null` / blank / non-numeric / negative
+     * all map to `0L`. Long range to span beyond 2038. Centralized so platform parsers + tests
+     * share one rule (mirrors [setStaticTime]).
+     */
+    fun setEpochSeconds(value: String?) {
+        val parsed = value?.trim()?.toLongOrNull()
+        epochSeconds = if (parsed != null && parsed >= 0L) parsed else 0L
+    }
+
+    /**
      * Reset transient deep-link state to the **static default** (REM-62 hardening) — call on a *fresh app
      * launch*. [RcRouter] is a process-level singleton, so a `live`/pin set by an earlier capture can
      * survive into a new launch if the harness (Maestro `clearState`) does not force-stop the process →
@@ -128,6 +151,7 @@ object RcRouter {
         setStaticTime(null) // → staticTimeSeconds = 0f
         setForcedDensity(null) // → forcedDensity = null (use platform density)
         setForceBaselinePalette(null) // → forceBaselinePalette = false (use live device accent)
+        setEpochSeconds(null) // REM-178 → epochSeconds = 0L (epochFor lookup applies)
     }
 
     /**

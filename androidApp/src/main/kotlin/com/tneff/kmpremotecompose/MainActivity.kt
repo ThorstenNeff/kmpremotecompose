@@ -83,6 +83,9 @@ class MainActivity : ComponentActivity() {
         RcRouter.live = intent?.data?.getQueryParameter("live") == "1"
         RcRouter.setStaticTime(intent?.data?.getQueryParameter("t"))
         RcRouter.setForcedDensity(intent?.data?.getQueryParameter("density"))
+        // REM-178: optional `&epoch=<sec>` override for the player's `epochSeconds` seed; absent/
+        // blank/invalid → 0L → falls back to RenderTimePins.epochFor(docName) in RemoteComposeApp.
+        RcRouter.setEpochSeconds(intent?.data?.getQueryParameter("epoch"))
         RcRouter.setForceBaselinePalette(intent?.data?.getQueryParameter("palette"))
     }
 }

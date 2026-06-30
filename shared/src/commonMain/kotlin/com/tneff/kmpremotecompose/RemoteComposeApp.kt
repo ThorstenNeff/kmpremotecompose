@@ -100,6 +100,22 @@ fun RemoteComposeApp(
     // REM-62: static-mode frame pin (deep-link `&t=N`). Read at composition level so a change recomposes →
     // the Canvas redraws at the new pinned frame. Only consulted in static mode; 0f ⇒ original t=0 path.
     val staticTimeSeconds = RcRouter.staticTimeSeconds
+    // REM-178 — Unix-epoch resolution for player.paint(epochSeconds=…):
+    //  - Explicit deep-link `&epoch=<sec>` (RcRouter.epochSeconds != 0L) wins (a Maestro/test
+    //    one-off override).
+    //  - Else fall back to RenderTimePins.epochFor(docName) — automatically EPOCH_SAFE_PIN for the
+    //    2 REM-176-confirmed epoch-pinned docs (experimental_solar_gmt + moon_phases) and 0L for
+    //    the other 171 (= byte-faithful 1970-legacy = no behaviour change). Same discipline as
+    //    the desktop sweep (REM-176 commit `ca18eb4` for the :desktopApp counterpart): single
+    //    source `RenderTimePins.epochFor`, no per-target drift.
+    //  - Live-mode real-now wall-clock seeding is REM-178-S2 future work (needs an `expect`-fun
+    //    so iOS/Android/wasm can each supply `Clock.System.now()`); the immediate REM-178 scope
+    //    is **deterministic mobile goldens**, which the static-mode lookup above covers.
+    val paintEpoch: Long = if (RcRouter.epochSeconds > 0L) {
+        RcRouter.epochSeconds
+    } else {
+        com.tneff.kmpremotecompose.remote.player.core.RenderTimePins.epochFor(docName)
+    }
     var frameTime by remember { mutableStateOf(0f) }
     var doc by remember { mutableStateOf<RemoteComposeDocument?>(null) }
     var decodeError by remember { mutableStateOf<String?>(null) }
@@ -348,6 +364,10 @@ fun RemoteComposeApp(
                                 // REM-62: static-mode frame pin (deep-link `&t=N`); the player reads it
                                 // only when animation is off, so the live loop is untouched. 0f ⇒ t=0 path.
                                 staticTimeSeconds = staticTimeSeconds,
+                                // REM-178 — per-doc Unix-epoch pin: deep-link `&epoch=N` override, else
+                                // RenderTimePins.epochFor(docName) (auto-pins solar_gmt + moon_phases to
+                                // EPOCH_SAFE_PIN for deterministic mobile goldens; 0L for the 171 others).
+                                epochSeconds = paintEpoch,
                                 // REM-101 (D5): the player seeds the doc's sensor ids from this LIVE-only.
                                 sensorSource = sensorSource,
                                 // REM-108 (S2b): live pointer gesture (consumed LIVE-only; null ⇒ no touch).
