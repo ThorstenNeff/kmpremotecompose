@@ -24,8 +24,9 @@
 #   genuinely PENDING on S2. (This is exactly WHY `rc-action-echo` is a first-class contract deliverable §5.)
 #
 # 🔴 CAUSAL OBSERVABLE = `rc-action-echo` (contract §5): surfaces the click-mutated DATA_INT(id=42). The
-#   rendered text stays the static label, so the echo is the ONLY observation path. Format below ("42=N") is
-#   indicative — pin to dev-1's final testTag content at S0-land (see REM-108-interaction-harness-hooks.md).
+#   rendered text stays the static label, so the echo is the ONLY observation path. Format = `"<valueId>=<value>"`
+#   (e.g. "42=2") — ✅ PO-LOCKED 2026-06-30 (Contract §4-Q2; relayed to dev-1 for S0/S2). The PENDING asserts
+#   below are pinned to it → activation at S2-land is uncomment + drop `staged`, no guesswork.
 #
 # Run (after S2 + rc-action-echo land, drop `staged` + uncomment the causal blocks):
 #   ~/.maestro/bin/maestro --device emulator-5554 test docs/flows/interaction_click_callback.yaml

@@ -30,9 +30,9 @@ value, so a Maestro flow cannot see "it fired" without a surfaced hook:
 ## Hook 1 — `rc-action-echo`  (for Click → Callback gate)
 
 - **testTag:** `rc-action-echo` (surfaced via `Modifier.testTag` + `testTagsAsResourceId`, like rc-touch-echo).
-- **Content (suggested):** `"<valueId>=<value>"` of the most-recently-mutated DATA_INT, e.g. `"42=0"` at
-  rest → `"42=2"` after a TOUCH_DOWN action fires. (A bare value `"2"` also works; the `id=value` form
-  disambiguates multi-int docs and is preferred.)
+- **Content:** ✅ **PO-LOCKED `"<valueId>=<value>"`** (Contract §4-Q2, 2026-06-30) of the most-recently-
+  mutated DATA_INT, e.g. `"42=0"` at rest → `"42=2"` after a TOUCH_DOWN action fires. (Self-describing,
+  robust for docs with multiple action-ints. Relayed to dev-1 for S0/S2 emission.)
 - **Sentinel:** the int's init value (`"42=0"` for the corpus fixtures) before any action dispatches.
 - **live-gating (REM-108 §0 linchpin):** in `&live=0` no action is dispatched → the hook MUST stay at the
   sentinel. This is what lets the harness assert the determinism pin (Goldens/173-conformance immune).
