@@ -75,4 +75,44 @@ object RenderTimePins {
 
     /** True if [docName] (with or without `.rc`) has an explicit time pin. */
     fun isPinned(docName: String): Boolean = pins.containsKey(docName.removeSuffix(".rc"))
+
+    // -------------------------------------------------------------------------------------------
+    // REM-176 — per-doc EPOCH pin (Unix-epoch-seconds → `paint(epochSeconds=…)`)
+    // -------------------------------------------------------------------------------------------
+
+    /**
+     * **REM-176 EPOCH_SAFE_PIN**: 1751529600 = **2026-07-03 00:00:00 UTC**. Chosen because:
+     *  - **Post-merge-date** (golden captured in the future, won't drift as real-time advances).
+     *  - **Polar-safe** at Anchorage (61°N): the `acos(cos_hour_angle)` formula in
+     *    `experimental_solar_gmt.rc`'s RPN stays in [-1, 1] (no polar-day math break).
+     *  - **CLOCK_SAFE-aligned** philosophy: a single shared deterministic timestamp matches the
+     *    REM-69 pattern for sweep determinism. Live-mode docs (app) consume real-now epoch.
+     */
+    const val EPOCH_SAFE_PIN: Long = 1751529600L
+
+    /**
+     * Per-doc Unix-epoch-seconds pin. Defaults to `EPOCH_SAFE_PIN` for the two REM-176-confirmed
+     * epoch-dependent docs (`experimental_solar_gmt`, `moon_phases`) — without this the sweep
+     * would render them at `epoch=0` = 1970 = the very poisoned-golden the fix is undoing.
+     *
+     * Other docs that don't read `ID_EPOCH_SECOND` (171/173 per the §2-Befund-Inventar) are
+     * unaffected by epoch — `epochFor` returns `0L` for them, identical to the byte-faithful
+     * legacy path. As more docs prove epoch-sensitive (REM-177's `clock_demo2_jclock2` candidate
+     * for `ID_DAY_OF_YEAR` extends this list later), they extend here — the **single source**, no
+     * per-target `--epoch` hardcoding (mirror the `--t` discipline above).
+     */
+    private val epochPins: Map<String, Long> = mapOf(
+        "experimental_solar_gmt" to EPOCH_SAFE_PIN,
+        "moon_phases" to EPOCH_SAFE_PIN,
+    )
+
+    /**
+     * The pinned Unix-epoch-seconds for [docName], or [default] (0L = "1970 legacy") when the doc
+     * has no epoch pin. Sweep harnesses pass this as `RemoteComposePlayer.paint(epochSeconds=…)`.
+     */
+    fun epochFor(docName: String, default: Long = 0L): Long =
+        epochPins[docName.removeSuffix(".rc")] ?: default
+
+    /** True if [docName] has an explicit epoch pin (= sweep MUST pass it through). */
+    fun isEpochPinned(docName: String): Boolean = epochPins.containsKey(docName.removeSuffix(".rc"))
 }

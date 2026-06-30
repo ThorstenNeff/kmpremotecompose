@@ -256,6 +256,7 @@ class RemoteContext {
         windowHeight: Float,
         timeSeconds: Float = 0f,
         genDensity: Float = density,
+        epochSeconds: Long = 0L,
     ) {
         loadFloat(ID_WINDOW_WIDTH, windowWidth)
         loadFloat(ID_WINDOW_HEIGHT, windowHeight)
@@ -284,6 +285,14 @@ class RemoteContext {
         loadFloat(ID_TIME_IN_MIN, hourOfDay * 60f + minuteOfHour)
         loadFloat(ID_TIME_IN_HR, hourOfDay.toFloat())
         loadFloat(ID_OFFSET_TO_UTC, 0f)
+        // REM-176 — Unix-epoch seconds. Upstream `TimeVariables.loadInteger(ID_EPOCH_SECOND, …)` only
+        // loads the INT store; our corpus also reads id=32 via FLOAT-NaN-ref (moon_phases.rc), so we
+        // seed BOTH stores in sync. epochSeconds == 0L (default) ⇒ both stores get 0 — the existing
+        // "Jan 1 1970" semantics, byte-faithful for legacy callers that never set epoch. The sweep
+        // harness MUST pass an explicit pinned epoch for the 2 affected docs so goldens are
+        // deterministic (golden-not-intent-oracle: a real-now epoch would rebase the golden daily).
+        loadInt(ID_EPOCH_SECOND, epochSeconds.toInt())
+        loadFloat(ID_EPOCH_SECOND, epochSeconds.toFloat())
     }
 
     fun getBitmap(id: Int): ImageBitmap? = idObjects[id] as? ImageBitmap
@@ -486,6 +495,18 @@ class RemoteContext {
 
         /** Player density (upstream `ID_DENSITY`). */
         const val ID_DENSITY = 27
+        /**
+         * REM-176 — Unix-epoch seconds (upstream `RemoteContext.ID_EPOCH_SECOND = 32`). The doc
+         * encodes calendar-time-dependent calculations (solar position, moon phase, …) as
+         * `(epoch / 86400)`-style RPN; without seeding this id every dependent computation would
+         * collapse to 1970-01-01 values (`experimental_solar_gmt.rc`'s sunrise/sunset showed
+         * 1970-01-01 04:33 because of this defect). Seeded **into BOTH stores** (int + float at
+         * the same id) — upstream `TimeVariables.loadInteger(ID_EPOCH_SECOND, …)` only loads int,
+         * but our corpus has at least one doc (`moon_phases.rc`) consuming id=32 via a
+         * NaN-encoded **float** var-ref → `getFloat(32)` must also resolve. The cross-store seed
+         * keeps both consumer paths byte-faithful.
+         */
+        const val ID_EPOCH_SECOND = 32
         /** Default font size (upstream `ID_FONT_SIZE`). */
         const val ID_FONT_SIZE = 33
 
