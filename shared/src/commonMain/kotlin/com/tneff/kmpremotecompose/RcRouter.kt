@@ -63,6 +63,21 @@ object RcRouter {
         private set
 
     /**
+     * REM-178-S2 — explicit Unix-epoch-seconds override for the player (deep-link `&epoch=<sec>`).
+     * **Default `0L`** = no override; the live App-Shell falls back to [epochNow] (real-now from
+     * the platform wall clock). Maestro static captures of the 2 epoch-pinned docs
+     * (`experimental_solar_gmt`, `moon_phases`, REM-176 / REM-177) deep-link with
+     * `&epoch=1751529600` (= `EPOCH_SAFE_PIN`) so they render the deterministic anchor instead of
+     * "now". Parsed/clamped via [setEpochSeconds].
+     *
+     * Test-config (`RenderTimePins.epochFor`) lives ONLY in the desktop static-render sweep harness;
+     * it is deliberately NOT consulted by [RemoteComposeApp] (REM-178-S2 architecture cleanup —
+     * the live app must not carry test-pin knowledge).
+     */
+    var epochSeconds: Long by mutableStateOf(0L)
+        private set
+
+    /**
      * Forced render density (REM-91): set from a deep-link `&density=<f>` to override the platform density
      * ([RemoteComposeApp] uses `forcedDensity ?: LocalDensity`). **Default `null` = use the real platform
      * density** (untouched behavior). Cross-target parity needs a uniform density: iOS-Sim is fixed @3x with
@@ -116,6 +131,17 @@ object RcRouter {
     }
 
     /**
+     * REM-178-S2 — parse a deep-link `&epoch=<sec>` value into [epochSeconds]. **Fail-safe to
+     * `0L`** (no override → live app falls back to [epochNow]): `null` / blank / non-numeric /
+     * non-Long / negative all map to `0L`. Long range so values past 2038 work. Centralized so
+     * platform parsers + tests share one rule (mirrors [setStaticTime]).
+     */
+    fun setEpochSeconds(value: String?) {
+        val parsed = value?.trim()?.toLongOrNull()
+        epochSeconds = if (parsed != null && parsed >= 0L) parsed else 0L
+    }
+
+    /**
      * Reset transient deep-link state to the **static default** (REM-62 hardening) — call on a *fresh app
      * launch*. [RcRouter] is a process-level singleton, so a `live`/pin set by an earlier capture can
      * survive into a new launch if the harness (Maestro `clearState`) does not force-stop the process →
@@ -128,6 +154,7 @@ object RcRouter {
         setStaticTime(null) // → staticTimeSeconds = 0f
         setForcedDensity(null) // → forcedDensity = null (use platform density)
         setForceBaselinePalette(null) // → forceBaselinePalette = false (use live device accent)
+        setEpochSeconds(null) // REM-178-S2 → epochSeconds = 0L (live app falls back to epochNow)
     }
 
     /**
