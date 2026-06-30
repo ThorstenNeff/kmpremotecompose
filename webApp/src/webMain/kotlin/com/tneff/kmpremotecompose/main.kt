@@ -24,7 +24,12 @@ import com.tneff.kmpremotecompose.remote.player.core.WebSensorSource
 @OptIn(ExperimentalComposeUiApi::class)
 fun main() {
     applyWebQueryToRouter(webLocationSearch())
-    ComposeViewport {
+    // REM-161: attach to the canonical "composeApp" container div (index.html) instead of document.body. The
+    // body-default attach laid the Skiko canvas out as a centered inline sibling of the loading-spinner SVG,
+    // so its bounding-rect origin was offset from (0,0) → Skiko's pointer-offset mapping placed Compose
+    // pointer coords outside the rc-canvas Box and pointerInput never saw the events (REM-114②/test-2). A
+    // full-size (0,0)-origin container makes offsetX/Y map 1:1 into the Compose coordinate space.
+    ComposeViewport("composeApp") {
         // REM-101 (D5) S4: inject the browser DeviceMotion sensor source (App-Shell injection, TechSpec
         // §5). Live + sensor-driven docs start it; static/no-motion → null → static frame (capability-floor).
         val sensorSource = remember { WebSensorSource() }

@@ -6,15 +6,12 @@
     <title>KmpRemoteCompose</title>
     <link type="text/css" rel="stylesheet" href="styles.css">
 </head>
-<body style="text-align: center; align-content: center">
-    <svg xmlns="http://www.w3.org/2000/svg" width="40" height="40" viewBox="0 0 50 50" role="presentation">
-        <circle cx="25" cy="25" r="20" stroke="#ccc" stroke-width="4" fill="none"/>
-        <circle cx="25" cy="25" r="20" stroke="#333" stroke-width="4" fill="none" stroke-linecap="round"
-                stroke-dasharray="90 125">
-            <animateTransform attributeName="transform" type="rotate" from="0 25 25" to="360 25 25" dur="1s"
-                              repeatCount="indefinite"/>
-        </circle>
-    </svg>
+<body>
+    <!-- REM-161: canonical Compose-Multiplatform wasm container. ComposeViewport("composeApp") attaches its
+         Skiko canvas to this full-size, (0,0)-origin div, so the canvas bounding-rect origin is the viewport
+         origin and Skiko's pointer-offset mapping lines up with the Compose coordinate space (the prior
+         body-attach + centered spinner-SVG sibling offset that origin → pointer events mis-mapped). -->
+    <div id="composeApp"></div>
     <script type="application/javascript" src="webApp.js"></script>
 </body>
 </html>

@@ -5,3 +5,16 @@ html, body {
     padding: 0;
     overflow: hidden;
 }
+
+/* REM-161: the canonical CMP wasm container fills the viewport from the (0,0) origin so the Skiko canvas's
+   bounding-rect origin matches the Compose coordinate space (fixes the pointer-offset mis-mapping). */
+#composeApp {
+    width: 100%;
+    height: 100%;
+}
+
+/* REM-161: disable the browser's default touch gestures on the canvas so a touch-drag reaches Compose's
+   pointerInput instead of being consumed as page scroll/zoom (required for the interactive touch target). */
+#composeApp, #composeApp canvas {
+    touch-action: none;
+}
