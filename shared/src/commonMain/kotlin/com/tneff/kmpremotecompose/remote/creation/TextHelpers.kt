@@ -23,6 +23,7 @@ import com.tneff.kmpremotecompose.remote.core.operations.TextMerge
 import com.tneff.kmpremotecompose.remote.core.operations.draw.DrawText
 import com.tneff.kmpremotecompose.remote.core.operations.draw.DrawTextAnchored
 import com.tneff.kmpremotecompose.remote.core.operations.draw.DrawTextOnPath
+import com.tneff.kmpremotecompose.remote.core.operations.layout.CoreText
 import com.tneff.kmpremotecompose.remote.wire.WireTypes
 
 /**
@@ -171,3 +172,50 @@ fun RemoteComposeContext.textLookup(dataSet: Float, index: Number): Int {
     add(TextLookup(textId = id, dataSet = WireTypes.idFromNan(dataSet), index = index.toFloat()))
     return id
 }
+
+/**
+ * `CORE_TEXT` (REM-149) — emit a styled text component referencing the already-allocated [textId].
+ * **Not id-bearing**: [textId] references an existing text id (from [addText] / [createTextFromFloat]
+ * / [textLookup] / [textMerge]).
+ *
+ * Each [CoreText.Param] carries a 1-byte TextStyle parameter id (1..26) and the raw value bytes,
+ * exactly as wide as the parameter's TextStyle type requires (see upstream `TextStyle.PARAMETERS` /
+ * the [CoreText] reader for the type map). Construct typed params via [coreTextIntParam] /
+ * [coreTextFloatParam] / [coreTextShortParam] / [coreTextByteParam] / [coreTextBoolParam] —
+ * those factories produce byte-faithful BE encodings (and `toRawBits()` for Float, preserving
+ * NaN-encoded variable refs verbatim).
+ *
+ * Profile: CORE_TEXT lives in the AndroidX overlay — the surrounding `document(...)` must open with
+ * a profile carrying it (e.g. `Profile(operationsProfiles = Operations.PROFILE_ANDROIDX, ...)`).
+ */
+fun RemoteComposeContext.coreText(textId: Int, params: List<CoreText.Param>) {
+    add(CoreText(textId, params.map { CoreText.Param(it.id, it.value.copyOf()) }))
+}
+
+/** Typed BE-int (4B) CORE_TEXT param — covers P_INT (TextStyle ids 1..4, 6, 8..11, 15..17, 23, 24). */
+fun coreTextIntParam(id: Int, value: Int): CoreText.Param =
+    CoreText.Param(id, coreTextIntBeBytes(value))
+
+/**
+ * Typed BE-float (4B) CORE_TEXT param via [Float.toRawBits] — covers P_FLOAT (TextStyle ids 5, 7,
+ * 12, 13, 14, 25, 26). W14 NaN-bits preservation: a NaN-encoded variable ref (constructed via
+ * `Float.fromBits(0xFF800000.toInt() or id)`) round-trips byte-exact to the wire.
+ */
+fun coreTextFloatParam(id: Int, value: Float): CoreText.Param =
+    CoreText.Param(id, coreTextIntBeBytes(value.toRawBits()))
+
+/** Typed BE-short (2B) CORE_TEXT param — covers P_SHORT TextStyle ids (none in current map but kept for completeness). */
+fun coreTextShortParam(id: Int, value: Int): CoreText.Param =
+    CoreText.Param(id, byteArrayOf((value ushr 8).toByte(), value.toByte()))
+
+/** Typed 1-byte CORE_TEXT param — covers P_BYTE TextStyle ids. */
+fun coreTextByteParam(id: Int, value: Int): CoreText.Param =
+    CoreText.Param(id, byteArrayOf(value.toByte()))
+
+/** Typed 1-byte boolean CORE_TEXT param — covers P_BOOLEAN (TextStyle ids 18, 19, 22). */
+fun coreTextBoolParam(id: Int, value: Boolean): CoreText.Param =
+    CoreText.Param(id, byteArrayOf(if (value) 1 else 0))
+
+private fun coreTextIntBeBytes(v: Int): ByteArray = byteArrayOf(
+    (v ushr 24).toByte(), (v ushr 16).toByte(), (v ushr 8).toByte(), v.toByte(),
+)
