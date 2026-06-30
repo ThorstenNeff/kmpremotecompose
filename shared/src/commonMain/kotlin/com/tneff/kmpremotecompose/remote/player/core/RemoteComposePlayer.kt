@@ -69,6 +69,10 @@ class RemoteComposePlayer(val context: RemoteContext = RemoteContext()) {
         sensorSource: SensorSource = NoOpSensorSource,
         touchState: TouchState? = null,
         hapticActuator: HapticActuator = NoOpHapticActuator,
+        // REM-108 (Epic-F) S0: the public interaction-callback sink (default NoOp = §0 floor). Threaded as a
+        // zero-risk additive param defining the contract; the emitting paths land in S1 (onScroll) / S2
+        // (onClick). Unconsumed here in S0 → behaviour-, byte- and render-identical to today.
+        @Suppress("UNUSED_PARAMETER") callbacks: RcInteractionCallbacks = RcInteractionCallbacks.NoOp,
     ): Float {
         context.paintContext = paint
         context.resetPass(frameTimeSeconds)
