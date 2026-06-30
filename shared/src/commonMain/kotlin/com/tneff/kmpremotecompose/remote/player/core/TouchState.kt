@@ -48,8 +48,20 @@ class TouchState {
      * [RemoteComposePlayer]'s touch-down dispatch, which has the frame time. */
     var touchEventTime: Float = 0f
 
+    /**
+     * REM-152: set `true` on the first real touch-down and latched thereafter. Gates the **haptic** fire so
+     * it never auto-buzzes at launch — our `id29=0` default starts the impulse at t=0 (the §0 *visual* auto-
+     * animation floor), but a haptic pulse at launch with no interaction is an unintended side-effect of that
+     * default (upstream uses `id29=-Float.MAX_VALUE` → impulse waits for touch). The player seeds this onto
+     * the per-frame [RemoteContext] so [RemoteComposePlayer.runImpulse] fires `HapticFeedback` only once a
+     * real touch has triggered the impulse; the visual auto-animation does NOT consult it (floor unchanged).
+     * Also fixes the ~25% cold-launch flakiness: the touch-fire is in-window/same-paint (reliable), whereas
+     * the t=0 auto-fire raced the view/haptic readiness.
+     */
+    var hasTouched: Boolean = false
+
     /** Pointer pressed at doc-space ([px], [py]). */
-    fun down(px: Float, py: Float) { x = px; y = py; phase = TouchPhase.DOWN }
+    fun down(px: Float, py: Float) { x = px; y = py; phase = TouchPhase.DOWN; hasTouched = true }
 
     /**
      * Pointer moved to doc-space ([px], [py]) while pressed — updates the position only.

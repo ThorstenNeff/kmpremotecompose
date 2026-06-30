@@ -336,6 +336,15 @@ class RemoteContext {
      */
     var hapticActuator: HapticActuator = NoOpHapticActuator
 
+    /**
+     * REM-152 — `true` once a real touch has occurred this session (seeded per live frame from
+     * `TouchState.hasTouched`). Gates the haptic fire ([RemoteComposePlayer.runImpulse]) so it never
+     * auto-buzzes at launch (our `id29=0` default starts the impulse at t=0 for the §0 *visual* floor, but a
+     * launch haptic with no interaction is an unintended side-effect — upstream waits for touch). Default
+     * `false`; the visual auto-animation does not consult it (floor unchanged).
+     */
+    var touchOccurred: Boolean = false
+
     /** Perform the doc's haptic effect [hapticFeedbackType] via the host [hapticActuator] (upstream parity). */
     fun hapticEffect(hapticFeedbackType: Int) { hapticActuator.perform(hapticFeedbackType) }
 
