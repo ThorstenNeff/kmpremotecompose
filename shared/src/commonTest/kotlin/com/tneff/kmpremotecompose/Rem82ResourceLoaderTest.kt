@@ -32,20 +32,24 @@ import kotlin.test.assertTrue
  * Fail-closed proof: a missing name must THROW (not return empty bytes) so `RemoteComposeApp`'s catch
  * surfaces `rc-error` (spec §2) rather than a silent "rendered empty".
  *
- * REM-166 (Blocker-1 fix): this whole class exercises the **Compose Resources** loader (`Res.readBytes`) —
- * a SECOND resource mechanism distinct from the [RcCorpus] system-filesystem path the rest of REM-166's
- * `@IgnoreOnWasm` sweep targeted (which is why the call-graph analysis missed it). composeResources are not
- * served by the `wasmJsBrowserTest` karma runner, so these tests throw "resource not in test env" there.
- * Option (b) — bundling composeResources into the karma/webpack test server — needs a path-mapping that is
- * only verifiable in a real browser (which the dev cannot run headlessly), so per the PO's escalation
- * guidance this takes fallback (a): skip on wasm. **No real wasm bug is hidden** — REM-161 already proves
- * this exact composeResources load path end-to-end in a real browser (the web app loads `.rc` via
- * `Res.readBytes` on wasm, test-2-verified). We lose only the unit-regression guard on wasm, not the proof.
+ * REM-166 (Blocker-1 fix, method-level): the two **valid-doc loaders** below need a real resource served
+ * via the **Compose Resources** mechanism (`Res.readBytes`) — a SECOND resource path distinct from the
+ * [RcCorpus] system-filesystem path the rest of REM-166's `@IgnoreOnWasm` sweep targeted (the call-graph
+ * blind-spot). composeResources are not served by the `wasmJsBrowserTest` karma runner, so they throw
+ * "resource not in test env" there. Option (b) — bundling composeResources into the karma/webpack test
+ * server — needs a path-mapping only verifiable in a real browser (not runnable headlessly), so per the
+ * PO's escalation guidance these take fallback (a): skip on wasm. **No real wasm bug is hidden** — REM-161
+ * already proves this exact load path end-to-end in a real browser (the web app loads `.rc` via
+ * `Res.readBytes` on wasm, test-2-verified); we lose only the unit-regression guard on wasm, not the proof.
+ *
+ * `missingDoc_throws_failClosed` is **deliberately left running on wasm**: it needs no real resource (a
+ * missing name throws regardless of the served set), so it keeps the fail-closed security-path coverage on
+ * all four targets (consistent with REM-166's method-level principle — don't over-skip).
  */
-@IgnoreOnWasm
 class Rem82ResourceLoaderTest {
 
     @Test
+    @IgnoreOnWasm
     fun defaultDoc_loadsViaComposeResources_andDecodes() = runTest {
         Builtins.register()
         val bytes = Res.readBytes("files/rc/${RcRouter.DEFAULT_DOC}.rc")
@@ -55,6 +59,7 @@ class Rem82ResourceLoaderTest {
     }
 
     @Test
+    @IgnoreOnWasm
     fun severalCorpusDocs_resolveFromComposeResources() = runTest {
         Builtins.register()
         // A spread of bundled docs (geometry, text, clock) — all must resolve + decode via Res.
