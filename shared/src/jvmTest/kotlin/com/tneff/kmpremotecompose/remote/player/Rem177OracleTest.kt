@@ -155,6 +155,55 @@ class Rem177OracleTest {
         }
     }
 
+    /**
+     * **REM-177 follow-up to test-3's 2026-06-30 broader-impact sweep.** The decode-triage probe
+     * (transient `Rem177CalendarVarConsumerProbe`) classified 4 more docs as date-driven beyond
+     * `clock_demo2_jclock2`: `clock`, `experimental_gmt`, `experimental_solar_gmt` (which was
+     * already epoch-pinned for REM-176, but ALSO reads WEEK_DAY + DAY_OF_MONTH), and `player_info`
+     * (system-var debug-dashboard reading 4 of the 5 REM-177 calendar vars directly).
+     *
+     * This test pins the seed-anchor invariant for **all 4**: load each doc, seed with
+     * EPOCH_SAFE_PIN, Phase-A apply, verify the calendar vars they consume actually carry the
+     * 2025-07-03 values after the walk (not 0 = the pre-fix Jan-1-collapse). A regression that
+     * breaks the seed for any one of them shows up here at the value level — without needing
+     * to capture per-doc PNG goldens.
+     */
+    @Test
+    fun additional_date_driven_docs_seed_anchor() {
+        val docs = listOf("clock", "experimental_gmt", "experimental_solar_gmt", "player_info")
+        for (name in docs) {
+            val bytes = RcCorpus.readFixture("corpus/$name.rc")
+            val doc = DocumentReader.inflate(bytes)
+            val ctx = RemoteContext().also { it.animationEnabled = false }
+            ctx.seedSystemVariables(
+                windowWidth = 800f,
+                windowHeight = 800f,
+                timeSeconds = 0f,
+                genDensity = 1f,
+                epochSeconds = EPOCH_SAFE_PIN,
+            )
+            for (op in doc.operations) if (op is VariableSupport) {
+                op.updateVariables(ctx)
+                op.apply(ctx)
+            }
+            // The 5 REM-177 calendar vars must all carry the 2025-07-03 values regardless of
+            // which subset each doc actually reads — the seed is the same for all. Cross-store
+            // (INT + FLOAT) because some docs dereference via FLOAT-NaN-ref (e.g. clock_demo2)
+            // and others via direct id arg (player_info's TextFromFloat).
+            assertEquals(2025, ctx.getInt(ID_YEAR), "$name: ID_YEAR (id=$ID_YEAR) must equal 2025")
+            assertEquals(2025.0f, ctx.getFloat(ID_YEAR), "$name: cross-store FLOAT id=$ID_YEAR")
+            assertEquals(7, ctx.getInt(ID_CALENDAR_MONTH), "$name: ID_CALENDAR_MONTH (id=$ID_CALENDAR_MONTH) must equal 7 (July)")
+            assertEquals(7.0f, ctx.getFloat(ID_CALENDAR_MONTH), "$name: cross-store FLOAT id=$ID_CALENDAR_MONTH")
+            assertEquals(3, ctx.getInt(ID_DAY_OF_MONTH), "$name: ID_DAY_OF_MONTH (id=$ID_DAY_OF_MONTH) must equal 3")
+            assertEquals(3.0f, ctx.getFloat(ID_DAY_OF_MONTH), "$name: cross-store FLOAT id=$ID_DAY_OF_MONTH")
+            assertEquals(184, ctx.getInt(ID_DAY_OF_YEAR), "$name: ID_DAY_OF_YEAR (id=$ID_DAY_OF_YEAR) must equal 184")
+            assertEquals(184.0f, ctx.getFloat(ID_DAY_OF_YEAR), "$name: cross-store FLOAT id=$ID_DAY_OF_YEAR")
+            assertEquals(4, ctx.getInt(ID_WEEK_DAY), "$name: ID_WEEK_DAY (id=$ID_WEEK_DAY) must equal 4 (Thursday)")
+            assertEquals(4.0f, ctx.getFloat(ID_WEEK_DAY), "$name: cross-store FLOAT id=$ID_WEEK_DAY")
+            println("[REM-177-Oracle] $name: seed-anchor OK (Y=2025 M=7 D=3 DoY=184 WeekDay=Thu)")
+        }
+    }
+
     // ---- ORACLE (independent solar formula, not from the doc-RPN) ------------------------------
 
     private data class SolarOracle(val sunriseHourGMT: Double, val sunsetHourGMT: Double)

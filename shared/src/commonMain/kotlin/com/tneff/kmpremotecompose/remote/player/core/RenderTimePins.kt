@@ -96,29 +96,47 @@ object RenderTimePins {
     const val EPOCH_SAFE_PIN: Long = 1751529600L
 
     /**
-     * Per-doc Unix-epoch-seconds pin. Defaults to `EPOCH_SAFE_PIN` for the three confirmed
-     * epoch-dependent docs:
-     *  - `experimental_solar_gmt` + `moon_phases` (REM-176 — Solar/Sunrise/Sunset RPN and moon-
-     *    phase fraction both read `ID_EPOCH_SECOND` via INTEGER_EXPRESSION),
-     *  - `clock_demo2_jclock2` (REM-177 — 8-city sub-clocks compute per-city sunrise/sunset that
-     *    read `ID_DAY_OF_YEAR` (id=34), one of the 5 calendar vars REM-177 seeds. assist confirmed
-     *    via REM-147 text-value-capture: without this pin the doc renders at day_of_year=1 = Jan-1
-     *    sunrise/sunset, ~1min off the EPOCH_SAFE_PIN-rendered July-3 values per city — geometry
-     *    hash is identical so a PNG diff alone misses it, hence the explicit pin + the data oracle).
+     * Per-doc Unix-epoch-seconds pin. Defaults to `EPOCH_SAFE_PIN` for **6** confirmed date-
+     * driven docs (REM-176 + REM-177 follow-up after test-3's broader-impact sweep 2026-06-30).
+     *
+     * The full set, decoded via `Rem177CalendarVarConsumerProbe`-style FloatExpression /
+     * IntegerExpression / TextFromFloat NaN-var-ref scans:
+     *
+     *  | Doc                       | Consumed ids (system-var)                                | Lane    |
+     *  |---------------------------|----------------------------------------------------------|---------|
+     *  | `experimental_solar_gmt`  | 32 (EPOCH), 11 (WEEK_DAY), 12 (DAY_OF_MONTH)             | REM-176 |
+     *  | `moon_phases`             | 32 (EPOCH)                                               | REM-176 |
+     *  | `clock_demo2_jclock2`     | 34 (DAY_OF_YEAR) — 8 city sub-clocks                     | REM-177 |
+     *  | `clock`                   | 11 (WEEK_DAY), 12 (DAY_OF_MONTH) — Mon..Sun day-name     | REM-177 |
+     *  | `experimental_gmt`        | 11 (WEEK_DAY), 12 (DAY_OF_MONTH) — MON..SUN day-name     | REM-177 |
+     *  | `player_info`             | 9 (MONTH), 11 (WEEK_DAY), 34 (DAY_OF_YEAR), 35 (YEAR)    | REM-177 |
      *
      * Without the pin those docs would render at `epoch=0` = 1970 = the very poisoned-golden the
-     * fix is undoing.
+     * REM-176/177 seeding fix is undoing:
+     *  - day-name docs (`clock`, `experimental_gmt`) would index `Mon..Sun[week_day=0]` = empty
+     *  - `experimental_solar_gmt` was already pinned for epoch but also now reads WEEK_DAY+
+     *    DAY_OF_MONTH (PO test-3 surprise — confirmed correct shift, not spurious)
+     *  - `clock_demo2_jclock2` collapses 8 cities to Jan-1 sunrise/sunset (assist REM-147 catch:
+     *    ~1min shift per city, geometry hash identical → only text-value-capture detects)
+     *  - `player_info` is a system-var debug-dashboard explicitly showing YEAR/MONTH/DAY_OF_YEAR/
+     *    WEEK_DAY values — would print "0" for all without the seed
      *
-     * Other docs that don't read `ID_EPOCH_SECOND` (170/173 per the §2-Befund-Inventar) are
-     * unaffected by epoch — `epochFor` returns `0L` for them, identical to the byte-faithful
-     * legacy path. Extend here (the **single source**) if another doc proves epoch-sensitive —
-     * no per-target `--epoch` hardcoding (mirror the `--t` discipline above).
+     * Other docs that don't read any date var (167/173 per the §2-Befund-Inventar +
+     * REM-177-Decode-Triage) are unaffected — `epochFor` returns `0L` for them, identical to the
+     * byte-faithful legacy path. Extend here (the **single source**) if another doc proves
+     * date-sensitive — no per-target `--epoch` hardcoding (mirror the `--t` discipline above).
      */
     private val epochPins: Map<String, Long> = mapOf(
+        // REM-176
         "experimental_solar_gmt" to EPOCH_SAFE_PIN,
         "moon_phases" to EPOCH_SAFE_PIN,
-        // REM-177 — 8-city sub-clock sunrise/sunset (Phase-A reads ID_DAY_OF_YEAR / id=34).
+        // REM-177 — 8-city sub-clock sunrise/sunset reads ID_DAY_OF_YEAR (id=34).
         "clock_demo2_jclock2" to EPOCH_SAFE_PIN,
+        // REM-177-Decode-Triage 2026-06-30 — date-driven docs surfaced by test-3 broader-impact
+        // sweep (decode-proven calendar-var consumers — see KDoc table above).
+        "clock" to EPOCH_SAFE_PIN,
+        "experimental_gmt" to EPOCH_SAFE_PIN,
+        "player_info" to EPOCH_SAFE_PIN,
     )
 
     /**
