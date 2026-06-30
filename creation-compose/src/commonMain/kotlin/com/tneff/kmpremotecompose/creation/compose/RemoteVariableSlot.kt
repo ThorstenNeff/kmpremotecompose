@@ -69,6 +69,18 @@ class RemotePathSlot {
 }
 
 /**
+ * REM-149-S2 — output-id holder for text-producing primitives ([RemoteTextTransform], and future
+ * Compose-DSL `RemoteAddText` / `RemoteTextFromFloat` / `RemoteTextMerge` slots). The op allocates a
+ * fresh region-0 text id at render time; a downstream consumer (e.g. a `RemoteCoreText(textId =
+ * slot.id, ...)` Compose-DSL or a `RemoteTextTransform(srcId1 = otherSlot.id, ...)` chain) reads
+ * `slot.id` after the primitive node has rendered. Same single-write-during-Phase-B semantics as
+ * [RemoteFloatSlot] / [RemoteColorSlot] / [RemotePathSlot].
+ */
+class RemoteTextSlot {
+    internal var id: Int = -1
+}
+
+/**
  * Allocate (and remember across recompositions) a [RemoteFloatSlot] for use with
  * [RemoteFloatExpression] and the slot-form of `RemoteModifier.visibility`. One slot per call site;
  * the slot identity is stable across recompositions (Q4 lock).
@@ -90,3 +102,11 @@ fun rememberRemoteColorSlot(): RemoteColorSlot = remember { RemoteColorSlot() }
  */
 @Composable
 fun rememberRemotePathSlot(): RemotePathSlot = remember { RemotePathSlot() }
+
+/**
+ * REM-149-S2 — Allocate (and remember across recompositions) a [RemoteTextSlot] for use with
+ * [RemoteTextTransform] (and future text-producing primitives). Stable identity across
+ * recompositions (Q4 lock).
+ */
+@Composable
+fun rememberRemoteTextSlot(): RemoteTextSlot = remember { RemoteTextSlot() }
