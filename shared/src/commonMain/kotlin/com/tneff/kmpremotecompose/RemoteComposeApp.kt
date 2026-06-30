@@ -44,6 +44,7 @@ import com.tneff.kmpremotecompose.remote.player.compose.GeometryPaintDelegate
 import com.tneff.kmpremotecompose.remote.player.core.HapticActuator
 import com.tneff.kmpremotecompose.remote.player.core.NoOpHapticActuator
 import com.tneff.kmpremotecompose.remote.player.core.NoOpSensorSource
+import com.tneff.kmpremotecompose.remote.player.core.RcInteractionCallbacks
 import com.tneff.kmpremotecompose.remote.player.core.RemoteComposePlayer
 import com.tneff.kmpremotecompose.remote.player.core.renderOpaque
 import com.tneff.kmpremotecompose.remote.player.core.RemoteContext
@@ -82,6 +83,9 @@ fun RemoteComposeApp(
     loadRc: suspend (String) -> ByteArray = { name -> Res.readBytes("files/rc/$name.rc") },
     sensorSource: SensorSource = NoOpSensorSource,
     hapticActuator: HapticActuator = NoOpHapticActuator,
+    // REM-108 (Epic-F) S0: the public interaction-callback sink (default NoOp = §0 floor). Additive; the
+    // emitting paths land in S1 (onScroll) / S2 (onClick). NoOp default ⇒ render-/behaviour-identical today.
+    callbacks: RcInteractionCallbacks = RcInteractionCallbacks.NoOp,
     modifier: Modifier = Modifier,
 ) {
     // The selected bundled doc (REM-34): default, or a deep-link `kmprc://render?rc=<name>` via RcRouter.
@@ -109,6 +113,18 @@ fun RemoteComposeApp(
     // describe the same frame (test-2 rc-doc race fix): the live docName can change a composition before
     // the new doc loads/commits, which would briefly show rc-rendered (old) alongside rc-doc (new).
     var renderedDocName by remember { mutableStateOf("") }
+    // REM-108 (Epic-F) S0: the two interaction echo hooks (test-1's conformance surface), wired NoOp-until-fed.
+    // CONTRACT (PO lock 2026-06-30 — test-1's Maestro gate pins these formats exactly):
+    //  • `rc-action-echo`  — fed in S2 from the click-action dispatch as **"<valueId>=<value>"** (e.g. a
+    //    VALUE_INTEGER_CHANGE_ACTION on DATA_INT id42→2 emits "42=2", NOT bare "2"). S0 NoOp sentinel "none"
+    //    (cannot collide with a real "id=value").
+    //  • `rc-scroll-offset` — fed in S1 (dev-2) from the already-computed `ScrollModifier.scrollOffset` as the
+    //    offset value. S0 NoOp sentinel "0".
+    // Present so Maestro can address them, but render-invariant (hook nodes below the canvas, outside the
+    // cropped render area; the canvas renders independently at pxSize → zero pixel shift). §2-safe: render-only
+    // state, no `.rc` bytes. The producing slices flip these via their own state writes.
+    val actionEcho by remember { mutableStateOf("none") }
+    val scrollOffset by remember { mutableStateOf(0) }
 
     // Re-runs when the selected doc changes (deep-link) — reset per-doc render state, then load by name.
     LaunchedEffect(docName) {
@@ -269,6 +285,9 @@ fun RemoteComposeApp(
                                 // REM-143 (S3b): host haptic actuator (live-only; impulse fires on its
                                 // initial pass). NoOp on desktop/web (capability-floor) → no buzz.
                                 hapticActuator = hapticActuator,
+                                // REM-108 (S0): the public interaction sink. NoOp default in S0 (no emission
+                                // yet); S1/S2 wire onScroll/onClick. Threaded now to pin the contract.
+                                callbacks = callbacks,
                             )
                         }
                         // Draw-phase writes: read only outside this lambda → one settling recompose.
@@ -320,6 +339,11 @@ fun RemoteComposeApp(
                 val tx = if (live) touchState.x.toInt() else 0
                 val ty = if (live) touchState.y.toInt() else 0
                 BasicText("$tx,$ty", Modifier.testTag("rc-touch-echo"))
+                // REM-108 S0: the two interaction echo hooks, NoOp-until-fed (S1 feeds rc-scroll-offset, S2
+                // feeds rc-action-echo). Present now so the conformance flows can address them; the values
+                // are the S0 NoOp sentinels until the producing slices wire them.
+                BasicText(actionEcho, Modifier.testTag("rc-action-echo"))
+                BasicText(scrollOffset.toString(), Modifier.testTag("rc-scroll-offset"))
             }
         }
         // REM-83 (W2): mirror the hook state to DOM `data-*` on the wasm <canvas> so DOM web-drivers
