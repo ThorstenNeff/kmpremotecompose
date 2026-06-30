@@ -57,6 +57,7 @@ import androidx.compose.ui.unit.Density
 import com.tneff.kmpremotecompose.remote.core.document.DocumentReader
 import com.tneff.kmpremotecompose.remote.core.document.RemoteComposeDocument
 import com.tneff.kmpremotecompose.remote.core.operations.Builtins
+import com.tneff.kmpremotecompose.rememberNamedFontResolver
 import com.tneff.kmpremotecompose.remote.player.compose.ComposePaintContext
 import com.tneff.kmpremotecompose.remote.player.compose.composePaintContextWithGeometry
 import com.tneff.kmpremotecompose.remote.player.core.RemoteComposePlayer
@@ -305,11 +306,13 @@ private fun ProcessRenderDocCanvas(
     onPaintContext: (ComposePaintContext) -> Unit, onThrow: (String) -> Unit,
 ) {
     val fontResolver = LocalFontFamilyResolver.current
+    // REM-158: resolver in composition scope so the process-frame sweep resolves TYPEFACE fonts too.
+    val namedFonts = rememberNamedFontResolver()
     Canvas(Modifier.pxSizeP(pxW, pxH)) {
         val canvas = drawContext.canvas
         try {
             renderOpaque(canvas, size.width.toInt(), size.height.toInt(), 0xFFFFFFFF.toInt()) { target ->
-                val pc = composePaintContextWithGeometry(ctx, target, fontResolver)
+                val pc = composePaintContextWithGeometry(ctx, target, fontResolver, namedFontResolver = namedFonts)
                 onPaintContext(pc)
                 // Only frameTimeSeconds drives the active clock (animationEnabled=true). staticTimeSeconds
                 // is the static-mode pin and is unused here; mirror `ParticleGateHarness.captureFrames`
