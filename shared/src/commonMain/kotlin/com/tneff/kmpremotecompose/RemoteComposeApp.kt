@@ -44,7 +44,9 @@ import com.tneff.kmpremotecompose.remote.player.compose.GeometryPaintDelegate
 import com.tneff.kmpremotecompose.remote.player.core.HapticActuator
 import com.tneff.kmpremotecompose.remote.player.core.NoOpHapticActuator
 import com.tneff.kmpremotecompose.remote.player.core.NoOpSensorSource
+import com.tneff.kmpremotecompose.remote.player.core.RcClickEvent
 import com.tneff.kmpremotecompose.remote.player.core.RcInteractionCallbacks
+import com.tneff.kmpremotecompose.remote.player.core.RcScrollEvent
 import com.tneff.kmpremotecompose.remote.player.core.RemoteComposePlayer
 import com.tneff.kmpremotecompose.remote.player.core.renderOpaque
 import com.tneff.kmpremotecompose.remote.player.core.RemoteContext
@@ -124,7 +126,25 @@ fun RemoteComposeApp(
     // cropped render area; the canvas renders independently at pxSize → zero pixel shift). §2-safe: render-only
     // state, no `.rc` bytes. The producing slices flip these via their own state writes.
     val actionEcho by remember { mutableStateOf("none") }
-    val scrollOffset by remember { mutableStateOf(0) }
+    // S1 feeds this from the player's onScroll (below); S0 left it at the "0" sentinel.
+    var scrollOffset by remember { mutableStateOf(0) }
+    // REM-108 S1: a stable per-frame capture cell the observing sink writes during paint (the draw phase),
+    // settled into [scrollOffset] once after the render lambda — the same write-during-draw → settle-after
+    // idiom as `drawCount`/`frameCount` (avoids a recompose storm). intArrayOf is a GC-light mutable holder.
+    val scrollCapture = remember { intArrayOf(0) }
+    // REM-108 S1: the player's interaction sink, wrapping the app-supplied [callbacks]. It forwards every
+    // event to the consumer's sink (the public contract) AND captures the scroll offset for the
+    // `rc-scroll-offset` test hook. onClick is pass-through here (wired in S2). Remembered on [callbacks] so
+    // it stays stable across the per-frame recompositions but re-wraps if the consumer swaps its sink.
+    val observingCallbacks = remember(callbacks) {
+        object : RcInteractionCallbacks {
+            override fun onClick(event: RcClickEvent) { callbacks.onClick(event) }
+            override fun onScroll(event: RcScrollEvent) {
+                scrollCapture[0] = event.offset.toInt()
+                callbacks.onScroll(event)
+            }
+        }
+    }
 
     // Re-runs when the selected doc changes (deep-link) — reset per-doc render state, then load by name.
     LaunchedEffect(docName) {
@@ -285,13 +305,17 @@ fun RemoteComposeApp(
                                 // REM-143 (S3b): host haptic actuator (live-only; impulse fires on its
                                 // initial pass). NoOp on desktop/web (capability-floor) → no buzz.
                                 hapticActuator = hapticActuator,
-                                // REM-108 (S0): the public interaction sink. NoOp default in S0 (no emission
-                                // yet); S1/S2 wire onScroll/onClick. Threaded now to pin the contract.
-                                callbacks = callbacks,
+                                // REM-108 (S0/S1): the interaction sink. The observing wrapper forwards to the
+                                // app-supplied callbacks AND captures the scroll offset for rc-scroll-offset.
+                                callbacks = observingCallbacks,
                             )
                         }
                         // Draw-phase writes: read only outside this lambda → one settling recompose.
                         if (drawCount != ctx.drawCount) drawCount = ctx.drawCount
+                        // REM-108 S1: settle the scroll offset the observing sink captured this frame (live
+                        // only; static never emits → stays at the 0 sentinel). Same one-settling-recompose
+                        // discipline as drawCount → rc-scroll-offset reflects the latest live offset.
+                        if (scrollOffset != scrollCapture[0]) scrollOffset = scrollCapture[0]
                         // REM-143 S3-prep: bump the committed-frame counter once per distinct LIVE frame
                         // (renderTime advances every frame in live mode; static mode keeps renderTime=0f so
                         // the `live` gate + the dedup leave it at its reset 0 → deterministic, no storm).

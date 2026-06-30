@@ -45,6 +45,10 @@ import com.tneff.kmpremotecompose.remote.wire.WireTypes
  */
 class RemoteComposePlayer(val context: RemoteContext = RemoteContext()) {
 
+    // REM-108 (Epic-F) S1: the interaction-callback sink for the current paint pass (set in [paint] from its
+    // `callbacks` param). Render-only — never serialized (§2). Default NoOp until a pass sets it.
+    private var interactionCallbacks: RcInteractionCallbacks = RcInteractionCallbacks.NoOp
+
     /**
      * Render [document] into [paint] for the single frame at [frameTimeSeconds].
      *
@@ -69,12 +73,14 @@ class RemoteComposePlayer(val context: RemoteContext = RemoteContext()) {
         sensorSource: SensorSource = NoOpSensorSource,
         touchState: TouchState? = null,
         hapticActuator: HapticActuator = NoOpHapticActuator,
-        // REM-108 (Epic-F) S0: the public interaction-callback sink (default NoOp = §0 floor). Threaded as a
-        // zero-risk additive param defining the contract; the emitting paths land in S1 (onScroll) / S2
-        // (onClick). Unconsumed here in S0 → behaviour-, byte- and render-identical to today.
-        @Suppress("UNUSED_PARAMETER") callbacks: RcInteractionCallbacks = RcInteractionCallbacks.NoOp,
+        // REM-108 (Epic-F) S0/S1: the public interaction-callback sink (default NoOp = §0 floor). S1 consumes
+        // it for onScroll (see [openScrollBracket]); S2 will add onClick. Stored for this pass below.
+        callbacks: RcInteractionCallbacks = RcInteractionCallbacks.NoOp,
     ): Float {
         context.paintContext = paint
+        // REM-108 S1: hold the sink for this paint pass so the walk (openScrollBracket) can emit onScroll.
+        // A fresh player is built per frame by the app, so a plain field scoped to the pass is sufficient.
+        interactionCallbacks = callbacks
         context.resetPass(frameTimeSeconds)
         paint.reset()
         // The document authors its content in DOC-space (header dims). For SIZING_SCALE the player
@@ -266,6 +272,12 @@ class RemoteComposePlayer(val context: RemoteContext = RemoteContext()) {
         val offset = b.scroll.scrollOffset(context)
         if (b.scroll.direction == ScrollModifier.HORIZONTAL) paint.translate(offset, 0f) else paint.translate(0f, offset)
         restoreAt.add(matchEnd)
+        // REM-108 S1: surface the already-computed offset to the app's interaction sink (observation, not
+        // control — the translate above is unchanged). LIVE-only, so static/golden renders never emit → the
+        // §0 floor + determinism hold (this walk runs only in the paint phase, once per holder per frame).
+        if (context.isAnimationEnabled()) {
+            interactionCallbacks.onScroll(RcScrollEvent(componentId = holderId, offset = offset, axis = b.scroll.direction))
+        }
     }
 
     /** Open the span bracket for [op] if it is a bracketed TextLayout content holder (REM-134 a). */
