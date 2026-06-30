@@ -730,6 +730,17 @@ class RemoteComposePlayer(val context: RemoteContext = RemoteContext()) {
             // Action / click / function / reference containers (REM-41 NO-GO fix — were missing)
             Operations.MODIFIER_CLICK,
             Operations.MODIFIER_MULTI_CLICK,
+            // REM-162: the touch-action modifiers (REM-145-S1) each carry a trailing CONTAINER_END (an
+            // action block), exactly like MODIFIER_CLICK — but were absent here. That asymmetry desynced
+            // `skipConditionalBlock`'s depth count: a touch-modifier's CONTAINER_END decremented depth
+            // without a matching open, so an ENCLOSING bracket (scroll / conditional / loop) closed one
+            // child early (clickable-in-scroll: the 2nd item escaped the scroll clip+translate). Marking
+            // them openers restores the balance. NB: this only affects depth-counting in skipConditionalBlock
+            // contexts; the linear walk still treats them via `action(op)` (no content-holder bracket), so
+            // plain (non-bracketed) touch docs render byte-identically — verified by the render-regression gate.
+            Operations.MODIFIER_TOUCH_DOWN,
+            Operations.MODIFIER_TOUCH_UP,
+            Operations.MODIFIER_TOUCH_CANCEL,
             Operations.FUNCTION_DEFINE,
             Operations.REFERENCED_OPERATIONS,
             // Pattern/macro containers (PatternBlock/Define/ForEach/Inflation) — were missing
