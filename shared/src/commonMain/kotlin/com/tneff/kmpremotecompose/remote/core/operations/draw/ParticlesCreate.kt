@@ -60,6 +60,16 @@ class ParticlesCreate(
     }
 
     /**
+     * REM-143 S3a — re-arm the seed so the **next** [apply] re-initialises every particle. Called by the
+     * impulse lifecycle ([com.tneff.kmpremotecompose.remote.player.core.RemoteComposePlayer]) when its
+     * window elapses (the upstream `ImpulseOperation` `mInitialPass = true` reset): a later re-trigger — a
+     * tap re-entering `[startAt, startAt+duration]` — then re-bursts from the seed instead of continuing
+     * from the last evolved state. Render-only (no wire/`equals` field touched, §2 safe). A tap *during* the
+     * active window never reaches this (no elapse) → no re-seed, matching upstream (B2-ratified).
+     */
+    fun resetSeed() { seeded = false }
+
+    /**
      * REM-143 — (re)seed particle [i]: `particles[i][j] = eval(initEq[j], VAR1=i)` (upstream
      * `initializeParticle`, Z.251/257-264 — var-major, VAR1=particle-index injected before each eval).
      * Called once at seed (S1) and by [com.tneff.kmpremotecompose.remote.core.operations.draw.ParticlesLoop]

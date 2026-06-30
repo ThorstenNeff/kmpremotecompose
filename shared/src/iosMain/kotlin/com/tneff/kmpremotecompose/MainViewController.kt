@@ -2,6 +2,7 @@ package com.tneff.kmpremotecompose
 
 import androidx.compose.runtime.remember
 import androidx.compose.ui.window.ComposeUIViewController
+import com.tneff.kmpremotecompose.remote.player.core.IosHapticActuator
 import com.tneff.kmpremotecompose.remote.player.core.IosSensorSource
 
 // REM-8/REM-34: render the bundled fixture selected by RcRouter (default or deep-link).
@@ -13,5 +14,8 @@ import com.tneff.kmpremotecompose.remote.player.core.IosSensorSource
 // live mode → static/golden render is untouched (light-26 has no iOS API → static).
 fun MainViewController() = ComposeUIViewController {
     val sensorSource = remember { IosSensorSource() }
-    RemoteComposeApp(sensorSource = sensorSource)
+    // REM-143 S3b: inject the UIKit-backed haptic actuator (App-Shell injection) so a live touch-triggered
+    // impulse buzzes; remembered to survive recomposition. Live-only (static/golden never buzzes).
+    val hapticActuator = remember { IosHapticActuator() }
+    RemoteComposeApp(sensorSource = sensorSource, hapticActuator = hapticActuator)
 }

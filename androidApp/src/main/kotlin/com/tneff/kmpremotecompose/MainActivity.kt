@@ -10,6 +10,7 @@ import androidx.compose.ui.ExperimentalComposeUiApi
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.semantics.testTagsAsResourceId
+import com.tneff.kmpremotecompose.remote.player.core.AndroidHapticActuator
 import com.tneff.kmpremotecompose.remote.player.core.AndroidSensorSource
 
 class MainActivity : ComponentActivity() {
@@ -36,6 +37,10 @@ class MainActivity : ComponentActivity() {
             // §5) so live sensor docs (sensor_demo_*) read real device sensors; remembered so it survives
             // recomposition. The shared player only seeds in live mode → static/golden render is untouched.
             val sensorSource = remember { AndroidSensorSource(applicationContext) }
+            // REM-143 S3b: inject the Vibrator-backed haptic actuator (App-Shell injection) so a live
+            // touch-triggered impulse buzzes (needs the VIBRATE permission in the manifest); remembered to
+            // survive recomposition. Live-only → static/golden render never buzzes.
+            val hapticActuator = remember { AndroidHapticActuator(applicationContext) }
             // REM-144 S4 — route `rc=e6_creation_proof` to the Compose-Creation-DSL E6 §6 proof
             // loader; anything else flows through the default resource loader unchanged. Branching
             // at the screen level (rather than wrapping the loadRc) so the non-proof path retains
@@ -45,11 +50,13 @@ class MainActivity : ComponentActivity() {
                 RemoteComposeApp(
                     loadRc = { _ -> E6CreationProofLoader.buildE6ProofDocument() },
                     sensorSource = sensorSource,
+                    hapticActuator = hapticActuator,
                     modifier = Modifier.semantics { testTagsAsResourceId = true },
                 )
             } else {
                 RemoteComposeApp(
                     sensorSource = sensorSource,
+                    hapticActuator = hapticActuator,
                     modifier = Modifier.semantics { testTagsAsResourceId = true },
                 )
             }

@@ -1,0 +1,7 @@
+doc,frame,t,surfaceW,surfaceH,drawCount,status,note
+impulse_demo_confetti_demo,90,3,000000,300,300,102,RENDERS,
+impulse_demo_hearts_demo,90,3,000000,300,300,52,RENDERS,
+particle,90,3,000000,300,300,83,RENDERS,
+maze,90,3,000000,500,500,3,RENDERS,
+maze1,90,3,000000,500,500,5,RENDERS,
+maze2,90,3,000000,500,500,126,RENDERS,

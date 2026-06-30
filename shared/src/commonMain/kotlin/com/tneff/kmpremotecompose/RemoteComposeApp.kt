@@ -41,6 +41,8 @@ import com.tneff.kmpremotecompose.remote.core.document.RemoteComposeDocument
 import com.tneff.kmpremotecompose.remote.core.operations.Builtins
 import com.tneff.kmpremotecompose.remote.player.compose.ComposePaintContext
 import com.tneff.kmpremotecompose.remote.player.compose.GeometryPaintDelegate
+import com.tneff.kmpremotecompose.remote.player.core.HapticActuator
+import com.tneff.kmpremotecompose.remote.player.core.NoOpHapticActuator
 import com.tneff.kmpremotecompose.remote.player.core.NoOpSensorSource
 import com.tneff.kmpremotecompose.remote.player.core.RemoteComposePlayer
 import com.tneff.kmpremotecompose.remote.player.core.renderOpaque
@@ -79,6 +81,7 @@ import kmpremotecompose.shared.generated.resources.Res
 fun RemoteComposeApp(
     loadRc: suspend (String) -> ByteArray = { name -> Res.readBytes("files/rc/$name.rc") },
     sensorSource: SensorSource = NoOpSensorSource,
+    hapticActuator: HapticActuator = NoOpHapticActuator,
     modifier: Modifier = Modifier,
 ) {
     // The selected bundled doc (REM-34): default, or a deep-link `kmprc://render?rc=<name>` via RcRouter.
@@ -94,6 +97,13 @@ fun RemoteComposeApp(
     var committed by remember { mutableStateOf(false) }
     var drawCount by remember { mutableStateOf(0) }
     var renderError by remember { mutableStateOf<String?>(null) }
+    // REM-143 S3-prep: a monotonic committed-FRAME counter (live-only) exposed as `rc-frame-count` so a
+    // Maestro flow can prove "frames advanced after a touch" (f1 > f0) WITHOUT a flaky pixel-diff (W9).
+    // App-side debug hook ONLY — no `.rc` wire/format touch, no static-render effect (§2 untouched; static
+    // mode never bumps it, see the gate below). `lastCountedFrame` dedups so it bumps once per distinct
+    // committed [renderTime] (the same one-settling-recompose idiom as `drawCount`), never self-storms.
+    var frameCount by remember { mutableStateOf(0) }
+    var lastCountedFrame by remember { mutableStateOf(Float.NaN) }
     // The name of the doc that ACTUALLY produced the committed frame — set at the commit point (below),
     // not read from the live RcRouter. Decouples rc-doc from the router so rc-rendered + rc-doc always
     // describe the same frame (test-2 rc-doc race fix): the live docName can change a composition before
@@ -107,6 +117,8 @@ fun RemoteComposeApp(
         renderError = null
         committed = false
         drawCount = 0
+        frameCount = 0
+        lastCountedFrame = Float.NaN
         try {
             Builtins.register()
             doc = DocumentReader.inflate(loadRc(docName))
@@ -254,10 +266,20 @@ fun RemoteComposeApp(
                                 sensorSource = sensorSource,
                                 // REM-108 (S2b): live pointer gesture (consumed LIVE-only; null ⇒ no touch).
                                 touchState = if (live) touchState else null,
+                                // REM-143 (S3b): host haptic actuator (live-only; impulse fires on its
+                                // initial pass). NoOp on desktop/web (capability-floor) → no buzz.
+                                hapticActuator = hapticActuator,
                             )
                         }
                         // Draw-phase writes: read only outside this lambda → one settling recompose.
                         if (drawCount != ctx.drawCount) drawCount = ctx.drawCount
+                        // REM-143 S3-prep: bump the committed-frame counter once per distinct LIVE frame
+                        // (renderTime advances every frame in live mode; static mode keeps renderTime=0f so
+                        // the `live` gate + the dedup leave it at its reset 0 → deterministic, no storm).
+                        if (live && lastCountedFrame != renderTime) {
+                            lastCountedFrame = renderTime
+                            frameCount += 1
+                        }
                         // rc-doc binds to the name captured WITH this committed frame (`docName` here
                         // matches `d`, since the Canvas only composes after the load for this name).
                         if (renderedDocName != docName) renderedDocName = docName
@@ -286,6 +308,18 @@ fun RemoteComposeApp(
                 // test-2 asserts rc-doc == ${RC}, directly proving identity (not the count≠1 proxy).
                 // Bound to renderedDocName (the committed frame's name) so it never drifts from rc-rendered.
                 BasicText(renderedDocName, Modifier.testTag("rc-doc"))
+                // REM-143 S3-prep: rc-frame-count = monotonic committed-frame counter (0 in static mode;
+                // climbs every live frame). A Maestro touch flow reads it pre/post-swipe → f1 > f0 proves
+                // the animation advanced, no pixel-diff needed. NB (causation): it climbs for ANY live
+                // animation, so a touch→animation flow must use a doc that quiesces without touch (or
+                // compare growth-rate) to isolate touch causation — flagged to the PO for test-1's flow.
+                BasicText(frameCount.toString(), Modifier.testTag("rc-frame-count"))
+                // rc-touch-echo = the last live pointer position the app accepted (doc-space px, "x,y").
+                // 0,0 before any touch; a swipe moves it → an independent "the touch reached the app" signal
+                // (decouples "input arrived" from "animation responded"). Live-only; static shows 0,0.
+                val tx = if (live) touchState.x.toInt() else 0
+                val ty = if (live) touchState.y.toInt() else 0
+                BasicText("$tx,$ty", Modifier.testTag("rc-touch-echo"))
             }
         }
         // REM-83 (W2): mirror the hook state to DOM `data-*` on the wasm <canvas> so DOM web-drivers

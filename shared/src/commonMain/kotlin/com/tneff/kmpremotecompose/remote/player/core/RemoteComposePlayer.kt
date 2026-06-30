@@ -24,6 +24,8 @@ import com.tneff.kmpremotecompose.remote.core.operations.draw.ParticlesCompare
 import com.tneff.kmpremotecompose.remote.core.operations.draw.ParticlesCreate
 import com.tneff.kmpremotecompose.remote.core.operations.draw.ParticlesLoop
 import com.tneff.kmpremotecompose.remote.core.operations.layout.CanvasContent
+import com.tneff.kmpremotecompose.remote.core.operations.layout.HapticFeedback
+import com.tneff.kmpremotecompose.remote.core.operations.layout.ImpulseProcess
 import com.tneff.kmpremotecompose.remote.core.operations.layout.ImpulseStart
 import com.tneff.kmpremotecompose.remote.core.operations.layout.LayoutContent
 import com.tneff.kmpremotecompose.remote.core.operations.layout.LoopStart
@@ -66,6 +68,7 @@ class RemoteComposePlayer(val context: RemoteContext = RemoteContext()) {
         staticTimeSeconds: Float = 0f,
         sensorSource: SensorSource = NoOpSensorSource,
         touchState: TouchState? = null,
+        hapticActuator: HapticActuator = NoOpHapticActuator,
     ): Float {
         context.paintContext = paint
         context.resetPass(frameTimeSeconds)
@@ -102,7 +105,18 @@ class RemoteComposePlayer(val context: RemoteContext = RemoteContext()) {
         // Phase A (so their re-eval this frame sees the loaded TOUCH_POS). LIVE mode only → static renders
         // never dispatch a touch → deterministic. The phase is advanced here (DOWN→DRAG, UP/CANCEL→IDLE)
         // so the persistent [TouchState] drives exactly one step per frame.
-        if (context.isAnimationEnabled() && touchState != null) dispatchTouch(document, context, touchState)
+        // REM-143 S3b: bind the host haptic actuator for this LIVE pass (static stays NoOp → goldens never
+        // buzz). The impulse lifecycle (runImpulse) fires the body's HapticFeedback on its initial pass.
+        if (context.isAnimationEnabled()) context.hapticActuator = hapticActuator
+        if (context.isAnimationEnabled() && touchState != null) {
+            dispatchTouch(document, context, touchState)
+            // REM-143 S3a: seed id29 (ID_TOUCH_EVENT_TIME) from the persistent touch-event-time EVERY live
+            // frame (the ctx is per-frame-fresh, so a one-shot load on DOWN would vanish next frame — same
+            // reason ImpulseStart.lastFrameTime is an op-field). A `startAt`=id29 impulse stays active for
+            // its [startAt, startAt+duration] window; a tap moves the window to the tap time. Default 0f ⇒
+            // auto-animation from t=0 (§0 floor). Static mode never runs this → id29 stays 0 (deterministic).
+            context.loadFloat(RemoteContext.ID_TOUCH_EVENT_TIME, touchState.touchEventTime)
+        }
         // RootContentBehavior doc→surface scaling (REM-36): when a surface box is given, apply
         // translate(align) then scale(doc→surface) — upstream `CoreDocument` order — so doc-space
         // renders with correct proportions instead of 1:1 (a 600-doc stretched into a 924-surface).
@@ -403,10 +417,34 @@ class RemoteComposePlayer(val context: RemoteContext = RemoteContext()) {
         val startAt = resolveFloat(impulse.startAt)
         val duration = resolveFloat(impulse.duration)
         if (now < startAt) { context.wakeIn(startAt - now); return } // not started yet
-        if (now > startAt + duration) { impulse.lastFrameTime = Float.NaN; return } // window elapsed → reset
+        // Upstream `mList` = the impulse's direct body children BEFORE the trailing ImpulseProcess (the
+        // process block runs only on process frames). These are the ops that fire on the INITIAL pass
+        // (ParticlesCreate seed, HapticFeedback). Scope both the re-seed re-arm and the haptic fire to it.
+        var mListEnd = bodyEnd
+        for (j in bodyStart until bodyEnd) if (ops[j] is ImpulseProcess) { mListEnd = j; break }
+        if (now > startAt + duration) {
+            // Window elapsed → re-arm (upstream `ImpulseOperation` mInitialPass = true). On the elapse
+            // TRANSITION only (lastFrameTime not yet reset), re-arm the body's ParticlesCreate seeds so a
+            // later re-trigger — a tap moving startAt to re-enter the window (S3a, id29) — re-bursts from
+            // the seed rather than continuing from the last evolved state. A tap *during* the active window
+            // never elapses → never re-seeds (B2-ratified: Tap ≠ Re-Seed). Render-only.
+            if (!impulse.lastFrameTime.isNaN()) {
+                for (j in bodyStart until mListEnd) (ops[j] as? ParticlesCreate)?.resetSeed()
+            }
+            impulse.lastFrameTime = Float.NaN
+            return
+        }
         val live = context.isAnimationEnabled()
-        val dt = if (live && !impulse.lastFrameTime.isNaN()) now - impulse.lastFrameTime else 0f
+        val isInitialPass = impulse.lastFrameTime.isNaN()
+        val dt = if (live && !isInitialPass) now - impulse.lastFrameTime else 0f
         context.loadFloat(RemoteContext.ID_ANIMATION_DELTA_TIME, dt)
+        // REM-143 S3b: on the INITIAL pass (the (re-)trigger frame), fire the body's HapticFeedback (mList)
+        // ONCE — upstream runs mList (incl. HapticFeedback.apply → context.hapticEffect) on mInitialPass.
+        // LIVE only (no buzz on static/golden); process frames (lastFrameTime set) don't refire → exactly
+        // one pulse per (re-)trigger. Desktop/Web actuators are no-ops (capability-floor).
+        if (live && isInitialPass) {
+            for (j in bodyStart until mListEnd) (ops[j] as? HapticFeedback)?.let { context.hapticEffect(it.hapticFeedbackType) }
+        }
         walkGated(ops, bodyStart, bodyEnd, paintPhase = true, paint) { op ->
             if (op is PaintOperation) op.paint(context, paint)
         }
@@ -454,7 +492,13 @@ class RemoteComposePlayer(val context: RemoteContext = RemoteContext()) {
     /** Consume exactly one [TouchState] transition this frame and advance the phase (REM-108 S2b). */
     private fun dispatchTouch(document: RemoteComposeDocument, context: RemoteContext, ts: TouchState) {
         when (ts.phase) {
-            TouchPhase.DOWN -> { touchDown(document, context, ts.x, ts.y); ts.phase = TouchPhase.DRAG }
+            TouchPhase.DOWN -> {
+                // REM-143 S3a: record the touch-down frame-time so id29 (ID_TOUCH_EVENT_TIME) can be seeded
+                // from it each live frame → a tap (re)triggers a `startAt`=id29 impulse (confetti/hearts/
+                // particle/haptic). Upstream sets id29 = getAnimationTime() in onTouchEvent ACTION_DOWN.
+                ts.touchEventTime = context.frameTimeSeconds
+                touchDown(document, context, ts.x, ts.y); ts.phase = TouchPhase.DRAG
+            }
             TouchPhase.DRAG -> touchDrag(document, context, ts.x, ts.y)
             TouchPhase.UP -> { touchUp(document, context, ts.x, ts.y); ts.phase = TouchPhase.IDLE }
             TouchPhase.CANCEL -> { touchCancel(document); ts.phase = TouchPhase.IDLE }
