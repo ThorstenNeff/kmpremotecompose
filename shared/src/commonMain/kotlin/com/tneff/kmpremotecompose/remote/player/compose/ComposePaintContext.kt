@@ -196,6 +196,19 @@ class ComposePaintContext(
 
     override fun applyPaint(paint: PaintData) { geometry?.applyPaint(paint) }
 
+    /**
+     * **REM-157 Phase-A font-state preroll** — apply only the font-affecting tags
+     * (TEXT_SIZE / TYPEFACE / FONT_STYLE / FONT_WEIGHT side effects via `applyTo`) of the bundle
+     * onto the shared [paintState], so a subsequent Phase-A `TEXT_MEASURE.apply()` (which routes
+     * through `getTextBounds` → `currentStyle()` → reads `paintState.textSizePx`) measures at the
+     * font state the corresponding text will render with in Phase-B. Non-font fields stay untouched
+     * here and are re-applied in full by Phase-B's [applyPaint]. Routes via [PaintBundleApplier]
+     * with the real [paintState] receiving only the font-field mutations.
+     */
+    override fun applyFontStateForMeasure(values: IntArray) {
+        PaintBundleApplier.applyFontStateOnly(context, paintState, values)
+    }
+
     override fun startGraphicsLayer(w: Int, h: Int) { geometry?.startGraphicsLayer(w, h) }
 
     override fun setGraphicsLayer(attributes: Map<Int, Any?>) { geometry?.setGraphicsLayer(attributes) }
