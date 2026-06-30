@@ -16,8 +16,8 @@
 package com.tneff.kmpremotecompose
 
 import androidx.compose.foundation.Canvas
-import androidx.compose.foundation.gestures.detectDragGestures
-import androidx.compose.foundation.gestures.detectTapGestures
+import androidx.compose.foundation.gestures.awaitEachGesture
+import androidx.compose.foundation.gestures.awaitFirstDown
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.safeContentPadding
@@ -32,6 +32,7 @@ import androidx.compose.runtime.SideEffect
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.input.pointer.pointerInput
+import kotlin.math.abs
 import androidx.compose.ui.layout.layout
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.platform.LocalFontFamilyResolver
@@ -260,29 +261,42 @@ fun RemoteComposeApp(
     // offset ≈ doc-space (the SIZING_SCALE-doc inverse is a deferred note).
     val gestureModifier: Modifier = remember(d, live) {
         if (live && d != null) {
-            Modifier
-                .pointerInput(d) {
-                    detectDragGestures(
-                        onDragStart = { off -> touchState.down(off.x, off.y) },
-                        onDrag = { change, _ -> touchState.move(change.position.x, change.position.y) },
-                        onDragEnd = { touchState.up(touchState.x, touchState.y) },
-                        onDragCancel = { touchState.cancel() },
-                    )
+            // REM-163: ONE unified gesture loop feeding BOTH the drag path (touchState → TouchExpression /
+            // slider / scroll POS id13/14) and the tap path (tapState → click modifiers). The previous S2
+            // design chained two competing detectors — `detectDragGestures` + a second `detectTapGestures`
+            // pointerInput. On mobile their arbitration coexists; on **wasm/Skiko** the tap detector's
+            // `tryAwaitRelease()` starved the drag detector's `onDrag`, so `touchState.move` never fired → the
+            // POS vars were never fed → the touch1-slider stuck at its default (REM-163, test-2). A single
+            // `awaitEachGesture` loop has no inter-detector arbitration: the drag POS-feed and the tap
+            // dispatch both run on every target identically. The drag press-edge is still consumed by
+            // `dispatchTouch` (DOWN→DRAG; TouchState.move never collapses DOWN→DRAG itself, REM-108 S2b).
+            Modifier.pointerInput(d) {
+                val slop = viewConfiguration.touchSlop
+                awaitEachGesture {
+                    val down = awaitFirstDown(requireUnconsumed = false)
+                    val x0 = down.position.x; val y0 = down.position.y
+                    touchState.down(x0, y0) // drag/slider press edge
+                    tapState.down(x0, y0)   // click press edge (MODIFIER_TOUCH_DOWN)
+                    var moved = false
+                    while (true) {
+                        val event = awaitPointerEvent()
+                        val change = event.changes.firstOrNull { it.id == down.id } ?: event.changes.firstOrNull() ?: break
+                        if (change.pressed) {
+                            val p = change.position
+                            if (abs(p.x - x0) > slop || abs(p.y - y0) > slop) moved = true
+                            touchState.move(p.x, p.y) // continuous POS feed for the TouchExpression
+                        } else {
+                            val p = change.position
+                            touchState.up(p.x, p.y)
+                            // a clean tap (no slop-crossing) → click release (MODIFIER_TOUCH_UP/CLICK); a
+                            // drag-release → cancel the click (the player routes cancel to the down-span) —
+                            // the same semantics the two-detector design produced.
+                            if (moved) tapState.cancel() else tapState.up(p.x, p.y)
+                            break
+                        }
+                    }
                 }
-                // REM-108 S2: a SECOND detector (separate pointerInput → coexists with the drag detector) for
-                // discrete taps/clicks — a no-move tap never trips detectDragGestures' slop. onPress = the
-                // DOWN (fires MODIFIER_TOUCH_DOWN); onTap = a clean release position (fires MODIFIER_TOUCH_UP +
-                // MODIFIER_CLICK); a drag-release (not a tap) → tryAwaitRelease(false) → cancel (the player
-                // routes it to the down-span). CMP unifies touch/mouse/pointer. Live-only → static stays inert.
-                .pointerInput(d) {
-                    detectTapGestures(
-                        onPress = { off ->
-                            tapState.down(off.x, off.y)
-                            if (!tryAwaitRelease()) tapState.cancel()
-                        },
-                        onTap = { off -> tapState.up(off.x, off.y) },
-                    )
-                }
+            }
         } else {
             Modifier
         }
