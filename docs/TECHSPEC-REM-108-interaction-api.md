@@ -1,7 +1,8 @@
 # TechSpec — REM-108 Interaktions-API (öffentlich, Fremd-Team-Konsum)
 
-> **Autor:** PO-Assistent (Reviewer) · **Status:** **Draft v1** (grounded gegen `develop=3c2ff54`;
-> dev-1 `./androidx`-Grounding `docs/REM-108-grounding.md` pending → vor Final-GO eingearbeitet).
+> **Autor:** PO-Assistent (Reviewer) · **Status:** **v1.1** (grounded gegen `develop=3c2ff54`; dev-1
+> `./androidx`-Grounding `docs/REM-108-grounding.md` @`460834c` eingearbeitet; **§4-Click-Modell = Option B,
+> PO-Entscheid 2026-06-30, fixiert**).
 > **Epic:** REM-154 (externe App-Teams: Taxi=Mobile, Agent-Tool=Desktop/Wasm). **Branch-Base:**
 > `origin/develop=3c2ff54`. **Bindend:** `PROJECT_CONTEXT.md` (§0 Capability-Staffing, §2 Byte-Invariante).
 > **Lieferstandard:** *dokumentierte öffentliche API* (Fremd-Teams konsumieren) **+** conformance-gateable
@@ -155,13 +156,25 @@ die in-doc-gebundene Action aus** (`ValueIntegerChangeAction`/Scroll → Float-S
 hält reaktiven in-doc-Text/State funktional) **UND (2)** emittiere `onClick` an die App. **Beides**, nicht
 entweder/oder (Empfehlung §9-Q1): (1) ist upstream-Parität, (2) ist der Fremd-Team-Bedarf.
 
-**Design-Tradeoff (dev-1, in den Contract aufgenommen — Impl-Entscheid mit Byte-Folge):**
-- **(a) Modifier-als-self-running-Action-Container** (upstream-treu): der `MODIFIER_CLICK`-Container „runnt"
-  seine genesteten Action-Ops selbst beim Hit. Näher an upstream, weniger Sonder-Walk.
-- **(b) Flat + separater Dispatch-Walk**: Action-Ops flach, ein eigener Post-Hit-Walk feuert sie.
-- **Beide in den Contract**; Empfehlung **(a)** (upstream-Treue → weniger Divergenz-Risiko an der
-  Byte-nahen Action-Reihenfolge), final nach dev-1s Byte-Tradeoff-Analyse. **§2 unberührt in beiden** (kein
-  Wire-Change; nur Laufzeit-Interpretation der schon dekodierten Container).
+**Click-Exekutions-Modell = Option B (flat + Runtime-Dispatch-Walk) — PO-Entscheid 2026-06-30, FIXIERT.**
+Beide Modelle sind **byte-identisch auf der Wire** (`[MODIFIER_TOUCH_DOWN][action-bytes][CONTAINER_END]`) —
+die Wahl ist nur In-Memory-Tree + Runtime-Walk, nicht die Bytes (dev-1-Grounding §6). Daher:
+- **B (gewählt):** Decode bleibt flach (`MODIFIER_TOUCH_*`, Action-Ops, `CONTAINER_END` als flache
+  Sibling-Ops — **schon byte-green, null Change**). Ein Dispatch-Component walkt beim Hit vom Modifier zum
+  matchenden `CONTAINER_END` (depth-counted) und feuert die `ActionOperation`s dazwischen. **§2-Byte-Risiko ≈ 0**
+  (der conformance-grüne Pfad wird **nicht** angefasst) und **präzedenziert im Code**:
+  `ParticleSystemDecoder.bodyOps` / `RemoteComposePlayer.skipConditionalBlock`+`CONTAINER_OPENING_OPCODES`
+  (enthält schon `MODIFIER_CLICK`/`MULTI_CLICK`/`RUN_ACTION`) gruppieren Container-Bodies **genau so**.
+- **A (verworfen):** Modifier-als-self-running-Container würde den geprüften Decode/Encode-Pfad **reopnen**
+  → Byte-Risiko (double-end / Nesting-Tiefe) für **null Verhaltens-Gewinn** (der Runtime-Walk gruppiert identisch).
+
+**Adversariale Prüfung von B (Reviewer) — B trägt, MIT einer expliziten Pflicht-Bedingung:** der Dispatcher
+MUSS upstream `mAppliedTouchOperations` nachbilden — die getroffene(n) DOWN-Span(s) werden **getrackt**, und
+`up`/`cancel` routen an **dieselbe** Span (die den `down` bekam), **NICHT** per Re-Hit-Test zur Up-Zeit. Sonst
+bricht die Drag-off-Semantik (Finger startet auf X, zieht raus, lässt los → upstream liefert up an X). Das ist
+in B voll abbildbar (Dispatcher-State), aber **kein Default** — daher als S2-Pflicht festgeschrieben (§7-S2).
+Nesting/Component-Zuordnung sind durch die schon nesting-aware `skipConditionalBlock`-Tiefenzählung + das
+`holderId→Bracket`-Muster (`openScrollBracket`) abgedeckt. **§2 in B unberührt** (nur Laufzeit-Interpretation).
 
 ---
 
@@ -202,9 +215,9 @@ equals/hashCode unverändert) + 173-Conformance grün — sonst No-Go (REM-123/�
 
 | Slice | Inhalt | Owner | Risiko / Abhängig |
 |---|---|---|---|
-| **S0 Foundation (NoOp, zero-risk, blockierend)** | Public `RcInteractionCallbacks` + `RcClickEvent`/`RcScrollEvent` (commonMain) **als optionale default-NoOp-Params** an `RemoteComposeApp`/`RemoteComposePlayer.paint` gehängt. **Kein Verhaltens-/Byte-/Render-Change** (Floor). Definiert den Public-Contract. + die zwei fehlenden Echo-testTags (`rc-action-echo`/`rc-scroll-offset`) **NoOp-bis-gefüttert** verdrahtet. | dev-1 | **zero-risk** (rein additiv); — |
+| **S0 Foundation (NoOp, zero-risk, blockierend)** | Public `RcInteractionCallbacks` + `RcClickEvent`/`RcScrollEvent` (commonMain) **als optionale default-NoOp-Params** an `RemoteComposeApp`/`RemoteComposePlayer.paint` gehängt **+** der `.rcInteractive()`-Compose-`Modifier`-Stub (capability-gestaffelt, §9-Q7) als öffentlicher Input-Eintritt. **Kein Verhaltens-/Byte-/Render-Change** (Floor). Definiert den Public-Contract. + die zwei fehlenden Echo-testTags (`rc-action-echo`/`rc-scroll-offset`) **NoOp-bis-gefüttert** verdrahtet. | dev-1 | **zero-risk** (rein additiv); — |
 | **S1 Scroll-Observability** | `onScroll` + `rc-scroll-offset` über den **schon berechneten** `scrollOffset` (read-only über `openScrollBracket`/`scrollOffset`). Fallback = S3b-Clip-Window-Visual. | dev-2 | low (liest bestehende Runtime); S0-Contract |
-| **S2 Click-Exekution + Action-Echo (DER Gap)** | (a) **Hittable-Element-Registry**: `LayoutMeasure` publiziert id+abs-Bounds aus `ClickArea` + clickbaren Components (reuse der Measure-Bounds, BackgroundModifier-`setBounds`-Muster). (b) `detectTapGestures` auf `rc-canvas` → Hit-Test (topmost-wins, §9-Q3) → **`runAction`-Pfad**: in-doc-Action ausführen (ValueChange→Store) **+** `onClick` emittieren **+** `rc-action-echo`. Impl-Variante (a)/(b) aus §4. Capability-gestaffelt (Tap via CMP; HostAction Mobile-nativ sonst Callback). | dev-1 (+dev-2 für Bounds-Registry) | **Hauptarbeit**; S0; Bounds aus LayoutMeasure |
+| **S2 Click-Exekution + Action-Echo (DER Gap, Modell B)** | (1) **Hittable-Element-Registry**: `LayoutMeasure` publiziert id+abs-Bounds aus `ClickArea` + clickbaren Components (reuse Measure-Bounds, `BackgroundModifier.setBounds`-Muster). (2) `detectTapGestures` auf `rc-canvas` → Hit-Test (topmost-wins, §9-Q3) → **Dispatch-Walk (Option B)**: vom Modifier zum matchenden `CONTAINER_END` (depth-counted, `skipConditionalBlock`-Idiom) → `runAction` je `ActionOperation` → in-doc-Action ausführen (ValueChange→Store) **+** `onClick` emittieren **+** `rc-action-echo`. (3) **PFLICHT: active-touch-span-Tracking** (upstream `mAppliedTouchOperations`) — `up`/`cancel` an die DOWN-Span, kein Re-Hit-Test (§4). Capability-gestaffelt (Tap via CMP; HostAction Mobile-nativ sonst Host-Callback). | dev-1 (+dev-2 für Bounds-Registry) | **Hauptarbeit**; S0; Bounds aus LayoutMeasure |
 | **S3 Conformance-/Maestro-Gate** | Flows: nach Tap ändert sich `rc-action-echo`; nach Drag ändert sich `rc-scroll-offset`/Clip-Window. Pro Target (test-1=Android/iOS, test-2=Web, test-3=Desktop). + null-write/read-Assert + 173-Conformance grün (§6). | test-1/2/3, dev-enabled | S1+S2 |
 | **D1 (deferred) Velocity/Fling** | Touch-VEL-ids (15/16) — reserved, korpus-unexercised; Fling-Physik. | dev-1 | nach S2 |
 | **D2 (deferred) Multi-Click / RunAction-Vollvokabular** | `MODIFIER_MULTI_CLICK`, `Combined`, volle HostAction-Surface. | dev-1 | nach S2 |
@@ -231,17 +244,25 @@ ein Click-Pfad gilt erst als fertig, wenn ein Flow das Echo-Delta auf einem Targ
   Component-id aus dem Measure-Pass; sonst synthetisierter stabiler Index. **Empfehlung: ClickArea.id →
   Component-id → -1.** — *an PO/dev-1 bestätigen.*
 - **Q3 (Hit-Test-Z-Order):** überlappende `ClickArea`s → **topmost/last-in-doc-order wins.** — *bestätigen.*
-- **Q4 (Impl-Variante §4 a vs b):** Modifier-self-run (a, empfohlen) vs flat+dispatch-walk (b) — **Byte-naher
-  Action-Order-Tradeoff**, final aus dev-1s `docs/REM-108-grounding.md`. — *Reviewer-Urteil nach Doc.*
-- **Q5 (HostAction-Staffing):** Desktop/Web ohne PendingIntent → reicht der `onClick`-Callback als
-  Ersatz-Vertrag, oder braucht es eine separate `RcHostActionRequest`-Surface? **Empfehlung: onClick trägt
-  HostAction-Payload (action-uri/extras in metadata).** — *Risk-Posture (App-Intent) → an PO/Mensch.*
+- **Q4 (Click-Modell) — ENTSCHIEDEN:** **Option B (flat + Dispatch-Walk)**, PO 2026-06-30 (§4). Reviewer-
+  Verifikation: B trägt; Pflicht-Bedingung active-touch-span-Tracking in S2 festgeschrieben. *Geschlossen.*
+- **Q5 (HostAction-Staffing):** Desktop/Web ohne PendingIntent → **Host-Callback-Interface** (kein
+  `PendingIntent` in commonMain, §5/dev-1-§5). **Empfehlung: `onClick` trägt die HostAction-Payload
+  (action-uri/extras via `metadata`); Mobile feuert zusätzlich nativ.** — *Risk-Posture (App-Intent) → an PO/Mensch.*
+- **Q6 (Touch-Koordinaten-Version) — Reviewer-Entscheid:** **`FIX_TOUCH_EVENT=1` (component-local Coords)**
+  pinnen = upstream-Default (`DEFAULT_TOUCH_VERSION`); beide Pfade existieren in `TouchExpression`/
+  `ListActionsOperation`, wir standardisieren auf einen. *Konventionell/reversibel — entschieden, PO-Hinweis.*
+- **Q7 (öffentliche Input-Surface):** ein capability-gestaffelter Compose-`Modifier` **`.rcInteractive()`**
+  (wrappt `detectTap`+`detectDrag`/Maus/Pointer per Target, füttert `player.touchDown/...`) als sauberer
+  Fremd-Team-Eintrittspunkt, statt nur des internen `RemoteComposeApp`-Wirings. *In S0/S2 ausweisen.*
 
 ---
 
-## 10. Pending — dev-1 `./androidx`-Grounding (vor Final-GO einzuarbeiten)
+## 10. dev-1 `./androidx`-Grounding — eingearbeitet (`docs/REM-108-grounding.md` @`460834c`)
 
-`docs/REM-108-grounding.md` (Branch `feature/REM-108-grounding`) verfeinert: präzise upstream
-ListActions/TouchHandler-`runAction`-Semantik, das volle Action-Vokabular (ValueChange/Scroll/Combined/
-RunAction/HostAction), und die **Byte-Tradeoff-Analyse** für §4-(a) vs (b). Diese v1 ist gegen den
-develop-Code grounded; §2/§7-Slicing/Capability-Modell stehen, §4-Impl-Variante + §9-Q4 final nach der Doc.
+Eingearbeitet: upstream `ListActionsOperation.applyActions`→`runAction`-Semantik + Action-Vokabular
+(ValueChange/Scroll/Combined/RunAction/HostAction), die Byte-Tradeoff-Analyse (§4, Option B gewählt),
+`mAppliedTouchOperations`-Routing (§4/§7-S2-Pflicht), Touch-Version-Pin (§9-Q6), die
+`.rcInteractive()`-Public-Surface (§9-Q7) und die §2-Watchpoints (TouchExpression `(touchMode<<16)|len`-
+Packing + NaN-id-Encoding — §6). **Byte-Referenz für beide Click-Pfade: REM-145-S1-Writer.** Offene
+Reviewer-/PO-Punkte nur noch §9-Q5 (HostAction-Risk-Posture).
