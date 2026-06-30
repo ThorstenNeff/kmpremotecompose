@@ -18,6 +18,7 @@ package com.tneff.kmpremotecompose.remote.player.core
 import com.tneff.kmpremotecompose.remote.core.document.RemoteComposeDocument
 import com.tneff.kmpremotecompose.remote.core.operations.ComponentValue
 import com.tneff.kmpremotecompose.remote.core.operations.Operation
+import com.tneff.kmpremotecompose.remote.core.operations.Operations
 import com.tneff.kmpremotecompose.remote.core.operations.TextData
 import com.tneff.kmpremotecompose.remote.core.operations.draw.DrawContent
 import com.tneff.kmpremotecompose.remote.core.operations.layout.AlignByModifier
@@ -90,10 +91,27 @@ internal object LayoutMeasure {
      */
     internal class SpanBracket(val contentHolderId: Int, val x: Float, val y: Float)
 
-    /** Result of [measure]: the scroll brackets (REM-108) + the TextLayout-span brackets (REM-134 a). */
+    /**
+     * REM-108 S2 — a clickable element: a component carrying ≥1 click/touch modifier, with its measured
+     * absolute doc-space bounds and the flat-op indices of its modifiers (each tagged by opcode so the
+     * dispatcher fires only the modifiers matching the gesture phase). Bounds come from the measure pass;
+     * the modifiers' action blocks are walked from [ClickModifierRef.opIndex] at dispatch time (Option B).
+     */
+    internal class ClickModifierRef(val opcode: Int, val opIndex: Int)
+    internal class ClickTarget(
+        val componentId: Int,
+        val l: Float, val t: Float, val r: Float, val b: Float,
+        val modifiers: List<ClickModifierRef>,
+    ) {
+        fun contains(x: Float, y: Float): Boolean = x >= l && x < r && y >= t && y < b
+    }
+
+    /** Result of [measure]: the scroll brackets (REM-108) + the TextLayout-span brackets (REM-134 a) +
+     *  the REM-108 S2 click targets (in doc order; the dispatcher hit-tests topmost = last-match). */
     internal class MeasureResult(
         val scrollBrackets: Map<Int, ScrollBracket>,
         val spanBrackets: Map<Int, SpanBracket>,
+        val clickTargets: List<ClickTarget> = emptyList(),
     )
 
     private const val MAX_DEPTH = 32 // bounded-depth guard; real docs are 2–4 deep
@@ -202,7 +220,57 @@ internal object LayoutMeasure {
         // measure phase, BEFORE the eval Phase-A) so the paired TouchExpression clamps against a fresh max
         // (TechSpec §5 sequencing — in delta-mode docs `max` is the TE's own clamp id). The returned brackets
         // are applied by the paint walk (clip viewport + translate by the live offset). Empty ⇒ no scroll doc.
-        return MeasureResult(collectScrollBrackets(root, context), collectSpanBrackets(root))
+        return MeasureResult(collectScrollBrackets(root, context), collectSpanBrackets(root), collectClickTargets(document, byId))
+    }
+
+    /**
+     * REM-108 S2 — build the click registry by an INDEPENDENT flat scan over the doc ops (does NOT touch the
+     * measure tree or the paint walk → zero render-change risk; the touch-modifier CONTAINER_END quirk that
+     * the existing walk tolerates is irrelevant here). For correct component association, this scan's own
+     * frame stack treats EVERY block-opener as a frame: the canonical [RemoteComposePlayer.opensContainer]
+     * set PLUS the touch modifiers (which carry a trailing CONTAINER_END but are not in that set). A
+     * click/touch modifier attaches to the nearest enclosing *component* frame; its measured absolute bounds
+     * come from the [byId] node map. Targets are emitted in doc order so the dispatcher's last-match wins
+     * (topmost, §9-Q3).
+     */
+    private fun collectClickTargets(document: RemoteComposeDocument, byId: HashMap<Int, Node>): List<ClickTarget> {
+        val ops = document.operations
+        val frames = ArrayDeque<Int?>() // component frame → its id; non-component opener / modifier block → null
+        val byComp = LinkedHashMap<Int, MutableList<ClickModifierRef>>() // doc-order per component
+        for ((i, op) in ops.withIndex()) {
+            val code = op.opcode
+            when {
+                isClickTouchModifier(code) -> {
+                    val comp = frames.lastOrNull { it != null }
+                    if (comp != null) byComp.getOrPut(comp) { mutableListOf() }.add(ClickModifierRef(code, i))
+                    frames.addLast(null) // the modifier's action block is closed by a CONTAINER_END
+                }
+                code == Operations.CONTAINER_END -> frames.removeLastOrNull()
+                RemoteComposePlayer.opensContainer(op) -> frames.addLast(componentIdOf(op))
+                else -> {}
+            }
+        }
+        return byComp.mapNotNull { (compId, mods) ->
+            val n = byId[compId] ?: return@mapNotNull null
+            ClickTarget(compId, n.x, n.y, n.x + n.w, n.y + n.h, mods)
+        }
+    }
+
+    private fun isClickTouchModifier(opcode: Int): Boolean =
+        opcode == Operations.MODIFIER_CLICK || opcode == Operations.MODIFIER_TOUCH_DOWN ||
+            opcode == Operations.MODIFIER_TOUCH_UP || opcode == Operations.MODIFIER_TOUCH_CANCEL
+
+    /** The component id a block-opener defines (for the click-scan frame stack), or null for non-component openers. */
+    private fun componentIdOf(op: Operation): Int? = when (op) {
+        is RootLayout -> op.componentId
+        is BoxLayout -> op.componentId
+        is RowLayout -> op.componentId
+        is ColumnLayout -> op.componentId
+        is CanvasLayout -> op.componentId
+        is LayoutContent -> op.componentId
+        is CanvasContent -> op.componentId
+        is ComponentStart -> op.componentId
+        else -> null
     }
 
     /**
