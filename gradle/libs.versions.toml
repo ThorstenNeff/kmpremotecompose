@@ -16,6 +16,7 @@ kotlin-wrappers = "2026.6.1"
 kotlinx-coroutines = "1.11.0"
 material3 = "1.11.0-alpha07"
 okio = "3.9.1"
+ktor = "3.2.0"
 
 [libraries]
 kotlin-test = { module = "org.jetbrains.kotlin:kotlin-test", version.ref = "kotlin" }
@@ -40,6 +41,12 @@ kotlinx-coroutinesSwing = { module = "org.jetbrains.kotlinx:kotlinx-coroutines-s
 kotlinx-coroutinesTest = { module = "org.jetbrains.kotlinx:kotlinx-coroutines-test", version.ref = "kotlinx-coroutines" }
 wrappers-browser = { module = "org.jetbrains.kotlin-wrappers:kotlin-browser", version.ref = "kotlin-wrappers" }
 okio = { module = "com.squareup.okio:okio", version.ref = "okio" }
+# REM-169 — Ktor HTTP `.rc`-serving (JVM-only, :server). server-core + Netty engine + StatusPages;
+# test-host for in-process testApplication (byte-anchor / contract tests, no real socket).
+ktor-server-core = { module = "io.ktor:ktor-server-core", version.ref = "ktor" }
+ktor-server-netty = { module = "io.ktor:ktor-server-netty", version.ref = "ktor" }
+ktor-server-statusPages = { module = "io.ktor:ktor-server-status-pages", version.ref = "ktor" }
+ktor-server-testHost = { module = "io.ktor:ktor-server-test-host", version.ref = "ktor" }
 
 [plugins]
 androidApplication = { id = "com.android.application", version.ref = "agp" }
