@@ -29,8 +29,15 @@ dependencies {
     implementation(projects.shared)
     implementation(libs.okio)
 
+    // REM-169 — Ktor HTTP serving layer (JVM-only, scoped to :server; commonMain untouched → §2 safe).
+    implementation(libs.ktor.server.core)
+    implementation(libs.ktor.server.netty)
+    implementation(libs.ktor.server.statusPages)
+
     testImplementation(libs.kotlin.testJunit)
     testImplementation(libs.junit)
+    // In-process Ktor test harness (byte-anchor + contract via testApplication; no real socket needed).
+    testImplementation(libs.ktor.server.testHost)
 }
 
 application {
