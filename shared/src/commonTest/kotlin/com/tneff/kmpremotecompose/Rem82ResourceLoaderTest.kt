@@ -15,6 +15,7 @@
  */
 package com.tneff.kmpremotecompose
 
+import com.tneff.kmpremotecompose.conformance.IgnoreOnWasm
 import com.tneff.kmpremotecompose.remote.core.document.DocumentReader
 import com.tneff.kmpremotecompose.remote.core.operations.Builtins
 import kmpremotecompose.shared.generated.resources.Res
@@ -30,7 +31,18 @@ import kotlin.test.assertTrue
  *
  * Fail-closed proof: a missing name must THROW (not return empty bytes) so `RemoteComposeApp`'s catch
  * surfaces `rc-error` (spec §2) rather than a silent "rendered empty".
+ *
+ * REM-166 (Blocker-1 fix): this whole class exercises the **Compose Resources** loader (`Res.readBytes`) —
+ * a SECOND resource mechanism distinct from the [RcCorpus] system-filesystem path the rest of REM-166's
+ * `@IgnoreOnWasm` sweep targeted (which is why the call-graph analysis missed it). composeResources are not
+ * served by the `wasmJsBrowserTest` karma runner, so these tests throw "resource not in test env" there.
+ * Option (b) — bundling composeResources into the karma/webpack test server — needs a path-mapping that is
+ * only verifiable in a real browser (which the dev cannot run headlessly), so per the PO's escalation
+ * guidance this takes fallback (a): skip on wasm. **No real wasm bug is hidden** — REM-161 already proves
+ * this exact composeResources load path end-to-end in a real browser (the web app loads `.rc` via
+ * `Res.readBytes` on wasm, test-2-verified). We lose only the unit-regression guard on wasm, not the proof.
  */
+@IgnoreOnWasm
 class Rem82ResourceLoaderTest {
 
     @Test
