@@ -1,0 +1,136 @@
+# RC Interaction Gate — REM-108 S2: Click → Callback-Echo (ACTIVE / gating)
+# Owner: test-1 (QA). Player-impl: dev-1 (REM-108 S2 Click-Exekution, Option B). Epic: REM-154.
+# Contract: docs/TECHSPEC-REM-108-interaction-api.md @d7ed33d. STATUS: ✅ ACTIVE — green on develop @a46a6d4.
+#
+# Zweck (§6 "done means Maestro-proven"): a click on an identified element runs its in-doc touch-event
+#   action AND surfaces it via rc-action-echo. Per contract §4: tap → hit-test → Option-B dispatch-walk →
+#   VALUE_INTEGER_CHANGE_ACTION mutates DATA_INT(42) → rc-action-echo = "<valueId>=<value>" (PO-locked §4-Q2).
+#
+# 🔑 WIRING (verified in-source @a46a6d4 + on-device):
+#   - Click = CMP `detectTapGestures` (RemoteComposeApp.kt:272) — a SECOND detector beside the drag one.
+#     onPress→tapState.down, onTap→tapState.up, tryAwaitRelease()==false→tapState.cancel.
+#   - ⇒ a `tapOn` fires DOWN then UP; a `swipe` from the element interrupts the press → CANCEL.
+#   - live-only (`tapState = if(live) tapState else null`, :342) → static dispatcht NICHT (Determinismus-Pin).
+#   - rc-action-echo sentinel = "none" (reset per doc-switch, :170); after a click → "42=N".
+#   - 🎯 HIT GEOMETRY: the clickable Box (200×200) sits TOP-LEFT of the 500×500 canvas (POS_START/POS_TOP).
+#     A center tap MISSES it. Tap point "178,253" = box-center (canvas-origin (78,153) + ~(100,100)),
+#     calibrated for the rc-canvas placement on emulator-5554. (Empirically: center-tap → echo stayed "none";
+#     box-tap → "42=2". Recalibrate the point if the canvas origin/size changes.)
+#
+# Lauf:  ~/.maestro/bin/maestro --device emulator-5554 test docs/flows/interaction_click_callback.yaml
+#   (Fallback wenn MCP-Driver wedged: dieselbe CLI.) Echo-Belege 2026-06-30: down=42=2 up=42=3 cancel=42=4.
+
+appId: com.tneff.kmpremotecompose.android
+name: "REM-108 S2 click->callback-echo gate"
+tags:
+  - interaction
+  - touch
+  - callback
+---
+# ══════════ DOWN: tap the box → TOUCH_DOWN action → 42:=2 ══════════
+- launchApp:
+    clearState: true
+- openLink:
+    link: "kmprc://render?rc=c_modifier_on_touch_down&live=1"
+    autoVerify: true
+- extendedWaitUntil:
+    visible:
+      id: "rc-rendered"
+    timeout: 10000
+    label: "down-doc committed a frame"
+- assertNotVisible:
+    id: "rc-error"
+- assertVisible:
+    id: "rc-doc"
+    text: "c_modifier_on_touch_down"
+- assertVisible:
+    id: "rc-draw-count"
+    text: "^[1-9][0-9]*$"
+- copyTextFrom:
+    id: "rc-action-echo"
+- evalScript: ${output.dn0 = maestro.copiedText}
+- assertTrue:
+    condition: ${output.dn0 == "none"}
+    label: "pre-click sentinel: rc-action-echo == 'none' (keine Action gefeuert)"
+- tapOn:
+    point: "178,253"
+    label: "click ON the box (top-left) → Option-B dispatch-walk runs the DOWN action"
+- assertNotVisible:
+    id: "rc-error"
+    label: "Click hat den Render-Pfad NICHT gecrasht"
+- waitForAnimationToEnd:
+    timeout: 1500
+- copyTextFrom:
+    id: "rc-action-echo"
+- evalScript: ${output.dn1 = maestro.copiedText}
+- assertTrue:
+    condition: ${output.dn1 == "42=2"}
+    label: "KAUSAL: TOUCH_DOWN-Action mutierte DATA_INT(42) → rc-action-echo == '42=2'"
+
+# ══════════ UP: tap the box → TOUCH_UP action → 42:=3 ══════════
+- openLink:
+    link: "kmprc://render?rc=c_modifier_on_touch_up&live=1"
+    autoVerify: true
+- extendedWaitUntil:
+    visible:
+      id: "rc-rendered"
+    timeout: 10000
+- assertVisible:
+    id: "rc-doc"
+    text: "c_modifier_on_touch_up"
+- tapOn:
+    point: "178,253"
+    label: "click ON the box → TOUCH_UP action"
+- waitForAnimationToEnd:
+    timeout: 1500
+- copyTextFrom:
+    id: "rc-action-echo"
+- evalScript: ${output.up1 = maestro.copiedText}
+- assertTrue:
+    condition: ${output.up1 == "42=3"}
+    label: "KAUSAL: TOUCH_UP-Action → rc-action-echo == '42=3'"
+
+# ══════════ CANCEL: swipe from the box (interrupt the press) → TOUCH_CANCEL action → 42:=4 ══════════
+- openLink:
+    link: "kmprc://render?rc=c_modifier_on_touch_cancel&live=1"
+    autoVerify: true
+- extendedWaitUntil:
+    visible:
+      id: "rc-rendered"
+    timeout: 10000
+- assertVisible:
+    id: "rc-doc"
+    text: "c_modifier_on_touch_cancel"
+- swipe:
+    start: "178,253"
+    end: "178,600"
+    duration: 500
+    label: "press ON the box then drag away → tryAwaitRelease()==false → CANCEL"
+- waitForAnimationToEnd:
+    timeout: 1500
+- copyTextFrom:
+    id: "rc-action-echo"
+- evalScript: ${output.cn1 = maestro.copiedText}
+- assertTrue:
+    condition: ${output.cn1 == "42=4"}
+    label: "KAUSAL: TOUCH_CANCEL-Action → rc-action-echo == '42=4'"
+
+# ══════════ DETERMINISM PIN (§0/§5): live=0 → tap → NO dispatch → rc-action-echo stays 'none' ══════════
+- openLink:
+    link: "kmprc://render?rc=c_modifier_on_touch_down&live=0"
+    autoVerify: true
+- extendedWaitUntil:
+    visible:
+      id: "rc-rendered"
+    timeout: 10000
+- tapOn:
+    point: "178,253"
+    label: "static tap — must NOT fire the action (Floor degradation)"
+- waitForAnimationToEnd:
+    timeout: 1500
+- copyTextFrom:
+    id: "rc-action-echo"
+- evalScript: ${output.st1 = maestro.copiedText}
+- assertTrue:
+    condition: ${output.st1 == "none"}
+    label: "DETERMINISMUS-PIN: live=0 dispatcht keine Action → rc-action-echo bleibt 'none' (Goldens/173 immun)"

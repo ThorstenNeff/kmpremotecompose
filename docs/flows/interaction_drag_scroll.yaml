@@ -1,0 +1,105 @@
+# RC Interaction Gate — REM-108 S1: Drag → Scroll-Offset (ACTIVE / gating)
+# Owner: test-1 (QA). Player-impl: dev-2 (REM-108 S1 Scroll-Observability @2069a01). Epic: REM-154.
+# Contract: docs/TECHSPEC-REM-108-interaction-api.md @d7ed33d. STATUS: ✅ ACTIVE — green on develop @a46a6d4.
+#
+# Zweck: a drag advances the ScrollModifier offset, surfaced via rc-scroll-offset + live-gated. Per contract
+#   §4: onScroll(RcScrollEvent(componentId, offset, axis)); the app captures event.offset.toInt() into the
+#   `rc-scroll-offset` hook (RemoteComposeApp.kt:152/407). Doc: c_modifier_vertical_scroll — grey clip-window,
+#   Items taller than the viewport; the drag translates content within the fixed clip-window (S3b render-GO).
+#
+# 🔑 WIRING (verified in-source @a46a6d4 + on-device):
+#   - Drag = CMP `detectDragGestures` → must cross touch-slop → use `swipe` (NOT tapOn, NOT adb input swipe).
+#   - rc-scroll-offset = Int .toString(); sentinel "0" (reset per doc-switch); after an UP-drag → negative int.
+#   - live-only → static (&live=0) MUST stay "0" (Determinismus-Pin; S3b proved render side mad=0.000).
+#   - rc-touch-echo (input co-signal) moves off "0,0" → the gesture reached the canvas.
+#
+# Lauf:  ~/.maestro/bin/maestro --device emulator-5554 test docs/flows/interaction_drag_scroll.yaml
+#   Echo-Beleg 2026-06-30: nach swipe UP → rc-scroll-offset "0" → "-120"; rc-touch-echo "0,0" → "250,97".
+#   Zweiter (render-basierter) Verify-Pfad = die S3b-Clip-Window-Visual-Methode (Contract §5; out-of-Maestro).
+
+appId: com.tneff.kmpremotecompose.android
+name: "REM-108 S1 drag->scroll-offset gate"
+tags:
+  - interaction
+  - touch
+  - scroll
+---
+- launchApp:
+    clearState: true
+- openLink:
+    link: "kmprc://render?rc=c_modifier_vertical_scroll&live=1"
+    autoVerify: true
+- extendedWaitUntil:
+    visible:
+      id: "rc-rendered"
+    timeout: 10000
+    label: "scroll doc committed a frame"
+- assertNotVisible:
+    id: "rc-error"
+- assertVisible:
+    id: "rc-doc"
+    text: "c_modifier_vertical_scroll"
+- assertVisible:
+    id: "rc-draw-count"
+    text: "^[1-9][0-9]*$"
+- copyTextFrom:
+    id: "rc-scroll-offset"
+- evalScript: ${output.off0 = maestro.copiedText}
+- assertTrue:
+    condition: ${output.off0 == "0"}
+    label: "pre-drag sentinel: rc-scroll-offset == '0' (kein Scroll)"
+- copyTextFrom:
+    id: "rc-touch-echo"
+- evalScript: ${output.echo0 = maestro.copiedText}
+
+# ── DRAG: real vertical swipe (crosses touch-slop → detectDragGestures) ──
+- swipe:
+    from:
+      id: "rc-canvas"
+    direction: UP
+    duration: 600
+    label: "drag → scroll content within the clip-window"
+- assertNotVisible:
+    id: "rc-error"
+    label: "Drag hat den Render-Pfad NICHT gecrasht"
+- waitForAnimationToEnd:
+    timeout: 1500
+
+# ── Input co-signal: rc-touch-echo moved off "0,0" → the drag reached the canvas ──
+- copyTextFrom:
+    id: "rc-touch-echo"
+- evalScript: ${output.echo1 = maestro.copiedText}
+- assertTrue:
+    condition: ${output.echo1 != output.echo0 && output.echo1 != "0,0"}
+    label: "rc-touch-echo aenderte sich → Drag on-device akzeptiert (Input-Co-Signal)"
+
+# ── KAUSAL: rc-scroll-offset advanced off the "0" sentinel ──
+- copyTextFrom:
+    id: "rc-scroll-offset"
+- evalScript: ${output.off1 = maestro.copiedText}
+- assertTrue:
+    condition: ${output.off1 != output.off0 && output.off1 != "0"}
+    label: "KAUSAL: Drag advanced the ScrollModifier offset → rc-scroll-offset != '0' (onScroll gefeuert)"
+
+# ══════════ DETERMINISM PIN (§0): live=0 → swipe → rc-scroll-offset stays "0" ══════════
+- openLink:
+    link: "kmprc://render?rc=c_modifier_vertical_scroll&live=0"
+    autoVerify: true
+- extendedWaitUntil:
+    visible:
+      id: "rc-rendered"
+    timeout: 10000
+- swipe:
+    from:
+      id: "rc-canvas"
+    direction: UP
+    duration: 600
+    label: "static swipe — must NOT scroll (Floor degradation)"
+- waitForAnimationToEnd:
+    timeout: 1500
+- copyTextFrom:
+    id: "rc-scroll-offset"
+- evalScript: ${output.soff = maestro.copiedText}
+- assertTrue:
+    condition: ${output.soff == "0"}
+    label: "DETERMINISMUS-PIN: live=0 konsumiert keinen Touch → rc-scroll-offset bleibt '0' (Scroll-Goldens immun)"
