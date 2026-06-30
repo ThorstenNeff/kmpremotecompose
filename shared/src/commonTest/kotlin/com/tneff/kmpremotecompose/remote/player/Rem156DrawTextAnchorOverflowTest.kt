@@ -49,6 +49,7 @@ class Rem156DrawTextAnchorOverflowTest {
 
         override fun drawTextRunClipped(
             textId: Int, start: Int, end: Int, x: Float, y: Float, rtl: Boolean, maxWidth: Float,
+            leadingEllipsis: Boolean,
         ) {
             clippedCalls++; lastMaxWidth = maxWidth; lastX = x
         }

@@ -86,17 +86,54 @@ class DrawTextAnchored(
             ry + vOffset
         }
         val rtl = flags and ANCHOR_TEXT_RTL == 1
-        // REM-156 overflow policy: long anchored text used to run off the surface edge with no
-        // wrap/ellipsis/indicator (audit-P1). When the run, placed at its left edge px, would extend past
-        // the document's right edge (ID_WINDOW_WIDTH, seeded per render), draw it ellipsized to the width
-        // that remains (px → doc-right) instead of clipping edgelessly. Guarded so the common fitting case
-        // (and any render where the window width isn't seeded → 0) takes the unchanged path → golden-safe.
-        // Left-edge (px < 0) / vertical overflow keep today's behavior (flagged follow-up: leading-ellipsis).
         val windowWidth = context.getFloat(RemoteContext.ID_WINDOW_WIDTH)
-        if (windowWidth > 0f && px >= 0f && px + textWidth > windowWidth) {
-            paint.drawTextRunClipped(textId, 0, -1, px, py, rtl, windowWidth - px)
+        val windowHeight = context.getFloat(RemoteContext.ID_WINDOW_HEIGHT)
+        // REM-160 vertical-overflow policy: a single line ENTIRELY off-screen vertically (and that fits) is
+        // nudged back into view (it rendered nothing before). Partially-visible text is left untouched → no
+        // golden churn. Single-line text has no vertical ellipsis — repositioning is the policy.
+        val cpy = clampBaselineIntoView(py, bounds[1], bounds[3], windowHeight)
+        // REM-156/REM-160 overflow policy: long anchored text used to run off the surface edge with no
+        // wrap/ellipsis/indicator (audit-P1). REM-156 handled only right-overflow with px ≥ 0; REM-160
+        // generalizes to ALL directions. The right-overflow-only branch is byte-identical to REM-156 so its
+        // already-rebaselined goldens don't re-shift; only left/centered overflow (px < 0, which REM-156
+        // skipped → edgeless clip) is new. Guarded so the fitting case (and unseeded window → 0) takes the
+        // unchanged plain path → golden-safe for non-overflowing text.
+        if (windowWidth > 0f) {
+            val overLeft = px < 0f
+            val overRight = px + textWidth > windowWidth
+            when {
+                // Wider than the whole window (centered / both-sides overflow): fill it from the left edge,
+                // trailing-ellipsize (keep the start of the string).
+                overLeft && overRight ->
+                    paint.drawTextRunClipped(textId, 0, -1, 0f, cpy, rtl, windowWidth, leadingEllipsis = false)
+                // Right overflow only — UNCHANGED from REM-156: keep left edge px, trailing ellipsis.
+                overRight ->
+                    paint.drawTextRunClipped(textId, 0, -1, px, cpy, rtl, windowWidth - px, leadingEllipsis = false)
+                // Left overflow only (REM-160 new): keep the right edge, leading-ellipsize, visible from x=0.
+                overLeft ->
+                    paint.drawTextRunClipped(textId, 0, -1, 0f, cpy, rtl, px + textWidth, leadingEllipsis = true)
+                else ->
+                    paint.drawTextRun(textId, 0, -1, 0, 1, px, cpy, rtl)
+            }
         } else {
-            paint.drawTextRun(textId, 0, -1, 0, 1, px, py, rtl)
+            paint.drawTextRun(textId, 0, -1, 0, 1, px, cpy, rtl)
+        }
+    }
+
+    /**
+     * REM-160 vertical-overflow clamp: if [windowHeight] is known and the line's vertical band
+     * `[py + top, py + bottom]` (top = `bounds[1]` ≤ 0, bottom = `bounds[3]` ≥ 0) sits ENTIRELY above
+     * (band fully < 0) or below (fully > [windowHeight]) the surface, shift the baseline minimally so the
+     * band re-enters view. Partially-visible (or unknown height) ⇒ unchanged (no golden churn).
+     */
+    private fun clampBaselineIntoView(py: Float, top: Float, bottom: Float, windowHeight: Float): Float {
+        if (windowHeight <= 0f) return py
+        val bandTop = py + top
+        val bandBottom = py + bottom
+        return when {
+            bandBottom < 0f -> py - bandBottom                      // fully above → bottom edge to 0
+            bandTop > windowHeight -> py - (bandTop - windowHeight) // fully below → top edge to windowHeight
+            else -> py
         }
     }
 

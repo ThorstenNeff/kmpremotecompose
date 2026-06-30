@@ -308,6 +308,7 @@ class ComposePaintContext(
         x: Float, y: Float,
         rtl: Boolean,
         maxWidth: Float,
+        leadingEllipsis: Boolean,
     ) {
         val c = canvas ?: return
         val r = textRenderer ?: return
@@ -324,20 +325,36 @@ class ComposePaintContext(
         val ellipsis = "…"
         if (width(ellipsis) > maxWidth) return // not even "…" fits → draw nothing (clipped away)
 
-        // Largest prefix length n such that text[0,n) + "…" fits maxWidth (binary search).
-        var lo = 0
-        var hi = text.length
-        while (lo < hi) {
-            val mid = (lo + hi + 1) / 2
-            if (width(text.substring(0, surrogateSafe(text, mid)) + ellipsis) <= maxWidth) lo = mid else hi = mid - 1
+        val truncated = if (leadingEllipsis) {
+            // REM-160: keep the END of the string (left/centered/RTL overflow) — `… + suffix(s)`. Find the
+            // smallest cut s such that the result fits maxWidth (width shrinks as s grows; binary search).
+            var lo = 0
+            var hi = text.length
+            while (lo < hi) {
+                val mid = (lo + hi) / 2
+                if (width(ellipsis + text.substring(surrogateSafeFwd(text, mid))) <= maxWidth) hi = mid else lo = mid + 1
+            }
+            ellipsis + text.substring(surrogateSafeFwd(text, lo))
+        } else {
+            // REM-156: keep the START (right overflow) — `prefix(n) + …`. Largest prefix that fits.
+            var lo = 0
+            var hi = text.length
+            while (lo < hi) {
+                val mid = (lo + hi + 1) / 2
+                if (width(text.substring(0, surrogateSafe(text, mid)) + ellipsis) <= maxWidth) lo = mid else hi = mid - 1
+            }
+            text.substring(0, surrogateSafe(text, lo)) + ellipsis
         }
-        val truncated = text.substring(0, surrogateSafe(text, lo)) + ellipsis
         if (r.drawTextRun(c, truncated, 0, -1, x, y, rtl)) context.incrementDrawCount()
     }
 
     /** Don't cut a surrogate pair: if index [n] would split one, step back to before the high surrogate. */
     private fun surrogateSafe(text: String, n: Int): Int =
         if (n in 1..text.length && text[n - 1].isHighSurrogate()) n - 1 else n
+
+    /** Forward variant: if cut [n] lands on a low surrogate, step forward past it (don't split a pair). */
+    private fun surrogateSafeFwd(text: String, n: Int): Int =
+        if (n in 0 until text.length && text[n].isLowSurrogate()) n + 1 else n
 
     override fun drawBitmapFontText(
         textId: Int,
