@@ -170,7 +170,12 @@ class Rem177OracleTest {
      */
     @Test
     fun additional_date_driven_docs_seed_anchor() {
-        val docs = listOf("clock", "experimental_gmt", "experimental_solar_gmt", "player_info")
+        // The 5 docs that consume calendar/epoch vars beyond clock_demo2_jclock2 (which has its
+        // own dedicated 8-city oracle test above). 4 visible-shift docs + 1 clipped-but-genuine
+        // consumer (`digital_clock1` — reads {9, 11, 12} via TextFromFloat/DrawBitmapFontText
+        // into a clipped region; PNG byte-identical with or without seed, but the seed-anchor
+        // still must take so a future layout edit doesn't surprise-drift).
+        val docs = listOf("clock", "experimental_gmt", "experimental_solar_gmt", "player_info", "digital_clock1")
         for (name in docs) {
             val bytes = RcCorpus.readFixture("corpus/$name.rc")
             val doc = DocumentReader.inflate(bytes)

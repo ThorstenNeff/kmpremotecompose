@@ -96,47 +96,56 @@ object RenderTimePins {
     const val EPOCH_SAFE_PIN: Long = 1751529600L
 
     /**
-     * Per-doc Unix-epoch-seconds pin. Defaults to `EPOCH_SAFE_PIN` for **6** confirmed date-
-     * driven docs (REM-176 + REM-177 follow-up after test-3's broader-impact sweep 2026-06-30).
+     * Per-doc Unix-epoch-seconds pin. Defaults to `EPOCH_SAFE_PIN` for the **7** confirmed
+     * date-driven docs (REM-176 + REM-177 + REM-177-Re-Probe 2026-06-30).
      *
-     * The full set, decoded via `Rem177CalendarVarConsumerProbe`-style FloatExpression /
-     * IntegerExpression / TextFromFloat NaN-var-ref scans:
+     * **Source of truth: test-3's render-shift scan over all 173 corpus docs** (definitive —
+     * a Float-field NaN-ref alone is insufficient; the consumer must produce a different
+     * rendered byte OR be a confirmed clipped-but-genuine date consumer). My initial narrow
+     * probe (6 docs only) missed `digital_clock1`; my follow-up reflection-based scan caught
+     * everything but over-reported (17 invisible-Float-ref docs whose render is byte-identical
+     * regardless of seed — the ref is in the op stream but never reaches a visible output).
+     * **assist's render-shift scan is the canonical list:**
      *
-     *  | Doc                       | Consumed ids (system-var)                                | Lane    |
-     *  |---------------------------|----------------------------------------------------------|---------|
-     *  | `experimental_solar_gmt`  | 32 (EPOCH), 11 (WEEK_DAY), 12 (DAY_OF_MONTH)             | REM-176 |
-     *  | `moon_phases`             | 32 (EPOCH)                                               | REM-176 |
-     *  | `clock_demo2_jclock2`     | 34 (DAY_OF_YEAR) — 8 city sub-clocks                     | REM-177 |
-     *  | `clock`                   | 11 (WEEK_DAY), 12 (DAY_OF_MONTH) — Mon..Sun day-name     | REM-177 |
-     *  | `experimental_gmt`        | 11 (WEEK_DAY), 12 (DAY_OF_MONTH) — MON..SUN day-name     | REM-177 |
-     *  | `player_info`             | 9 (MONTH), 11 (WEEK_DAY), 34 (DAY_OF_YEAR), 35 (YEAR)    | REM-177 |
+     *  | Doc                       | Consumed ids                                              | Output  | Lane    |
+     *  |---------------------------|-----------------------------------------------------------|---------|---------|
+     *  | `experimental_solar_gmt`  | 11 (WEEK_DAY), 12 (DAY_OF_MONTH), 32 (EPOCH)              | visible | REM-176 |
+     *  | `moon_phases`             | 32 (EPOCH)                                                | visible | REM-176 |
+     *  | `clock_demo2_jclock2`     | 11 (WEEK_DAY), 34 (DAY_OF_YEAR) — 8 city sub-clocks       | visible | REM-177 |
+     *  | `clock`                   | 11 (WEEK_DAY), 12 (DAY_OF_MONTH) — Mon..Sun day-name      | visible | REM-177 |
+     *  | `experimental_gmt`        | 11 (WEEK_DAY), 12 (DAY_OF_MONTH) — MON..SUN day-name      | visible | REM-177 |
+     *  | `player_info`             | 9 (MONTH), 11 (WEEK_DAY), 34 (DAY_OF_YEAR), 35 (YEAR)     | visible | REM-177 |
+     *  | `digital_clock1`          | 9 (MONTH), 11 (WEEK_DAY), 12 (DAY_OF_MONTH)               | clipped | REM-177 |
      *
-     * Without the pin those docs would render at `epoch=0` = 1970 = the very poisoned-golden the
-     * REM-176/177 seeding fix is undoing:
-     *  - day-name docs (`clock`, `experimental_gmt`) would index `Mon..Sun[week_day=0]` = empty
-     *  - `experimental_solar_gmt` was already pinned for epoch but also now reads WEEK_DAY+
-     *    DAY_OF_MONTH (PO test-3 surprise — confirmed correct shift, not spurious)
-     *  - `clock_demo2_jclock2` collapses 8 cities to Jan-1 sunrise/sunset (assist REM-147 catch:
-     *    ~1min shift per city, geometry hash identical → only text-value-capture detects)
-     *  - `player_info` is a system-var debug-dashboard explicitly showing YEAR/MONTH/DAY_OF_YEAR/
-     *    WEEK_DAY values — would print "0" for all without the seed
+     * The 6 **visible** consumers have golden re-baselines from test-3. `digital_clock1` is the
+     * single **clipped-but-genuine** date consumer — it draws weekday/day via TextFromFloat +
+     * DrawBitmapFontText into a region that doesn't surface in the current layout, so its PNG
+     * is byte-identical with or without the seed (pin-only, no re-baseline). Pinned for
+     * determinism + live consistency (if a future layout edit un-clips the weekday, the seed
+     * is already in place — no surprise drift).
      *
-     * Other docs that don't read any date var (167/173 per the §2-Befund-Inventar +
-     * REM-177-Decode-Triage) are unaffected — `epochFor` returns `0L` for them, identical to the
-     * byte-faithful legacy path. Extend here (the **single source**) if another doc proves
-     * date-sensitive — no per-target `--epoch` hardcoding (mirror the `--t` discipline above).
+     * Other docs (166/173) are unaffected — `epochFor` returns `0L`, identical to the
+     * byte-faithful legacy path. Extend here (the **single source**) if a future doc proves
+     * date-sensitive via test-3 render-shift — no per-target `--epoch` hardcoding (mirror the
+     * `--t` discipline above).
      */
     private val epochPins: Map<String, Long> = mapOf(
-        // REM-176
+        // -------- REM-176 — epoch-direct consumers --------------------------------------------
         "experimental_solar_gmt" to EPOCH_SAFE_PIN,
         "moon_phases" to EPOCH_SAFE_PIN,
-        // REM-177 — 8-city sub-clock sunrise/sunset reads ID_DAY_OF_YEAR (id=34).
+        // -------- REM-177 — calendar-derived consumers (visible PNG shifts, golden re-baselined)
         "clock_demo2_jclock2" to EPOCH_SAFE_PIN,
-        // REM-177-Decode-Triage 2026-06-30 — date-driven docs surfaced by test-3 broader-impact
-        // sweep (decode-proven calendar-var consumers — see KDoc table above).
         "clock" to EPOCH_SAFE_PIN,
         "experimental_gmt" to EPOCH_SAFE_PIN,
         "player_info" to EPOCH_SAFE_PIN,
+        // -------- REM-177 — clipped-but-genuine date consumer (no PNG shift, pin-only) -------
+        // Draws weekday/day via TextFromFloat → DrawBitmapFontText but the consuming region is
+        // clipped/off-screen in the current layout (assist render-shift scan 2026-06-30) → PNG
+        // byte-identical with or without the seed. Pinned for determinism + future-layout-edit
+        // safety. Separately flagged: is the clipping intended (vestigial draw) or a pre-
+        // existing layout bug (weekday should be visible) — orthogonal investigation, not
+        // REM-177's scope.
+        "digital_clock1" to EPOCH_SAFE_PIN,
     )
 
     /**
