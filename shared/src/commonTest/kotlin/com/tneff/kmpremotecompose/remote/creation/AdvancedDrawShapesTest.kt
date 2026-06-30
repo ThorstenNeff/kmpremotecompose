@@ -15,6 +15,7 @@
  */
 package com.tneff.kmpremotecompose.remote.creation
 
+import com.tneff.kmpremotecompose.conformance.IgnoreOnWasm
 import com.tneff.kmpremotecompose.conformance.RcCorpus
 import com.tneff.kmpremotecompose.remote.core.document.DocumentReader
 import com.tneff.kmpremotecompose.remote.core.document.RemoteComposeWriter
@@ -110,6 +111,7 @@ class AdvancedDrawShapesTest {
     }
 
     @Test
+    @IgnoreOnWasm
     fun drawRoundRect_matchesCorpusFixtureRegion_tripleAnchor() {
         // Find a corpus fixture containing DRAW_ROUND_RECT (0x33), extract the op-region,
         // decode the operands, rebuild via DSL, assert byte-equality.
@@ -216,6 +218,7 @@ class AdvancedDrawShapesTest {
     }
 
     @Test
+    @IgnoreOnWasm
     fun drawTextOnCircle_matchesCorpusFixtureRegion_doubleAnchor_visibleSkip() {
         // Double-pin: op-57 DRAW_TEXT_ON_CIRCLE is corpus-ABSENT per assist's authoritative
         // 173-doc inflate scan (REM-113-followup-redo). This test stays as a marker — if the
@@ -310,6 +313,7 @@ class AdvancedDrawShapesTest {
     }
 
     @Test
+    @IgnoreOnWasm
     fun drawBitmapInt_matchesCorpusFixtureRegion_doubleAnchor_visibleSkip() {
         // Double-pin: op-66 DRAW_BITMAP_INT is corpus-ABSENT per assist's authoritative
         // 173-doc inflate scan. Same harness as drawTextOnCircle_matches... above; the
@@ -420,6 +424,7 @@ class AdvancedDrawShapesTest {
     // ─── visible-skip degradation pin (order-INDEPENDENT, own-scan) ───────────
 
     @Test
+    @IgnoreOnWasm
     fun advancedDrawShapes_fixtureCoverage_visibilityCheck() {
         // Order-INDEPENDENT scan: this test does its own corpus inflation; no shared mutable
         // state with the other tests, no empty-escape, no alphabetical-order assumption.

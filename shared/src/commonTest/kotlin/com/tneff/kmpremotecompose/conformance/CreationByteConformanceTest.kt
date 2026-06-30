@@ -66,6 +66,7 @@ import kotlin.test.assertContentEquals
  * whole Creation-DSL byte gate ("create on a server" 100%-byte milestone) is green. Replication target:
  * `docs/e5-creation-byte-conformance-prep.md` + the canonical `docs/TECHSPEC-E5-id-order-reference.md`.
  */
+@IgnoreOnWasm
 class CreationByteConformanceTest {
 
     private fun oracle(name: String): ByteArray = RcCorpus.readFixture("corpus/$name.rc")

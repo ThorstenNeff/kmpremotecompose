@@ -16,6 +16,7 @@ import kotlin.test.Test
  * Korpus-Wurzel wird von [RcCorpus.fixtureRoot] selbst aufgelöst (build-zeit-absolut, Host + iOS-Sim)
  * — kein `rootOverride`-Stub mehr nötig.
  */
+@IgnoreOnWasm
 class RcConformanceP0Test {
 
     @Test

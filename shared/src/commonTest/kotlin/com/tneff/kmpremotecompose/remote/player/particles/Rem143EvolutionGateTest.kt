@@ -4,6 +4,7 @@
  */
 package com.tneff.kmpremotecompose.remote.player.particles
 
+import com.tneff.kmpremotecompose.conformance.IgnoreOnWasm
 import com.tneff.kmpremotecompose.conformance.RcCorpus
 import com.tneff.kmpremotecompose.remote.core.document.DocumentReader
 import com.tneff.kmpremotecompose.remote.core.operations.draw.ParticlesCompare
@@ -23,6 +24,7 @@ import kotlin.test.assertTrue
  * REM-143 §5b — the LIVE multi-frame EVOLUTION gate: dev-2's S2 sim (full-doc paint, draw-capture) vs the
  * independent per-frame reconstruction. (i) seed-frame matches + (ii) frame-k evolution converges.
  */
+@IgnoreOnWasm
 class Rem143EvolutionGateTest {
 
     private val DT = ParticleFrameSchedule.DT

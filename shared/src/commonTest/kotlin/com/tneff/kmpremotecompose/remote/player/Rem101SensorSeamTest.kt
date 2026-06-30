@@ -15,6 +15,7 @@
  */
 package com.tneff.kmpremotecompose.remote.player
 
+import com.tneff.kmpremotecompose.conformance.IgnoreOnWasm
 import com.tneff.kmpremotecompose.conformance.RcCorpus
 import com.tneff.kmpremotecompose.remote.core.document.DocumentReader
 import com.tneff.kmpremotecompose.remote.core.document.RemoteComposeDocument
@@ -109,6 +110,7 @@ class Rem101SensorSeamTest {
         assertEquals(17..26, RemoteContext.SENSOR_ID_RANGE)
     }
 
+    @IgnoreOnWasm
     @Test fun sensorIdsUsed_matchesCorpusDocs() {
         // Source-grounded against the decoded corpus (REM-101 probe): each demo reads exactly its sensor's
         // axes (compass derives a heading from magnetic X/Y, so it reads ⊇ {23,24}).
@@ -123,6 +125,7 @@ class Rem101SensorSeamTest {
         assertEquals(emptySet(), RemoteComposePlayer.sensorIdsUsed(doc("procedure_simple1.rc")))
     }
 
+    @IgnoreOnWasm
     @Test fun staticRender_identicalRegardlessOfSource_conformancePin() {
         // assist TechSpec addition (a): the design-(F) guarantee at RENDER level — a sensor doc in static
         // mode draws an identical geometry/matrix stream whether the source offers live values or nothing.
@@ -143,6 +146,7 @@ class Rem101SensorSeamTest {
         }
     }
 
+    @IgnoreOnWasm
     @Test fun staticMode_ignoresSensorSource_keepsZero() {
         // THE invariant (design F): even a source offering live values must NOT seed in static mode → the
         // sensor ids stay 0f → goldens / REM-78 sweep / 173-conformance are deterministic.
@@ -153,6 +157,7 @@ class Rem101SensorSeamTest {
         assertEquals(0f, ctx.getFloat(19))
     }
 
+    @IgnoreOnWasm
     @Test fun liveMode_seedsUsedIdsFromSource() {
         val source = FakeSensorSource(mapOf(17 to 1.5f, 18 to -2.5f, 19 to 9.81f))
         val ctx = render(doc("sensor_demo_acc_sensor1.rc"), live = true, source = source)
@@ -161,6 +166,7 @@ class Rem101SensorSeamTest {
         assertEquals(9.81f, ctx.getFloat(19))
     }
 
+    @IgnoreOnWasm
     @Test fun liveMode_nullAxis_staysAtStaticDefault() {
         // Per-axis capability-floor: an axis the source can't provide (null) is left at 0f, not failed.
         val source = FakeSensorSource(mapOf(17 to 4f, 18 to null, 19 to 6f))
@@ -170,6 +176,7 @@ class Rem101SensorSeamTest {
         assertEquals(6f, ctx.getFloat(19))
     }
 
+    @IgnoreOnWasm
     @Test fun liveMode_valueChangeBetweenFrames_changesRender() {
         // assist TechSpec addition (b) — live re-eval: the player re-evaluates Phase A on every paint(), so
         // a new sensor value on the next live frame changes the render (no dirty-tracking needed; the
@@ -191,6 +198,7 @@ class Rem101SensorSeamTest {
         assertNotEquals(flat, tilted, "a changed accel value must change the live render (per-frame re-eval)")
     }
 
+    @IgnoreOnWasm
     @Test fun noOpSource_default_seedsNothing() {
         // The S1 default everywhere → behaviour-identical to pre-REM-101 (no id seeded, even live).
         val ctx = render(doc("sensor_demo_acc_sensor1.rc"), live = true, source = NoOpSensorSource)

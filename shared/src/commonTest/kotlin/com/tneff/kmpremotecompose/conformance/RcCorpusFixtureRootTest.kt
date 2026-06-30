@@ -26,6 +26,7 @@ import kotlin.test.assertFailsWith
  * **without** any `rootOverride`, on both host (jvmTest) and the iOS simulator — closing the deferred
  * platform-resolution gap. (The F1 byte-equality assertion itself is test-2's `RcConformanceP0Test`.)
  */
+@IgnoreOnWasm
 class RcCorpusFixtureRootTest {
 
     @BeforeTest

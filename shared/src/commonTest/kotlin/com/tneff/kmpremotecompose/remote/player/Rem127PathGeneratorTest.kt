@@ -15,6 +15,7 @@
  */
 package com.tneff.kmpremotecompose.remote.player
 
+import com.tneff.kmpremotecompose.conformance.IgnoreOnWasm
 import com.tneff.kmpremotecompose.conformance.RcCorpus
 import com.tneff.kmpremotecompose.remote.core.operations.Builtins
 import com.tneff.kmpremotecompose.remote.core.document.DocumentReader
@@ -99,6 +100,7 @@ class Rem127PathGeneratorTest {
     }
 
     @Test
+    @IgnoreOnWasm
     fun pathExpression_loadsNonDegeneratePathDataEndToEnd() {
         // S3 producer wiring: paint plot2 (PathExpression id=44, SPLINE) → its path-data is in the store,
         // non-degenerate (>1 distinct sampled point) so the existing DrawPath#44 renders a real curve

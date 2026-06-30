@@ -17,6 +17,7 @@ import kotlin.test.assertTrue
  *
  * Ownership: Korpus = test-1 (`rc-corpus/corpus/`); Engine/Codec = dev-2; Body = test-2. Kein Patch von test-2.
  */
+@IgnoreOnWasm
 class RcConformanceBreadthTest {
 
     @Test

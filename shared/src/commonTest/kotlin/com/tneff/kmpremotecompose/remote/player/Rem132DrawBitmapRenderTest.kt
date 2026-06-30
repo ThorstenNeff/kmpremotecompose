@@ -15,6 +15,7 @@
  */
 package com.tneff.kmpremotecompose.remote.player
 
+import com.tneff.kmpremotecompose.conformance.IgnoreOnWasm
 import com.tneff.kmpremotecompose.conformance.RcCorpus
 import com.tneff.kmpremotecompose.remote.core.document.DocumentReader
 import com.tneff.kmpremotecompose.remote.core.operations.Builtins
@@ -109,6 +110,7 @@ class Rem132DrawBitmapRenderTest {
     }
 
     @Test
+    @IgnoreOnWasm
     fun confettiDoc_dispatchesSpriteAtResolvedRect() {
         // End-to-end data-oracle (dispatch≠visual): the DrawBitmap draws its 50x50 sprite at its resolved
         // dst-rect [0,0,50,50]. Pre-REM-132 this op had no paint → BLANK.

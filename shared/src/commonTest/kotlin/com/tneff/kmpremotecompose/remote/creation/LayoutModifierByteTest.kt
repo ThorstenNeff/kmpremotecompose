@@ -15,6 +15,7 @@
  */
 package com.tneff.kmpremotecompose.remote.creation
 
+import com.tneff.kmpremotecompose.conformance.IgnoreOnWasm
 import com.tneff.kmpremotecompose.remote.core.document.DocumentReader
 import com.tneff.kmpremotecompose.remote.core.operations.layout.AlignByModifier
 import com.tneff.kmpremotecompose.remote.core.operations.layout.BackgroundModifier
@@ -186,6 +187,7 @@ class LayoutModifierByteTest {
     }
 
     @Test
+    @IgnoreOnWasm
     fun backgroundColorRef_fullByteEquality_vsCorpusFixture_backgroundId() {
         // REM-144 S1 — Stage-2 sub-span byte-anchor: the MODIFIER_BACKGROUND 37-byte op on
         // `c_modifier_background_id.rc` carries `flags=2, colorId=1` (system colour id, NOT a
@@ -218,6 +220,7 @@ class LayoutModifierByteTest {
     }
 
     @Test
+    @IgnoreOnWasm
     fun borderColorRef_fullByteEquality_vsCorpusFixture_dynamicBorder() {
         // REM-141 S1 — Stage-2 sub-span byte-anchor: the MODIFIER_BORDER 45-byte op on
         // `c_modifier_dynamic_border.rc` is ID-decoupled at the op level (`colorId` is a plain
@@ -381,6 +384,7 @@ class LayoutModifierByteTest {
     }
 
     @Test
+    @IgnoreOnWasm
     fun scroll_fullByteEquality_vsCorpusFixture_verticalScroll() {
         // 🔑 The "Gold" byte-anchor per assist iter-2: extract the scroll-region (DATA_FLOAT
         // through the scroll's trailing ContainerEnd) from BOTH a minimal DSL document and the
@@ -473,6 +477,7 @@ class LayoutModifierByteTest {
      * pool), value/min/max NaN-id-refs, MUL marker, stop logic, expected lengths — are identical.
      */
     @Test
+    @IgnoreOnWasm
     fun scroll_fullByteEquality_vsCorpusFixture_horizontalScroll() {
         // The expected 76-byte scroll-region for SCROLL_HORIZONTAL (direction=1, exp[0]=POS_X).
         val expectedScrollRegion = byteArrayOf(
@@ -676,6 +681,7 @@ class LayoutModifierByteTest {
     }
 
     @Test
+    @IgnoreOnWasm
     fun alignBy_fullByteEquality_vsCorpusFixture_alignByBaseline() {
         // REM-130 — Replaces the prior `alignBy_writesLineFloat_andZeroFlagsByDefault` test, which
         // pinned a fictional `line=12.5f` value that appears in no corpus document (assist flagged

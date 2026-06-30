@@ -15,6 +15,7 @@
  */
 package com.tneff.kmpremotecompose.remote.player
 
+import com.tneff.kmpremotecompose.conformance.IgnoreOnWasm
 import com.tneff.kmpremotecompose.conformance.RcCorpus
 import com.tneff.kmpremotecompose.remote.core.document.DocumentReader
 import com.tneff.kmpremotecompose.remote.core.document.RemoteComposeDocument
@@ -67,6 +68,7 @@ class Rem108TouchSeamTest {
         assertEquals(13..16, RemoteContext.TOUCH_ID_RANGE)
     }
 
+    @IgnoreOnWasm
     @Test fun touchIdsUsed_matchesCorpusDocs() {
         assertEquals(setOf(13), RemoteComposePlayer.touchIdsUsed(doc("touch1.rc")))
         assertEquals(setOf(14), RemoteComposePlayer.touchIdsUsed(doc("touch2.rc")))
@@ -77,6 +79,7 @@ class Rem108TouchSeamTest {
         assertEquals(emptySet(), RemoteComposePlayer.touchIdsUsed(doc("procedure_simple1.rc")))
     }
 
+    @IgnoreOnWasm
     @Test fun corpusStopModeReach_isWithinSupportedScope() {
         // assist Q2 scope correction made into a guard: every TouchExpression stop-mode the corpus uses must
         // be in the supported 0..6 set; mode 7 (SINGLE_EVEN) must stay corpus-absent; mode 3 (the most common)
@@ -92,6 +95,7 @@ class Rem108TouchSeamTest {
         assertFalse(7 in all, "SINGLE_EVEN(7) must remain corpus-absent (the only legitimately unsupported mode)")
     }
 
+    @IgnoreOnWasm
     @Test fun touchDispatch_loadsPosition() {
         val ctx = RemoteContext()
         val d = doc("touch1.rc")
@@ -105,6 +109,7 @@ class Rem108TouchSeamTest {
         assertEquals(242f, ctx.getFloat(RemoteContext.ID_TOUCH_POS_Y))
     }
 
+    @IgnoreOnWasm
     @Test fun staticRender_touchPositionHasNoEffectYet_conformancePin() {
         // S1 has no consumer of the touch position (TouchExpression is still a carrier), so seeding a touch
         // position must NOT change the render. This pins that S1 is render-invariant → goldens/REM-78/173

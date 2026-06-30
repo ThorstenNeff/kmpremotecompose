@@ -15,6 +15,7 @@
  */
 package com.tneff.kmpremotecompose.remote.player
 
+import com.tneff.kmpremotecompose.conformance.IgnoreOnWasm
 import com.tneff.kmpremotecompose.conformance.RcCorpus
 import com.tneff.kmpremotecompose.remote.core.document.DocumentReader
 import com.tneff.kmpremotecompose.remote.core.document.RemoteComposeDocument
@@ -35,6 +36,7 @@ import kotlin.test.assertTrue
  * Critically — fresh ctx + fresh player per frame (mirrors RemoteComposeApp/the harness): Δt must come from
  * the persistent OP-field, not a per-frame-reset context/player field (dev-1's catch).
  */
+@IgnoreOnWasm
 class Rem143S2Test {
     private class Rec(c: RemoteContext) : NoOpPaintContext(c) {
         var tx = 0f; var ty = 0f

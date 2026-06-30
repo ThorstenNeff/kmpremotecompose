@@ -13,6 +13,7 @@ import kotlin.test.Test
  *
  * Ownership: Fixture/`MANIFEST.tsv` = test-1 (`rc-corpus/`); Codec = dev-2; Assertions + Body = test-2.
  */
+@IgnoreOnWasm
 class RcConformanceDecodeOnlyTest {
 
     @Test
