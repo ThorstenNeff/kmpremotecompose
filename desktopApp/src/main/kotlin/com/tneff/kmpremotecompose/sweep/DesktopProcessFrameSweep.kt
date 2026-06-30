@@ -63,6 +63,7 @@ import com.tneff.kmpremotecompose.remote.player.core.RemoteComposePlayer
 import com.tneff.kmpremotecompose.remote.player.core.RemoteContext
 import com.tneff.kmpremotecompose.remote.player.core.RenderRngPins
 import com.tneff.kmpremotecompose.remote.player.core.RpnFloatEvaluator
+import com.tneff.kmpremotecompose.remote.player.core.TouchState
 import com.tneff.kmpremotecompose.remote.player.core.renderOpaque
 import com.tneff.kmpremotecompose.remote.player.core.seedHostPalette
 import org.jetbrains.skia.EncodedImageFormat
@@ -93,15 +94,31 @@ private val PARTICLE_DOCS = listOf(
     "maze2",
 )
 
+/**
+ * REM-143 S3-Re-Confirm — doc-specific ImpulseStart.duration (seconds) for the 3 docs that realistically
+ * elapse within a tractable schedule. The maze docs carry duration=20000s ⇒ never elapse in any window
+ * we can paint — Re-Trigger is not exercisable on them and `--reTrigger` skips them (loudly).
+ */
+private val RETRIGGER_DURATION_S: Map<String, Float> = mapOf(
+    "impulse_demo_confetti_demo" to 20.0f,
+    "impulse_demo_hearts_demo" to 7.9f,
+    "particle" to 10.0f,
+)
+
 fun main(args: Array<String>) {
     val cfg = parseArgs(args)
     cfg.outDir.mkdirs()
     println("[REM-143-S2-3rd-Leg] corpus=${cfg.rcDir.absolutePath}")
     println("[REM-143-S2-3rd-Leg] out=${cfg.outDir.absolutePath}  density=${cfg.density}")
-    println("[REM-143-S2-3rd-Leg] DT=$DT_SECONDS  frameCount=$FRAME_COUNT  captureFrames=${cfg.captureFrames}")
+    println("[REM-143-S2-3rd-Leg] DT=$DT_SECONDS  frameCount=$FRAME_COUNT  reTrigger=${cfg.reTrigger}  captureFrames=${cfg.captureFrames}")
 
-    val docs = cfg.explicitDocs ?: PARTICLE_DOCS
-    println("[REM-143-S2-3rd-Leg] rendering ${docs.size} docs (frame-major one-pin)")
+    val baseDocs = cfg.explicitDocs ?: PARTICLE_DOCS
+    val docs = if (cfg.reTrigger) baseDocs.filter { it in RETRIGGER_DURATION_S } else baseDocs
+    if (cfg.reTrigger) {
+        val skipped = baseDocs - docs.toSet()
+        if (skipped.isNotEmpty()) println("[REM-143-S3-Re-Confirm] skipped (no realistic elapse window): $skipped")
+    }
+    println("[REM-143-S2-3rd-Leg] rendering ${docs.size} docs (${if (cfg.reTrigger) "Re-Trigger schedule" else "frame-major one-pin"})")
 
     Builtins.register()
     val rows = mutableListOf<String>()
@@ -115,9 +132,14 @@ fun main(args: Array<String>) {
             error++
             continue
         }
-        val frames = renderProcessSequence(rcFile.readBytes(), cfg.captureFrames, cfg.density)
+        val frames = if (cfg.reTrigger) {
+            val duration = RETRIGGER_DURATION_S.getValue(name)
+            renderRetriggerSequence(rcFile.readBytes(), duration, cfg.density)
+        } else {
+            renderProcessSequence(rcFile.readBytes(), cfg.captureFrames, cfg.density)
+        }
         for (capture in frames) {
-            val tag = if (capture.frameIndex == SEED_FRAME) "seed" else if (capture.frameIndex == END_FRAME) "end" else "f${capture.frameIndex}"
+            val tag = capture.tag
             val outName = "${name}_$tag.png"
             val status = when {
                 capture.result.throwMsg != null -> "ERROR"
@@ -129,16 +151,16 @@ fun main(args: Array<String>) {
             }
             val note = capture.result.throwMsg ?: ""
             println(
-                "[%2d/%2d] %-44s  %-8s  %4d x %-4d  k=%-3d  t=%5.3fs  draws=%-4d  %s".format(
+                "[%2d/%2d] %-44s  %-8s  %4d x %-4d  k=%-3d  t=%6.3fs  draws=%-4d  %s".format(
                     i + 1, docs.size, outName, status,
                     capture.result.width, capture.result.height,
-                    capture.frameIndex, capture.frameIndex * DT_SECONDS,
+                    capture.frameIndex, capture.tSeconds,
                     capture.result.drawCount, note.take(40),
                 ),
             )
             rows += listOf(
                 name, capture.frameIndex.toString(),
-                "%.6f".format(capture.frameIndex * DT_SECONDS),
+                "%.6f".format(capture.tSeconds),
                 capture.result.width.toString(), capture.result.height.toString(),
                 capture.result.drawCount.toString(), status, csvEscapeProcess(note),
             ).joinToString(",")
@@ -154,7 +176,7 @@ private data class ProcessRenderResult(
     val pngBytes: ByteArray?, val throwMsg: String?,
 )
 
-private data class FrameCapture(val frameIndex: Int, val result: ProcessRenderResult)
+private data class FrameCapture(val frameIndex: Int, val result: ProcessRenderResult, val tag: String, val tSeconds: Float)
 
 /**
  * Run the 91-paint sequence (k=0..[FRAME_COUNT]) ONCE for [rcBytes], capturing PNGs at the indices in
@@ -169,7 +191,7 @@ private fun renderProcessSequence(
     val doc: RemoteComposeDocument = try {
         DocumentReader.inflate(rcBytes)
     } catch (t: Throwable) {
-        return captureFrames.map { FrameCapture(it, ProcessRenderResult(0, 0, 0, null, "decode: ${t.message ?: t::class.simpleName}")) }
+        return captureFrames.map { FrameCapture(it, ProcessRenderResult(0, 0, 0, null, "decode: ${t.message ?: t::class.simpleName}"), "decode-err", 0f) }
     }
     val w = if (doc.width > 0) doc.width else 500
     val h = if (doc.height > 0) doc.height else 500
@@ -182,29 +204,90 @@ private fun renderProcessSequence(
     for (k in 0..FRAME_COUNT) {
         val t = k * DT_SECONDS  // startAt=0 for all 6 particle docs per dev-1 spec
         if (k in captureSet) {
-            captures += FrameCapture(k, paintAndCapture(doc, w, h, density, t))
+            val tag = if (k == SEED_FRAME) "seed" else if (k == END_FRAME) "end" else "f$k"
+            captures += FrameCapture(k, paintAndCapture(doc, w, h, density, t, touch = null), tag, t)
         } else {
-            paintDiscarded(doc, w, h, density, t)
+            paintDiscarded(doc, w, h, density, t, touch = null)
         }
     }
     // Preserve caller-requested order (e.g. --frame 90,0 prints end first).
     return captureFrames.mapNotNull { idx -> captures.firstOrNull { it.frameIndex == idx } }
 }
 
-private fun paintDiscarded(doc: RemoteComposeDocument, w: Int, h: Int, density: Float, frameTimeSeconds: Float) {
+/**
+ * REM-143 S3-Re-Confirm — Tap-Injection @T → Re-Burst pixel-render (mirrors `Rem143S3RetriggerGateTest`'s
+ * sim-side schedule). Decode-ONCE → ONE RNG pin → 4 phases:
+ *   Phase 1 (k=0..[FRAME_COUNT], 91 paints at t=k·DT): standard EvolutionGate window. Captures: `seed`
+ *           (k=0) for the static-render cross-id, `end` (k=90) for the deepest pre-elapse evolution.
+ *   Phase 2 (elapse-jump, 1 paint at t = duration+0.5): `now > startAt+duration` → `runImpulse` hits the
+ *           elapse branch → `ParticlesCreate.resetSeed()` + `lastFrameTime` cleared. NO body paint, NO RAND
+ *           consumed (the elapse branch returns before any of that).
+ *   Phase 3 (tap, 1 paint at t = duration+1.0 with `TouchState.down()`): `dispatchTouch` consumes the DOWN
+ *           → `touchEventTime = tap_t` → id29 reloaded → impulse re-enters `[tap_t, tap_t+duration]`,
+ *           `isInitialPass=true` → Phase-A's `ParticlesCreate.apply` re-seeds (consumes init RAND from
+ *           CURRENT continuous RNG). Capture: `reburst`.
+ *   Phase 4 (post-tap evolution, 10 paints at t = tap_t + k·DT): standard evolution from the new seed.
+ *           Capture: `post10` (the 10th post-burst frame, t = tap_t + 10·DT).
+ *
+ * Position-level Sim==Recon for these 3 docs is gate-validated by `Rem143S3RetriggerGateTest` (3/3 GREEN);
+ * this harness produces the matching PIXEL-render (oracle-implied via the EvolutionGate + Re-Trigger gate
+ * chains). NOT promoted to goldens — purely visual evidence + per-frame draw-count classification.
+ */
+private fun renderRetriggerSequence(rcBytes: ByteArray, durationSeconds: Float, density: Float): List<FrameCapture> {
+    val doc: RemoteComposeDocument = try {
+        DocumentReader.inflate(rcBytes)
+    } catch (t: Throwable) {
+        return listOf(FrameCapture(0, ProcessRenderResult(0, 0, 0, null, "decode: ${t.message ?: t::class.simpleName}"), "decode-err", 0f))
+    }
+    val w = if (doc.width > 0) doc.width else 500
+    val h = if (doc.height > 0) doc.height else 500
+    val elapseT = durationSeconds + 0.5f
+    val tapT = durationSeconds + 1.0f
+    val captures = ArrayList<FrameCapture>(4)
+
+    // ONE pin before frame 0 — continuous RNG across the WHOLE re-trigger schedule.
+    RpnFloatEvaluator.seedRngForCapture(RenderRngPins.PARTICLE_SEED)
+
+    // Phase 1: 91 baseline paints (k=0..FRAME_COUNT) at t=k·DT, no tap → touch=null
+    for (k in 0..FRAME_COUNT) {
+        val t = k * DT_SECONDS
+        when (k) {
+            SEED_FRAME -> captures += FrameCapture(k, paintAndCapture(doc, w, h, density, t, touch = null), "seed", t)
+            END_FRAME  -> captures += FrameCapture(k, paintAndCapture(doc, w, h, density, t, touch = null), "preElapse_end", t)
+            else       -> paintDiscarded(doc, w, h, density, t, touch = null)
+        }
+    }
+    // Phase 2: elapse-jump → resetSeed() + lastFrameTime=NaN. No RAND consumed. Not captured (impulse silent).
+    paintDiscarded(doc, w, h, density, elapseT, touch = null)
+    // Phase 3: tap-injection → re-burst. touch.down() BEFORE paint so dispatchTouch consumes DOWN this frame.
+    val touch = TouchState().also { it.down(150f, 150f) }
+    captures += FrameCapture(FRAME_COUNT + 2, paintAndCapture(doc, w, h, density, tapT, touch = touch), "reburst", tapT)
+    // Phase 4: 10 post-tap paints; capture the 10th (= "post10").
+    for (k in 1..10) {
+        val t = tapT + k * DT_SECONDS
+        if (k == 10) {
+            captures += FrameCapture(FRAME_COUNT + 2 + k, paintAndCapture(doc, w, h, density, t, touch = touch), "post10", t)
+        } else {
+            paintDiscarded(doc, w, h, density, t, touch = touch)
+        }
+    }
+    return captures
+}
+
+private fun paintDiscarded(doc: RemoteComposeDocument, w: Int, h: Int, density: Float, frameTimeSeconds: Float, touch: TouchState?) {
     val ctx = RemoteContext().apply { setDensity(density); animationEnabled = true; seedHostPalette() }
     val scene = ImageComposeScene(width = w, height = h, density = Density(density)) {
-        ProcessRenderDocCanvas(doc, ctx, w, h, frameTimeSeconds, { /* discard */ }) { /* discard */ }
+        ProcessRenderDocCanvas(doc, ctx, w, h, frameTimeSeconds, touch, { /* discard */ }) { /* discard */ }
     }
     try { scene.render(nanoTime = 0L) } finally { scene.close() }
 }
 
-private fun paintAndCapture(doc: RemoteComposeDocument, w: Int, h: Int, density: Float, frameTimeSeconds: Float): ProcessRenderResult {
+private fun paintAndCapture(doc: RemoteComposeDocument, w: Int, h: Int, density: Float, frameTimeSeconds: Float, touch: TouchState?): ProcessRenderResult {
     val ctx = RemoteContext().apply { setDensity(density); animationEnabled = true; seedHostPalette() }
     var thrown: String? = null
     var paintContextRef: ComposePaintContext? = null
     val scene = ImageComposeScene(width = w, height = h, density = Density(density)) {
-        ProcessRenderDocCanvas(doc, ctx, w, h, frameTimeSeconds, { pc -> paintContextRef = pc }) { thrown = it }
+        ProcessRenderDocCanvas(doc, ctx, w, h, frameTimeSeconds, touch, { pc -> paintContextRef = pc }) { thrown = it }
     }
     return try {
         val skiaImage = scene.render(nanoTime = 0L)
@@ -218,6 +301,7 @@ private fun paintAndCapture(doc: RemoteComposeDocument, w: Int, h: Int, density:
 @Composable
 private fun ProcessRenderDocCanvas(
     doc: RemoteComposeDocument, ctx: RemoteContext, pxW: Int, pxH: Int, frameTimeSeconds: Float,
+    touch: TouchState?,
     onPaintContext: (ComposePaintContext) -> Unit, onThrow: (String) -> Unit,
 ) {
     val fontResolver = LocalFontFamilyResolver.current
@@ -230,7 +314,7 @@ private fun ProcessRenderDocCanvas(
                 // Only frameTimeSeconds drives the active clock (animationEnabled=true). staticTimeSeconds
                 // is the static-mode pin and is unused here; mirror `ParticleGateHarness.captureFrames`
                 // (passes only frameTimeSeconds → staticTimeSeconds defaults to 0f).
-                RemoteComposePlayer(ctx).paint(doc, pc, frameTimeSeconds = frameTimeSeconds)
+                RemoteComposePlayer(ctx).paint(doc, pc, frameTimeSeconds = frameTimeSeconds, touchState = touch)
             }
         } catch (t: Throwable) {
             onThrow("paint: ${t.message ?: t::class.simpleName}")
@@ -246,6 +330,7 @@ private fun Modifier.pxSizeP(width: Int, height: Int): Modifier = layout { measu
 private data class ProcessConfig(
     val rcDir: File, val outDir: File, val csvOut: File,
     val density: Float, val explicitDocs: List<String>?, val captureFrames: List<Int>,
+    val reTrigger: Boolean,
 )
 
 private fun parseArgs(args: Array<String>): ProcessConfig {
@@ -255,21 +340,23 @@ private fun parseArgs(args: Array<String>): ProcessConfig {
     var density = 1f
     var docs: List<String>? = null
     var captureFrames: List<Int> = listOf(END_FRAME)
+    var reTrigger = false
     var i = 0
     while (i < args.size) {
         when (val a = args[i]) {
-            "--rc"      -> { rcDir = args[++i] }
-            "--out"     -> { outDir = args[++i] }
-            "--csv"     -> { csv = args[++i] }
-            "--density" -> { density = args[++i].toFloat() }
-            "--docs"    -> { docs = args[++i].split(",").map { it.trim() }.filter { it.isNotEmpty() } }
-            "--frame"   -> {
+            "--rc"        -> { rcDir = args[++i] }
+            "--out"       -> { outDir = args[++i] }
+            "--csv"       -> { csv = args[++i] }
+            "--density"   -> { density = args[++i].toFloat() }
+            "--docs"      -> { docs = args[++i].split(",").map { it.trim() }.filter { it.isNotEmpty() } }
+            "--reTrigger" -> { reTrigger = true }
+            "--frame"     -> {
                 captureFrames = args[++i].split(",").map { it.trim().toInt() }
                 require(captureFrames.all { it in 0..FRAME_COUNT }) {
                     "--frame indices must lie in 0..$FRAME_COUNT (1/30s-step schedule)"
                 }
             }
-            else        -> System.err.println("[REM-143-S2-3rd-Leg] unknown arg: $a")
+            else          -> System.err.println("[REM-143-S2-3rd-Leg] unknown arg: $a")
         }
         i++
     }
@@ -277,7 +364,7 @@ private fun parseArgs(args: Array<String>): ProcessConfig {
     return ProcessConfig(
         rcDir = File(rcDir), outDir = out,
         csvOut = csv?.let(::File) ?: File(out, "_process_sweep.csv"),
-        density = density, explicitDocs = docs, captureFrames = captureFrames,
+        density = density, explicitDocs = docs, captureFrames = captureFrames, reTrigger = reTrigger,
     )
 }
 
