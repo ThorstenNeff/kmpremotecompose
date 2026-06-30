@@ -40,6 +40,13 @@ class PlayerPaintState {
     /** Font id (`TYPEFACE` font-type / id); read by the text renderer (L2-S3). `0` = default. */
     var typefaceId: Int = DEFAULT_TYPEFACE_ID
 
+    /**
+     * REM-158: the resolved `TYPEFACE` **name** when the op carried a `DATA_TEXT` name id (upstream:
+     * `font_type > 10 && !ttf`), else `null` (the generic-enum case uses [typefaceId]). Read by the text
+     * renderer's [NamedFontResolver] to pick a bundled/generic [androidx.compose.ui.text.font.FontFamily].
+     */
+    var typefaceName: String? = DEFAULT_TYPEFACE_NAME
+
     /** Font style (REM-37: `0` = normal, `1` = italic); read by the text renderer (deriveTextStyle, dev-1). */
     var fontStyle: Int = DEFAULT_FONT_STYLE
 
@@ -58,7 +65,9 @@ class PlayerPaintState {
 
     /** Push a snapshot of all fields (upstream `savePaint`). */
     fun save() {
-        stack.addLast(Snapshot(paint.copyOf(), textSizePx, typefaceId, fontStyle, fontWeight, fillAndStroke))
+        stack.addLast(
+            Snapshot(paint.copyOf(), textSizePx, typefaceId, typefaceName, fontStyle, fontWeight, fillAndStroke),
+        )
     }
 
     /** Pop the last snapshot, restoring all fields (upstream `restorePaint`); no-op if empty. */
@@ -67,6 +76,7 @@ class PlayerPaintState {
         paint = s.paint
         textSizePx = s.textSizePx
         typefaceId = s.typefaceId
+        typefaceName = s.typefaceName
         fontStyle = s.fontStyle
         fontWeight = s.fontWeight
         fillAndStroke = s.fillAndStroke
@@ -77,19 +87,22 @@ class PlayerPaintState {
         paint = Paint()
         textSizePx = DEFAULT_TEXT_SIZE_PX
         typefaceId = DEFAULT_TYPEFACE_ID
+        typefaceName = DEFAULT_TYPEFACE_NAME
         fontStyle = DEFAULT_FONT_STYLE
         fontWeight = DEFAULT_FONT_WEIGHT
         fillAndStroke = DEFAULT_FILL_AND_STROKE
     }
 
     private class Snapshot(
-        val paint: Paint, val textSizePx: Float, val typefaceId: Int, val fontStyle: Int, val fontWeight: Int,
+        val paint: Paint, val textSizePx: Float, val typefaceId: Int, val typefaceName: String?,
+        val fontStyle: Int, val fontWeight: Int,
         val fillAndStroke: Boolean,
     )
 
     companion object {
         const val DEFAULT_TEXT_SIZE_PX: Float = 16f
         const val DEFAULT_TYPEFACE_ID: Int = 0
+        val DEFAULT_TYPEFACE_NAME: String? = null
         const val DEFAULT_FONT_STYLE: Int = 0
         const val DEFAULT_FONT_WEIGHT: Int = 0
         const val DEFAULT_FILL_AND_STROKE: Boolean = false

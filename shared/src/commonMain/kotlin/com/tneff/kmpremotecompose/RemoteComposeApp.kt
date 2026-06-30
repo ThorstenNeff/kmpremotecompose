@@ -189,6 +189,11 @@ fun RemoteComposeApp(
     // render lambda below is not) and handed to the text half; the renderer applies it per-run only to
     // symbol-carrying text.
     val symbolFallback = symbolFallbackFamily()
+    // REM-158: the cross-target named-font resolver for the TYPEFACE op, with the bundled DancingScript
+    // (cursive/script) + RobotoFlex defaults built from composeResources at composition scope (like the
+    // symbol fallback above). Handed to the text half so a doc that sets a named/enum font renders it
+    // instead of the silent default-sans (the missing name→FontFamily lookup the audit flagged).
+    val namedFonts = rememberNamedFontResolver()
     // REM-68: the host system-accent / Material-You palette (name → ARGB), resolved once per composition
     // (Android reads real device colors; iOS/desktop mirror the baseline). Seeded into each render's
     // context below so a `NamedVariable`-bound theme color (e.g. color.system_accent1_100) overrides the
@@ -261,6 +266,7 @@ fun RemoteComposeApp(
                                 ctx, target,
                                 fontFamilyResolver = fontResolver,
                                 symbolFallbackFamily = symbolFallback,
+                                namedFontResolver = namedFonts,
                             )
                             // Geometry shares the context's one PlayerPaintState (REM-32) with the text half.
                             paintContext.geometry = GeometryPaintDelegate(ctx, target, paintContext.paintState)

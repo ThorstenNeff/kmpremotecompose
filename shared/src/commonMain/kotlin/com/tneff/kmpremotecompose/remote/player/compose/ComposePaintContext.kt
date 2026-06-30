@@ -59,6 +59,12 @@ class ComposePaintContext(
      * [ComposeTextRenderer] so web text resolves these glyphs the default font lacks. Null ⇒ no fallback.
      */
     val symbolFallbackFamily: FontFamily? = null,
+    /**
+     * REM-158: the cross-target name/enum → [FontFamily] resolver for the `TYPEFACE` op, forwarded to
+     * [ComposeTextRenderer]. Built from `composeResources/font` in the composition (like
+     * [symbolFallbackFamily]). Null ⇒ no named-font resolution (text uses the renderer default).
+     */
+    val namedFontResolver: NamedFontResolver? = null,
 ) : PaintContext(context) {
 
     /**
@@ -210,7 +216,8 @@ class ComposePaintContext(
      */
     val textRenderer: ComposeTextRenderer? by lazy {
         fontFamilyResolver?.let {
-            ComposeTextRenderer(context.density, it, symbolFallbackFamily).also { r -> r.paintState = paintState }
+            ComposeTextRenderer(context.density, it, symbolFallbackFamily, namedFontResolver)
+                .also { r -> r.paintState = paintState }
         }
     }
 
