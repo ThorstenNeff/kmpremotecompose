@@ -45,6 +45,16 @@ application {
     mainClass.set("com.tneff.kmpremotecompose.server.MainKt")
 }
 
+// REM-173 — run the localhost example .rc server (127.0.0.1 only; REM-170/public is human-gated, parked).
+// Usage: ./gradlew :server:runExampleServer -PserverPort=8080  (port optional, default 8080).
+tasks.register<JavaExec>("runExampleServer") {
+    group = "application"
+    description = "REM-173 — run the localhost example .rc server (GET /rc/{pageId}) on 127.0.0.1."
+    mainClass.set("com.tneff.kmpremotecompose.server.example.ExampleServerMainKt")
+    classpath = sourceSets["main"].runtimeClasspath
+    args = listOfNotNull(project.findProperty("serverPort") as String?)
+}
+
 // TechSpec §4.1 — :shared's commonMain pulls Compose/Skiko transitively onto the :server
 // classpath (byte-irrelevant: Compose is never called on the creation path). One of the lifecycle
 // jars resolves twice through that wiring, so the application-plugin's installDist / distZip /
