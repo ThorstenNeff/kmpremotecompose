@@ -31,6 +31,7 @@ import com.tneff.kmpremotecompose.remote.core.operations.layout.LayoutContent
 import com.tneff.kmpremotecompose.remote.core.operations.layout.LoopStart
 import com.tneff.kmpremotecompose.remote.core.operations.layout.RootContentBehavior
 import com.tneff.kmpremotecompose.remote.core.operations.layout.ScrollModifier
+import com.tneff.kmpremotecompose.remote.core.operations.layout.ValueFloatExpressionChangeAction
 import com.tneff.kmpremotecompose.remote.core.operations.layout.ValueIntegerChangeAction
 // (TapState is in the same package — no import needed)
 import com.tneff.kmpremotecompose.remote.core.operations.layout.TouchExpression
@@ -172,10 +173,32 @@ class RemoteComposePlayer(val context: RemoteContext = RemoteContext()) {
         // (CONDITIONAL_OPERATIONS skips its block when false — REM-41); LOOP_START is intercepted by an
         // isolated branch (REM-58) that triggers ONLY on a loop, so non-loop docs walk byte-identically.
         val ops = document.operations
+        // REM-175 cross-frame counter-pattern (app-treu / fresh-ctx-per-frame): a tap-mutated value
+        // (e.g. a hochzählenden Counter bound to a DATA_FLOAT) must SURVIVE the next frame's
+        // Phase-A reset — even though the app builds a FRESH [RemoteContext] per Canvas draw
+        // (`RemoteComposeApp` line 312 `val ctx = RemoteContext()`), so the float store starts
+        // EMPTY each frame. The fix: when Phase-A visits a DATA_FLOAT/DATA_INT whose id has a tap
+        // override on the (cross-frame-persistent) [TapState], **write the override INTO the
+        // fresh store** in place of the op's default and skip the op's own apply. A downstream
+        // FloatExpression in the same Phase-A walk then reads the accumulated counter from the
+        // store, not 0 from a stillborn fresh-context default. (PO/assist 2026-06-30: the test had
+        // a reused-ctx and never caught the fresh-ctx plateau; the inline write-on-skip below is
+        // the app-lifecycle-mirroring fix. Null tapState ⇒ no override map, behaviour unchanged.)
         walkGated(ops, 0, ops.size, paintPhase = false, paint) { op ->
             if (op is VariableSupport) {
                 op.updateVariables(context)
-                op.apply(context)
+                val overridden = when (op) {
+                    is com.tneff.kmpremotecompose.remote.core.operations.FloatConstant -> {
+                        val v = tapState?.floatOverrides?.get(op.id)
+                        if (v != null) { context.loadFloat(op.id, v); true } else false
+                    }
+                    is com.tneff.kmpremotecompose.remote.core.operations.IntegerConstant -> {
+                        val v = tapState?.intOverrides?.get(op.id)
+                        if (v != null) { context.loadInt(op.id, v); true } else false
+                    }
+                    else -> false
+                }
+                if (!overridden) op.apply(context)
             }
         }
         // REM-108 S2: click dispatch — AFTER Phase A (doc DATA_INT defaults applied) and BEFORE the paint
@@ -332,6 +355,10 @@ class RemoteComposePlayer(val context: RemoteContext = RemoteContext()) {
         }
         // Persist click-mutated ints across the per-frame-fresh context (override the Phase-A defaults).
         for ((id, v) in tap.intOverrides) context.loadInt(id, v)
+        // REM-175 — same persistence for click-mutated floats (Path-A counter pattern). Re-applied
+        // here AFTER Phase-A's DATA_FLOAT defaults so subsequent reads (e.g. next frame's
+        // FloatExpression evaluating `counter + 1`) see the accumulated value, not the initial.
+        for ((id, v) in tap.floatOverrides) context.loadFloat(id, v)
     }
 
     /** Fire every [opcode] modifier on [target]: run its action block (Option B walk to the matching
@@ -350,13 +377,25 @@ class RemoteComposePlayer(val context: RemoteContext = RemoteContext()) {
     }
 
     /** Execute one action op (Option B runtime). S2 wires the integer-set action (the corpus click payload),
-     *  recording it into the persistent overrides + the `<valueId>=<value>` echo. Other action types
-     *  (`ValueFloatExpressionChange` / `ValueStringChange` / `HostAction`) are deferred (D2) and skipped. */
+     *  recording it into the persistent overrides + the `<valueId>=<value>` echo. REM-175 adds the
+     *  float-expression-change dispatch (the Path-A counter-pattern action: read the CURRENT value
+     *  of `expressionId` from the float store — which a FloatExpression Phase-A producer just
+     *  evaluated this frame as e.g. `counter + 1` — and persist it onto `targetValueId` so the next
+     *  frame's Phase-A walk re-reads the accumulated counter). Other action types
+     *  (`ValueStringChange` / `HostAction`) are deferred (D2) and skipped. */
     private fun runAction(op: Operation, tap: TapState) {
         when (op) {
             is ValueIntegerChangeAction -> {
                 tap.intOverrides[op.valueId] = op.value
                 lastActionEcho = "${op.valueId}=${op.value}"
+            }
+            is ValueFloatExpressionChangeAction -> {
+                // op.valueId = target float-id to write; op.value = id of a FloatExpression whose
+                // current evaluated value we read (computed earlier this frame by FloatExpression's
+                // Phase-A apply()). Snapshot it into floatOverrides for cross-frame persistence.
+                val v = context.getFloat(op.value)
+                tap.floatOverrides[op.valueId] = v
+                lastActionEcho = "${op.valueId}=$v"
             }
             else -> {}
         }
