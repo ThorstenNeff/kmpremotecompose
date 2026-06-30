@@ -204,11 +204,27 @@ fun coreTextIntParam(id: Int, value: Int): CoreText.Param =
 fun coreTextFloatParam(id: Int, value: Float): CoreText.Param =
     CoreText.Param(id, coreTextIntBeBytes(value.toRawBits()))
 
-/** Typed BE-short (2B) CORE_TEXT param — covers P_SHORT TextStyle ids (none in current map but kept for completeness). */
+/**
+ * Typed BE-short (2B) CORE_TEXT param — covers the P_SHORT wire type.
+ *
+ * **Forward-looking (corpus-unexercised).** No TextStyle parameter id in the upstream PARAM_TYPE
+ * map currently uses P_SHORT, and no `c_modifier_*`/`text_*` corpus fixture exercises this factory.
+ * It exists for **API-completeness symmetry** with the upstream `CommandParameters.P_SHORT` wire
+ * type so a future TextStyle param that selects P_SHORT can author byte-faithfully without a new
+ * factory. The factory is byte-equivalence-pinned by the procedural helper's defensive `.copyOf()`
+ * — its 2B BE encoding is mechanical, not corpus-validated.
+ */
 fun coreTextShortParam(id: Int, value: Int): CoreText.Param =
     CoreText.Param(id, byteArrayOf((value ushr 8).toByte(), value.toByte()))
 
-/** Typed 1-byte CORE_TEXT param — covers P_BYTE TextStyle ids. */
+/**
+ * Typed 1-byte CORE_TEXT param — covers the P_BYTE wire type.
+ *
+ * **Forward-looking (corpus-unexercised).** No TextStyle parameter id in the upstream PARAM_TYPE
+ * map currently uses P_BYTE, and no corpus fixture exercises this factory. Same forward-looking
+ * rationale as [coreTextShortParam] — kept for upstream-symmetric API surface; the 1B encoding is
+ * mechanical (not corpus-validated).
+ */
 fun coreTextByteParam(id: Int, value: Int): CoreText.Param =
     CoreText.Param(id, byteArrayOf(value.toByte()))
 

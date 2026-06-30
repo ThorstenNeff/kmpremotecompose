@@ -45,8 +45,10 @@ import kotlin.test.assertTrue
  *   - param#0: id `01` (P_INT, TextStyle id) value `ff ff ff fb` = -5 (signed BE Int)
  *   - param#1: id `05` (P_FLOAT, fontSize) value `42 70 00 00` = 60.0f
  *
- * **Backup corpus source.** `text_baseline.rc` has 21× CORE_TEXT sub-spans (3-row × 7-col text grid)
- * with diverse textIds — IDEAL for the non-vacuity pairwise-distinct pin (REM-147-trap-lesson).
+ * **Backup corpus source.** `text_baseline.rc` has **18× CORE_TEXT sub-spans** (3-row × 6-text
+ * grid, post-merge assist-decode count) with diverse textIds — IDEAL for the non-vacuity
+ * pairwise-distinct pin (REM-147-trap-lesson). (Earlier scoping estimate said "~21" — actual
+ * `DocumentReader.inflateWithTrace` count is 18.)
  *
  * **W14 NaN-bits pin.** P_FLOAT params (TextStyle ids 5, 7, 12, 13, 14, 25, 26) constructed via
  * [coreTextFloatParam] go through `Float.toRawBits()` — a NaN-encoded variable ref
@@ -120,7 +122,7 @@ class CoreTextByteTest {
     }
 
     /**
-     * Non-vacuity pin (assist-lesson REM-147). The 21 corpus CORE_TEXT sub-spans in
+     * Non-vacuity pin (assist-lesson REM-147). The 18 corpus CORE_TEXT sub-spans in
      * `text_baseline.rc` must (a) all start with opcode 0xEF, (b) be ≥7B (header), and (c) differ
      * pairwise on at least one field-byte. Proves the primary anchor's byte-equality assertion
      * passes on MEANINGFULLY DIFFERENT inputs (different textIds, different P_INT param#0 values),
@@ -132,7 +134,7 @@ class CoreTextByteTest {
         val corpusSpans = extractCoreTextSubSpans(corpus)
         assertTrue(
             corpusSpans.size >= 10,
-            "text_baseline.rc must have ≥10 CORE_TEXT ops (empirical probe = 21); got ${corpusSpans.size}",
+            "text_baseline.rc must have ≥10 CORE_TEXT ops (empirical decode = 18); got ${corpusSpans.size}",
         )
         corpusSpans.forEachIndexed { idx, span ->
             assertEquals(
