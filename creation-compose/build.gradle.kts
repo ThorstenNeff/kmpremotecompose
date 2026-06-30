@@ -26,7 +26,14 @@ plugins {
     alias(libs.plugins.androidMultiplatformLibrary)
     alias(libs.plugins.composeMultiplatform)
     alias(libs.plugins.composeCompiler)
+    `maven-publish`
 }
+
+// REM-168 Phase-1 (local) publishing coordinates. `api(projects.shared)` below is rewritten to the
+// published `com.tneff.kmpremotecompose:shared:0.1.0` coordinate in this module's POM/Gradle-metadata
+// because :shared carries the same group+version.
+group = "com.tneff.kmpremotecompose"
+version = "0.1.0"
 
 kotlin {
     listOf(
@@ -69,6 +76,23 @@ kotlin {
         commonTest {
             dependencies {
                 implementation(libs.kotlin.test)
+            }
+        }
+    }
+}
+
+// REM-168 Phase-2: GitHub Packages publish target (creds from `~/.gradle/gradle.properties`
+// `gpr.user`/`gpr.token` or env `GITHUB_ACTOR`/`GITHUB_TOKEN` ONLY — never hardcoded, never committed).
+// Config + task build with null creds; real publish is gated on an out-of-band token. Consumers need a
+// `read:packages` token to resolve. (Same block as :shared — kept per-module alongside group/version.)
+publishing {
+    repositories {
+        maven {
+            name = "GitHubPackages"
+            url = uri("https://maven.pkg.github.com/ThorstenNeff/kmpremotecompose")
+            credentials {
+                username = (findProperty("gpr.user") as String?) ?: System.getenv("GITHUB_ACTOR")
+                password = (findProperty("gpr.token") as String?) ?: System.getenv("GITHUB_TOKEN")
             }
         }
     }
