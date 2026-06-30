@@ -100,6 +100,34 @@ internal object PaintBundleApplier {
     private const val SWEEP_GRADIENT = 2
 
     /**
+     * **REM-157 (Phase-A font-state preroll).** Mutate ONLY the font-affecting fields of [state]
+     * (`textSizePx`, `typefaceId`) from the bundle [values] — geometry-paint fields (color, stroke,
+     * alpha, shader, …) and the `fillAndStroke` flag are left untouched on [state]. Walks the same
+     * cursor grammar as [applyTo] (via a scratch state) so variable-length tags (gradient/texture/
+     * font-axis/path-effect) advance in lock-step regardless of which tags are present.
+     *
+     * The scratch state's [Paint] absorbs all non-font writes; only the font fields are propagated
+     * back to [state]. Variable-resolution side effects (e.g. shader/gradient build) DO occur on the
+     * scratch state's paint and are discarded — acceptable because Phase-B's full [applyTo] re-runs
+     * the bundle on the real state and rebuilds the shader/gradient on the real paint anyway. For
+     * the REM-157 corpus blast-radius (2 docs, no gradient/texture in their pre-measure bundles)
+     * this is free.
+     */
+    fun applyFontStateOnly(context: RemoteContext, state: PlayerPaintState, values: IntArray) {
+        val scratch = PlayerPaintState().apply {
+            textSizePx = state.textSizePx
+            typefaceId = state.typefaceId
+            fontStyle = state.fontStyle
+            fontWeight = state.fontWeight
+        }
+        applyTo(context, scratch, values, values.size, deferred = null)
+        state.textSizePx = scratch.textSizePx
+        state.typefaceId = scratch.typefaceId
+        state.fontStyle = scratch.fontStyle
+        state.fontWeight = scratch.fontWeight
+    }
+
+    /**
      * Apply the bundle [values] (first [count] ints) onto [state]: paint attributes mutate
      * `state.paint`, `TEXT_SIZE`/`TYPEFACE` land in `state.textSizePx`/`state.typefaceId` (read by the
      * text renderer, L2-S3). Remaining out-of-scope tags are skipped (kept in sync) and recorded in

@@ -67,6 +67,24 @@ class PaintData(val values: IntArray) : PaintOperation, VariableSupport {
         resolved = resolveBundle(values, context)
     }
 
+    /**
+     * **REM-157 (Phase-A font-state preroll).** A `PAINT_VALUES` bundle may carry `TEXT_SIZE` /
+     * `TYPEFACE` tags that change the font state any later `TEXT_MEASURE.apply()` measures against
+     * (REM-139-S1 keeps `TextMeasure` as a Phase-A producer for downstream `FloatExpression`
+     * consumers). Without this preroll, `TextMeasure` would always measure at the default 16sp /
+     * default-typeface state — diverging from the actual Phase-B render font state and producing
+     * wrong bounds for `drawRect`-around-text patterns (procedure_center_text1 / procedure_look_up1).
+     *
+     * Only the font-affecting fields propagate to the shared paint state here; geometry-paint
+     * fields (color, stroke, alpha, shader, …) stay Phase-B-only via [paint] / [PaintContext.applyPaint],
+     * so the REM-139-S1 Producer-Store design is unchanged (TextMeasure remains the only Layer-1
+     * Phase-A producer touched). Cursor walks the full bundle grammar via a scratch state
+     * (`PaintBundleApplier.applyFontStateOnly`) so variable-length tags advance in lock-step.
+     */
+    override fun apply(context: RemoteContext) {
+        context.paintContext?.applyFontStateForMeasure(resolved)
+    }
+
     /** L2 render: dispatch to the geometry adapter via the paint context (REM-8) using resolved values. */
     override fun paint(context: RemoteContext, paint: PaintContext) {
         paint.applyPaint(if (resolved === values) this else PaintData(resolved))

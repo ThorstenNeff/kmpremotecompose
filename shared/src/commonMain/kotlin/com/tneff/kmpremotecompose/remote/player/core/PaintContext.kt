@@ -249,6 +249,21 @@ abstract class PaintContext(context: RemoteContext) {
      */
     open fun applyTextStyle(fontStyle: Int, fontWeight: Int) {}
 
+    /**
+     * **REM-157 (Phase-A font-state preroll).** Apply only the *font-affecting* tags of a `PAINT_VALUES`
+     * bundle ([PaintData.values]) to the shared paint state — specifically `TEXT_SIZE` and `TYPEFACE` —
+     * **during Phase-A** (the `VariableSupport` walk), BEFORE any subsequent `TEXT_MEASURE.apply()` reads
+     * `getTextBounds` (which routes through the same paint state via `currentStyle`). All other bundle
+     * tags (color, stroke, alpha, gradient, shader, …) are intentionally untouched here — they remain
+     * Phase-B-only via [applyPaint], preserving the REM-139-S1 producer-store design (TEXT_MEASURE stays
+     * a Phase-A producer; only its measurement seam now sees the correct font state).
+     *
+     * Default no-op for non-text contexts and headless fakes — only `ComposePaintContext` implements it.
+     * The bundle-walk MUST mirror `PaintBundleApplier`'s cursor exactly (font-tag advance + non-font-tag
+     * skip) so the walk stays in lock-step regardless of which tags are present.
+     */
+    open fun applyFontStateForMeasure(values: IntArray) {}
+
     // --- graphics layer (abstract; GAP-4 — deferred L2-D2) --------------------------------------
 
     abstract fun startGraphicsLayer(w: Int, h: Int)
