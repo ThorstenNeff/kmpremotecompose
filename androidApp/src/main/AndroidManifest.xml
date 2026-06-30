@@ -1,10 +1,6 @@
 <?xml version="1.0" encoding="utf-8"?>
 <manifest xmlns:android="http://schemas.android.com/apk/res/android">
 
-    <!-- REM-143 S3b: HapticFeedback op → AndroidHapticActuator (Vibrator) needs VIBRATE. Normal
-         permission (auto-granted, no runtime prompt); no effect on non-haptic docs/static renders. -->
-    <uses-permission android:name="android.permission.VIBRATE" />
-
     <application
         android:allowBackup="true"
         android:icon="@mipmap/ic_launcher"

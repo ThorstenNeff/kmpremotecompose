@@ -8,6 +8,7 @@ import androidx.activity.enableEdgeToEdge
 import androidx.compose.runtime.remember
 import androidx.compose.ui.ExperimentalComposeUiApi
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.platform.LocalView
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.semantics.testTagsAsResourceId
 import com.tneff.kmpremotecompose.remote.player.core.AndroidHapticActuator
@@ -37,10 +38,12 @@ class MainActivity : ComponentActivity() {
             // §5) so live sensor docs (sensor_demo_*) read real device sensors; remembered so it survives
             // recomposition. The shared player only seeds in live mode → static/golden render is untouched.
             val sensorSource = remember { AndroidSensorSource(applicationContext) }
-            // REM-143 S3b: inject the Vibrator-backed haptic actuator (App-Shell injection) so a live
-            // touch-triggered impulse buzzes (needs the VIBRATE permission in the manifest); remembered to
-            // survive recomposition. Live-only → static/golden render never buzzes.
-            val hapticActuator = remember { AndroidHapticActuator(applicationContext) }
+            // REM-143 S3b / REM-151: inject the haptic actuator (App-Shell injection) so a live
+            // touch-triggered impulse buzzes. REM-151 fidelity: View.performHapticFeedback (exact upstream
+            // HapticFeedbackConstants map, no VIBRATE permission) → bound to the Compose root view. Keyed on
+            // the view so it rebinds if the view changes. Live-only → static/golden render never buzzes.
+            val view = LocalView.current
+            val hapticActuator = remember(view) { AndroidHapticActuator(view) }
             // REM-144 S4 — route `rc=e6_creation_proof` to the Compose-Creation-DSL E6 §6 proof
             // loader; anything else flows through the default resource loader unchanged. Branching
             // at the screen level (rather than wrapping the loadRc) so the non-proof path retains
