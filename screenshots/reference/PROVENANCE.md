@@ -252,3 +252,33 @@ NOTE on this emu: Android `Resources.getSystem()` does NOT reflect the runtime M
 showed a forced red accent #ffd64145 while systemAccentPalette() still returned baseline 0xFF6476A5), so live==baseline HERE and
 the param shows no pixel flip on this emulator — the flip was proven via on-device logcat instrumentation (forceBaseline=true →
 baselineHostPalette → a1_500=0xFF6476A5). The determinism guarantee holds by construction for any device where the accent diverges.
+
+## REM-164 — Mobile golden refresh: post-Fix re-baseline (android+ios), branch feature/REM-164-mobile-golden-refresh off develop eb8e0ad (2026-06-30)
+5 commonMain render-fixes (REM-45 text-on-path · REM-156/160 DRAW_TEXT_ANCHOR overflow-ellipsis · REM-158
+named-font-resolver TYPEFACE→FontFamily · REM-157 TextMeasure phase-A font-state preroll) were re-baselined
+**desktop-only** by test-3 → android/ios goldens of the affected docs were stale. test-1 (Mobile owner) swept
+the PO's ~24-doc union and re-baselined android/ios with **Desktop = correctness cross-ref** (commonMain →
+same fix), positive-class-confirm per doc (NEW-mobile matches current desktop golden, NOT blind).
+- **Capture:** apps rebuilt @eb8e0ad (Android installDebug, iOS xcodebuild→simctl); deep-link
+  `&live=0&t=0&density=2.0&palette=baseline`; Android crop = uiautomator rc-canvas bounds; iOS crop = canvas
+  origin (46,216) at the golden's exact dims. Dims validated == existing goldens (like-for-like).
+- **RE-BASELINED 37 files (17 android + 20 ios):** anchored_text, base, demo_graphs0, demo_graphs1,
+  flow_control_checks_test_conditional, impulse_demo_confetti_demo, linear_regression, paths_demos, plot_wave,
+  procedure_look_up1, procedure_text_path_effects, spread_sheet, stop_absolute_pos, stop_notches_{absolute,even,
+  percents}, touch2 (both platforms); **iOS-only also:** haptic_demo_demo_haptic1, pie_chart,
+  procedure_center_text1 (these were already-current on Android, mad<2, but changed on iOS).
+- **The android/iOS asymmetry = the F3 audit finding (REM-155):** iOS Skiko advance-widths run wider than
+  Android-native → labels overflow→ellipsize on iOS while fitting on Android (haptic_demo/pie_chart). Gate =
+  per-platform new-vs-old mad>2.0 (skip near-identical → no churn).
+- **SKIPPED (verify-before-route, NOT blind re-baseline):**
+  • **clock** — mobile render UNCHANGED by REM-45 (android new-vs-old mad 0.27 @t=36630, iOS 2.80). The
+    text-on-path '0' hour-mark was already correct on mobile; REM-45 was a desktop-only manifestation. (The
+    apparent "staleness" at &t=0 was purely a clock-hand t-mismatch artifact, not real — caught + corrected.)
+  • **shader_calendar** — calendar content identical old/new/desktop; the mad is dominated by the OS
+    **status-bar clock** (tall doc, canvas origin y=0 → status bar in-frame). Pre-existing non-determinism in
+    this golden; re-baselining would churn the status-bar time for no content gain. **Flag for test-3/PO:**
+    shader_calendar mobile golden carries the status-bar clock — a separate determinism cleanup.
+  • **experimental_gmt / experimental_solar_gmt** — desktop-golden-only (no android/ios golden; 153 vs 173).
+- **Nice closure:** REM-158 (named-font) = the F1 audit finding (base now renders DancingScript cursive on
+  both mobile, matching desktop); REM-157 (TextMeasure box) = the F2 finding (procedure_center_text1 "9□9"
+  tofu now correctly boxed "99"). The REM-155 audit directly drove these fixes; this refresh closes the loop.
