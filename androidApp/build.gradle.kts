@@ -22,6 +22,11 @@ dependencies {
 
     implementation(libs.compose.uiToolingPreview)
     debugImplementation(libs.compose.uiTooling)
+
+    // REM-159 — on-device (real Android-native text stack) TextMeasurer bbox instrumented test.
+    androidTestImplementation(libs.androidx.testExt.junit)
+    androidTestImplementation(libs.junit)
+    androidTestImplementation("androidx.test:runner:1.6.2") // provides the AndroidJUnitRunner instrumentation
 }
 
 android {
@@ -34,6 +39,7 @@ android {
         targetSdk = libs.versions.android.targetSdk.get().toInt()
         versionCode = 1
         versionName = "1.0"
+        testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
     }
     packaging {
         resources {
