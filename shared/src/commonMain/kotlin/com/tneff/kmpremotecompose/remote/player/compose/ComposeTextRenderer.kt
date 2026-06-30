@@ -21,10 +21,13 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.ColorFilter
 import androidx.compose.ui.graphics.ImageBitmap
 import androidx.compose.ui.graphics.Paint
+import androidx.compose.ui.text.AnnotatedString
+import androidx.compose.ui.text.SpanStyle
 import androidx.compose.ui.text.TextLayoutResult
 import androidx.compose.ui.text.TextMeasurer
 import androidx.compose.ui.text.TextPainter
 import androidx.compose.ui.text.TextStyle
+import androidx.compose.ui.text.buildAnnotatedString
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontStyle
 import androidx.compose.ui.text.font.FontWeight
@@ -61,10 +64,11 @@ class ComposeTextRenderer(
     private val density: Float,
     fontFamilyResolver: FontFamily.Resolver,
     /**
-     * REM-110: a bundled fallback [FontFamily] covering the symbol glyphs the CMP **default** font
+     * REM-110/REM-106: a bundled fallback [FontFamily] covering the symbol glyphs the CMP **default** font
      * lacks on web (♥/❤/⚡/⬩/▲/↑/↓ — Misc-Symbols/Dingbats/Geometric/Arrows). Injected (built from a
      * `composeResources/font` resource in the composition, like [fontFamilyResolver]). Null ⇒ no
-     * fallback (current behavior; headless tests). Applied **per run** via [needsSymbolFallback].
+     * fallback (Android/iOS/Desktop + headless tests). Applied **per segment** via [styledRun] +
+     * [needsFallbackCodepoint] (REM-106 generalized REM-110's per-run swap to mixed-run-safe segments).
      */
     private val symbolFallbackFamily: FontFamily? = null,
 ) {
@@ -85,25 +89,46 @@ class ComposeTextRenderer(
     var paintState: PlayerPaintState? = null
 
     /**
-     * The effective style for this draw: derived from [paintState] if bound, else [textStyle]. When
-     * [run] carries a symbol glyph the default font lacks ([needsSymbolFallback]), the run's font family
-     * is switched to the bundled [symbolFallbackFamily] (REM-110). Every corpus run that triggers this
-     * is pure-symbol, so swapping the whole run's family renders the glyph directly without touching Latin.
+     * The effective **base** style for this draw: derived from [paintState] if bound, else [textStyle].
+     * REM-106: the per-glyph fallback family is no longer applied here (the old REM-110 whole-run swap) —
+     * it is applied per **segment** in [styledRun], so a mixed run keeps Latin on the base font and only
+     * swaps the symbol spans. This style carries everything *except* that per-span family.
      */
-    private fun currentStyle(run: String? = null): TextStyle {
-        val base = paintState?.let {
+    private fun currentStyle(): TextStyle =
+        paintState?.let {
             deriveTextStyle(it.paint.color, it.textSizePx, it.fontStyle, it.fontWeight, density, textStyle)
         } ?: textStyle
-        return if (run != null && symbolFallbackFamily != null && needsSymbolFallback(run)) {
-            base.copy(fontFamily = symbolFallbackFamily)
-        } else {
-            base
+
+    /**
+     * REM-106 (generalizes REM-110) — render [run] as an [AnnotatedString] that routes every **maximal
+     * segment** of fallback-needed codepoints ([needsFallbackCodepoint]) to the bundled
+     * [symbolFallbackFamily], leaving every other segment on the base font. The segment-aware successor to
+     * REM-110's whole-run family swap: a mixed run like `"A♥B"` now renders `A`/`B` on the base font and
+     * only `♥` on the fallback, instead of forcing the entire run (Latin included) onto the symbol font.
+     *
+     * **Golden-safe by construction:** when [symbolFallbackFamily] is null (Android/iOS/Desktop — the
+     * system font already covers these glyphs) OR the run carries no fallback codepoint, this returns a
+     * plain `AnnotatedString(run)` — byte-identical to the pre-REM-106 measure input, so no target's
+     * golden shifts. For the wasm-triggering corpus runs (all pure-symbol) the single span equals the old
+     * whole-run swap → identical output there too. Only genuinely **mixed** content changes behavior.
+     */
+    private fun styledRun(run: String): AnnotatedString {
+        val fb = symbolFallbackFamily
+        if (fb == null || run.none { needsFallbackCodepoint(it.code) }) return AnnotatedString(run)
+        return buildAnnotatedString {
+            append(run)
+            var i = 0
+            while (i < run.length) {
+                if (needsFallbackCodepoint(run[i].code)) {
+                    val start = i
+                    while (i < run.length && needsFallbackCodepoint(run[i].code)) i++
+                    addStyle(SpanStyle(fontFamily = fb), start, i)
+                } else {
+                    i++
+                }
+            }
         }
     }
-
-    /** True if [text] holds a symbol codepoint the bundled fallback covers ([SYMBOL_FALLBACK_CODEPOINTS]). */
-    private fun needsSymbolFallback(text: String): Boolean =
-        text.any { it.code in SYMBOL_FALLBACK_CODEPOINTS }
 
     /** Substring [start,end) of [text]; end == -1 (or past the end) means "to the end". */
     private fun slice(text: String, start: Int, end: Int): String {
@@ -118,8 +143,8 @@ class ComposeTextRenderer(
         val run = slice(text, start, end)
         if (run.isEmpty()) return false
         val result = measurer.measure(
-            text = run,
-            style = currentStyle(run),
+            text = styledRun(run),
+            style = currentStyle(),
             layoutDirection = if (rtl) LayoutDirection.Rtl else LayoutDirection.Ltr,
         )
         // CMP paints from the top-left; shift so the run sits on the baseline at (x, y).
@@ -142,7 +167,7 @@ class ComposeTextRenderer(
             bounds[0] = 0f; bounds[1] = 0f; bounds[2] = 0f; bounds[3] = 0f
             return
         }
-        val result = measurer.measure(run, style = currentStyle(run))
+        val result = measurer.measure(styledRun(run), style = currentStyle())
         val baseline = result.firstBaseline
         bounds[0] = 0f
         bounds[1] = -baseline
@@ -168,7 +193,7 @@ class ComposeTextRenderer(
     ): ComputedTextLayout? {
         if (text == null) return null
         val run = slice(text, start, end)
-        val style = currentStyle(run).copy(
+        val style = currentStyle().copy(
             textAlign = alignmentToTextAlign(alignment),
             letterSpacing = if (letterSpacing != 0f) letterSpacing.sp else textStyle.letterSpacing,
             lineHeight = if (lineHeightMultiplier > 0f) lineHeightMultiplier.em else textStyle.lineHeight,
@@ -179,7 +204,7 @@ class ComposeTextRenderer(
             maxHeight = if (maxHeight > 0f) maxHeight.roundToInt() else Constraints.Infinity,
         )
         val result: TextLayoutResult = measurer.measure(
-            text = run,
+            text = styledRun(run),
             style = style,
             overflow = overflowToTextOverflow(overflow),
             maxLines = if (maxLines > 0) maxLines else Int.MAX_VALUE,
@@ -305,6 +330,25 @@ class ComposeTextRenderer(
          */
         val SYMBOL_FALLBACK_CODEPOINTS: Set<Int> =
             setOf(0x2191, 0x2193, 0x25B2, 0x2665, 0x26A1, 0x2764, 0x2B29)
+
+        /**
+         * REM-106 — the **generalized** fallback trigger: any codepoint in the Unicode symbol blocks the
+         * bundled `rc_symbol_fallback` family covers (Arrows · Geometric Shapes · Misc Symbols · Dingbats ·
+         * Misc Symbols & Arrows). A strict superset of the REM-110 corpus census
+         * [SYMBOL_FALLBACK_CODEPOINTS] (kept as a pinned drift-guard), so **arbitrary** foreign symbol
+         * content — not only the 7 corpus glyphs — routes to the fallback instead of rendering tofu/blank on
+         * web. Deliberately EXCLUDES Latin-1 (° ² ·), General Punctuation (• U+2022) and ASCII (all
+         * default-font-covered) so a Latin-bearing segment is never pulled onto the symbol font. BMP-only by
+         * design: every range is below U+D800, so surrogate pairs never match → astral-plane emoji stay on
+         * the base font (broadening the bundled fallback to more scripts/planes — CJK, Cyrillic, emoji — is
+         * a tracked FC follow-up, not this base increment).
+         */
+        fun needsFallbackCodepoint(cp: Int): Boolean =
+            cp in 0x2190..0x21FF ||  // Arrows (↑ U+2191, ↓ U+2193)
+                cp in 0x25A0..0x25FF ||  // Geometric Shapes (▲ U+25B2)
+                cp in 0x2600..0x26FF ||  // Miscellaneous Symbols (♥ U+2665, ⚡ U+26A1)
+                cp in 0x2700..0x27BF ||  // Dingbats (❤ U+2764)
+                cp in 0x2B00..0x2BFF     // Misc Symbols and Arrows (⬩ U+2B29)
 
         // Upstream TextLayout alignment constants.
         const val TEXT_ALIGN_LEFT = 1
