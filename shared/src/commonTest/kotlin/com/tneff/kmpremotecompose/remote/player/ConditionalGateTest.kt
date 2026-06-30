@@ -105,7 +105,12 @@ class ConditionalGateTest {
             Operations.COMPONENT_START, Operations.CANVAS_OPERATIONS, Operations.CONDITIONAL_OPERATIONS,
             Operations.LOOP_START, Operations.IMPULSE_START, Operations.IMPULSE_PROCESS, Operations.PARTICLE_LOOP,
             Operations.PARTICLE_COMPARE, Operations.RUN_ACTION, Operations.CORE_TEXT, Operations.MODIFIER_CLICK,
-            Operations.MODIFIER_MULTI_CLICK, Operations.FUNCTION_DEFINE, Operations.REFERENCED_OPERATIONS,
+            Operations.MODIFIER_MULTI_CLICK,
+            // REM-162: the touch-action modifiers each carry a trailing CONTAINER_END (action block) like
+            // MODIFIER_CLICK, so they are container openers (else an enclosing scroll/conditional/loop bracket
+            // desyncs on a clickable-in-scroll item).
+            Operations.MODIFIER_TOUCH_DOWN, Operations.MODIFIER_TOUCH_UP, Operations.MODIFIER_TOUCH_CANCEL,
+            Operations.FUNCTION_DEFINE, Operations.REFERENCED_OPERATIONS,
             Operations.MACRO_BLOCK, Operations.MACRO_DEFINE, Operations.MACRO_FOR_EACH, Operations.MACRO_CALL,
             Operations.LAYOUT_ROOT, Operations.LAYOUT_CONTENT, Operations.LAYOUT_BOX, Operations.LAYOUT_ROW,
             Operations.LAYOUT_COLUMN, Operations.LAYOUT_CANVAS, Operations.LAYOUT_CANVAS_CONTENT,
