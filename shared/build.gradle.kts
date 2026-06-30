@@ -6,6 +6,22 @@ plugins {
     alias(libs.plugins.androidMultiplatformLibrary)
     alias(libs.plugins.composeMultiplatform)
     alias(libs.plugins.composeCompiler)
+    `maven-publish`
+}
+
+// REM-168 Phase-1 (local) publishing coordinates. The Kotlin-Multiplatform plugin + `maven-publish`
+// auto-create the root `kotlinMultiplatform` publication plus a per-target publication (jvm / wasmJs /
+// iosArm64 / iosSimulatorArm64); the `com.android.kotlin.multiplatform.library` plugin contributes the
+// `android` variant into that set. group+version must be set before the publications are wired.
+group = "com.tneff.kmpremotecompose"
+version = "0.1.0"
+
+// REM-168: the Compose-resources generated `Res` package defaults to `{group}.{module}.generated.resources`.
+// Setting the Maven `group` above would otherwise shift it from the package the code imports
+// (`kmpremotecompose.shared.generated.resources`) and break every `Res` reference. Pin it so the resource
+// package is decoupled from the Maven coordinate group (the publish group is a coordinate, not a code package).
+compose.resources {
+    packageOfResClass = "kmpremotecompose.shared.generated.resources"
 }
 
 // REM-7: generate an absolute path to the commonTest resources so the conformance corpus loader
@@ -101,4 +117,23 @@ kotlin {
 
 dependencies {
     androidRuntimeClasspath(libs.compose.uiTooling)
+}
+
+// REM-168 Phase-2: GitHub Packages publish target. Credentials are read ONLY from the developer's
+// `~/.gradle/gradle.properties` (`gpr.user`/`gpr.token`) or the environment (`GITHUB_ACTOR`/`GITHUB_TOKEN`)
+// — NEVER hardcoded and NEVER committed to the repo's gradle.properties (no secret in the repo). The
+// config + the `publishAllPublicationsToGitHubPackagesRepository` task build with null creds; the REAL
+// publish only succeeds once a token is supplied out-of-band. Consumers need a `read:packages` token to
+// resolve from GitHub Packages (documented in the REM-168 publishing notes).
+publishing {
+    repositories {
+        maven {
+            name = "GitHubPackages"
+            url = uri("https://maven.pkg.github.com/ThorstenNeff/kmpremotecompose")
+            credentials {
+                username = (findProperty("gpr.user") as String?) ?: System.getenv("GITHUB_ACTOR")
+                password = (findProperty("gpr.token") as String?) ?: System.getenv("GITHUB_TOKEN")
+            }
+        }
+    }
 }
