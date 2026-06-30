@@ -96,19 +96,29 @@ object RenderTimePins {
     const val EPOCH_SAFE_PIN: Long = 1751529600L
 
     /**
-     * Per-doc Unix-epoch-seconds pin. Defaults to `EPOCH_SAFE_PIN` for the two REM-176-confirmed
-     * epoch-dependent docs (`experimental_solar_gmt`, `moon_phases`) — without this the sweep
-     * would render them at `epoch=0` = 1970 = the very poisoned-golden the fix is undoing.
+     * Per-doc Unix-epoch-seconds pin. Defaults to `EPOCH_SAFE_PIN` for the three confirmed
+     * epoch-dependent docs:
+     *  - `experimental_solar_gmt` + `moon_phases` (REM-176 — Solar/Sunrise/Sunset RPN and moon-
+     *    phase fraction both read `ID_EPOCH_SECOND` via INTEGER_EXPRESSION),
+     *  - `clock_demo2_jclock2` (REM-177 — 8-city sub-clocks compute per-city sunrise/sunset that
+     *    read `ID_DAY_OF_YEAR` (id=34), one of the 5 calendar vars REM-177 seeds. assist confirmed
+     *    via REM-147 text-value-capture: without this pin the doc renders at day_of_year=1 = Jan-1
+     *    sunrise/sunset, ~1min off the EPOCH_SAFE_PIN-rendered July-3 values per city — geometry
+     *    hash is identical so a PNG diff alone misses it, hence the explicit pin + the data oracle).
      *
-     * Other docs that don't read `ID_EPOCH_SECOND` (171/173 per the §2-Befund-Inventar) are
+     * Without the pin those docs would render at `epoch=0` = 1970 = the very poisoned-golden the
+     * fix is undoing.
+     *
+     * Other docs that don't read `ID_EPOCH_SECOND` (170/173 per the §2-Befund-Inventar) are
      * unaffected by epoch — `epochFor` returns `0L` for them, identical to the byte-faithful
-     * legacy path. As more docs prove epoch-sensitive (REM-177's `clock_demo2_jclock2` candidate
-     * for `ID_DAY_OF_YEAR` extends this list later), they extend here — the **single source**, no
-     * per-target `--epoch` hardcoding (mirror the `--t` discipline above).
+     * legacy path. Extend here (the **single source**) if another doc proves epoch-sensitive —
+     * no per-target `--epoch` hardcoding (mirror the `--t` discipline above).
      */
     private val epochPins: Map<String, Long> = mapOf(
         "experimental_solar_gmt" to EPOCH_SAFE_PIN,
         "moon_phases" to EPOCH_SAFE_PIN,
+        // REM-177 — 8-city sub-clock sunrise/sunset (Phase-A reads ID_DAY_OF_YEAR / id=34).
+        "clock_demo2_jclock2" to EPOCH_SAFE_PIN,
     )
 
     /**
