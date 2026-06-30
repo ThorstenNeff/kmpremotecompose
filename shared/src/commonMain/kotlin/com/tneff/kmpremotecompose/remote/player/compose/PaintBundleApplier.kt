@@ -152,8 +152,19 @@ internal object PaintBundleApplier {
 
                 // ---- text attributes → shared state (read by the L2-S3 text renderer) ----
                 TEXT_SIZE -> state.textSizePx = Float.fromBits(values[i++])
-                // typefaceId = the font id; weight/italic bits in (cmd shr 16) are not captured (🚩 flagged).
-                TYPEFACE -> state.typefaceId = values[i++]
+                // REM-158: decode TYPEFACE faithfully (upstream PaintBundle.applyPaintChange): the high half
+                // packs weight/italic/ttf; the next int is `font_type`. When `font_type > 10 && !ttf` it is a
+                // DATA_TEXT name id → resolve the string (the named-font case), else a generic enum
+                // (0=default/1=sans/2=serif/3=mono). The family is mapped + applied by the text renderer's
+                // NamedFontResolver. Weight/italic from this op stay family-only scope (REM-37 fontStyle/
+                // fontWeight path owns those — avoid double-setting). 🚩 weight/italic-via-TYPEFACE = follow-up.
+                TYPEFACE -> {
+                    val ttf = ((cmd shr 16) and 1024) != 0
+                    val fontType = values[i++]
+                    state.typefaceId = fontType
+                    state.typefaceName =
+                        if (fontType > NamedFontResolver.NAME_ID_THRESHOLD && !ttf) context.getText(fontType) else null
+                }
 
                 // ---- out of S2/text scope: advance correctly, record, do not apply ----
                 FALLBACK_TYPEFACE -> { i++; deferred?.add("FALLBACK_TYPEFACE") }

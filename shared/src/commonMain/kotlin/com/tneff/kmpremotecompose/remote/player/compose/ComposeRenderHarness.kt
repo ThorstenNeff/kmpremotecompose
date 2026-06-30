@@ -23,8 +23,17 @@ fun composePaintContextWithGeometry(
     context: RemoteContext,
     canvas: Canvas,
     fontFamilyResolver: FontFamily.Resolver?,
+    // REM-158: the named-font resolver for the TYPEFACE op must reach the SWEEP/golden render path too, not
+    // only the live RemoteComposeApp — otherwise a named/enum typeface renders default-sans in the goldens
+    // (the wiring gap test-3 caught: 0 docs changed because the sweep went through this harness without it).
+    // Built by the (composable) sweep caller via rememberNamedFontResolver(); null ⇒ no named-font resolution.
+    namedFontResolver: NamedFontResolver? = null,
 ): ComposePaintContext {
-    val pc = ComposePaintContext(context, canvas, fontFamilyResolver = fontFamilyResolver)
+    val pc = ComposePaintContext(
+        context, canvas,
+        fontFamilyResolver = fontFamilyResolver,
+        namedFontResolver = namedFontResolver,
+    )
     pc.geometry = GeometryPaintDelegate(context, canvas, pc.paintState)
     return pc
 }

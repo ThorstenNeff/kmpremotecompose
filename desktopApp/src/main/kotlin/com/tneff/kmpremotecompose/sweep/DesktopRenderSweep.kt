@@ -15,6 +15,7 @@ import androidx.compose.ui.unit.Density
 import com.tneff.kmpremotecompose.remote.core.document.DocumentReader
 import com.tneff.kmpremotecompose.remote.core.document.RemoteComposeDocument
 import com.tneff.kmpremotecompose.remote.core.operations.Builtins
+import com.tneff.kmpremotecompose.rememberNamedFontResolver
 import com.tneff.kmpremotecompose.remote.player.compose.ComposePaintContext
 import com.tneff.kmpremotecompose.remote.player.compose.composePaintContextWithGeometry
 import com.tneff.kmpremotecompose.remote.player.compose.deferredPaintTagsOf
@@ -193,11 +194,15 @@ private fun RenderDocCanvas(
     onThrow: (String) -> Unit,
 ) {
     val fontResolver = LocalFontFamilyResolver.current
+    // REM-158: build the named-font resolver here (composition scope) so the SWEEP/golden render resolves
+    // TYPEFACE name/enum fonts the same way the live app does — closes the wiring gap where the sweep
+    // rendered named fonts as default-sans (test-3: 0 docs changed / DancingScript not cursive).
+    val namedFonts = rememberNamedFontResolver()
     Canvas(Modifier.pxSize(pxW, pxH)) {
         val canvas = drawContext.canvas
         try {
             renderOpaque(canvas, size.width.toInt(), size.height.toInt(), 0xFFFFFFFF.toInt()) { target ->
-                val pc = composePaintContextWithGeometry(ctx, target, fontResolver)
+                val pc = composePaintContextWithGeometry(ctx, target, fontResolver, namedFontResolver = namedFonts)
                 // Hand the harness a ref so it can read deferredPaintTags from pc.geometry after paint.
                 onPaintContext(pc)
                 RemoteComposePlayer(ctx).paint(

@@ -71,6 +71,13 @@ class ComposeTextRenderer(
      * [needsFallbackCodepoint] (REM-106 generalized REM-110's per-run swap to mixed-run-safe segments).
      */
     private val symbolFallbackFamily: FontFamily? = null,
+    /**
+     * REM-158: the commonMain cross-target name/enum → [FontFamily] resolver for the `TYPEFACE` op. When
+     * the bound [paintState] carries a typeface (a resolved name string, else the enum id) this maps it to
+     * a family that is applied as the run's base font in [currentStyle]. Null ⇒ no resolution (the
+     * pre-REM-158 behavior: every run uses the renderer default).
+     */
+    private val namedFontResolver: NamedFontResolver? = null,
 ) {
 
     private val measurer: TextMeasurer = TextMeasurer(
@@ -94,10 +101,23 @@ class ComposeTextRenderer(
      * it is applied per **segment** in [styledRun], so a mixed run keeps Latin on the base font and only
      * swaps the symbol spans. This style carries everything *except* that per-span family.
      */
-    private fun currentStyle(): TextStyle =
-        paintState?.let {
+    private fun currentStyle(): TextStyle {
+        val base = paintState?.let {
             deriveTextStyle(it.paint.color, it.textSizePx, it.fontStyle, it.fontWeight, density, textStyle)
         } ?: textStyle
+        // REM-158: resolve the TYPEFACE family — a name id dereferenced to a DATA_TEXT string
+        // ([PlayerPaintState.typefaceName]), else the generic enum ([PlayerPaintState.typefaceId]) — via the
+        // injected cross-target [namedFontResolver], and apply it as the base font. A null resolver or an
+        // unresolved/default typeface leaves [base] untouched (pre-REM-158 default-font behavior, so
+        // non-font-setting docs don't shift). The per-segment symbol fallback (REM-106 [styledRun]) still
+        // overrides this base family on symbol spans only.
+        val family = paintState?.let { ps ->
+            namedFontResolver?.let { r ->
+                if (ps.typefaceName != null) r.resolveName(ps.typefaceName) else r.resolveEnum(ps.typefaceId)
+            }
+        }
+        return if (family != null) base.copy(fontFamily = family) else base
+    }
 
     /**
      * REM-106 (generalizes REM-110) — render [run] as an [AnnotatedString] that routes every **maximal
