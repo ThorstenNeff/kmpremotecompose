@@ -84,5 +84,9 @@ class MainActivity : ComponentActivity() {
         RcRouter.setStaticTime(intent?.data?.getQueryParameter("t"))
         RcRouter.setForcedDensity(intent?.data?.getQueryParameter("density"))
         RcRouter.setForceBaselinePalette(intent?.data?.getQueryParameter("palette"))
+        // REM-178-S2: optional `&epoch=<sec>` Unix-epoch override; absent/blank/invalid → 0L → the
+        // live App-Shell falls back to `epochNow()` (real device time). Maestro static captures of
+        // the 2 epoch-pinned docs pass `&epoch=1751529600` for the EPOCH_SAFE_PIN render.
+        RcRouter.setEpochSeconds(intent?.data?.getQueryParameter("epoch"))
     }
 }

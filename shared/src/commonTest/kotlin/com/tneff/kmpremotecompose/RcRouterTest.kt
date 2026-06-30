@@ -85,8 +85,39 @@ class RcRouterTest {
         // left the process-singleton in a live/pinned state.
         RcRouter.live = true
         RcRouter.setStaticTime("7")
+        RcRouter.setEpochSeconds("1751529600")
         RcRouter.resetForLaunch()
         assertEquals(false, RcRouter.live, "resetForLaunch → live=false (no leaked animation)")
         assertEquals(0f, RcRouter.staticTimeSeconds, "resetForLaunch → static pin back to t=0")
+        assertEquals(0L, RcRouter.epochSeconds, "REM-178-S2: resetForLaunch → epoch back to 0L (live app falls back to epochNow)")
+    }
+
+    @Test
+    fun setEpochSeconds_failsSafeToZero() {
+        // REM-178-S2: only a valid non-negative Long changes the epoch override; everything else → 0L
+        // (no override → live app falls back to epochNow). A malformed `&epoch` can never produce a
+        // non-deterministic capture path on the explicit-override side.
+        RcRouter.setEpochSeconds("1751529600")
+        assertEquals(1751529600L, RcRouter.epochSeconds, "valid Unix-epoch parsed")
+
+        RcRouter.setEpochSeconds("0")
+        assertEquals(0L, RcRouter.epochSeconds, "&epoch=0 → 0L (live-fallback path)")
+
+        RcRouter.setEpochSeconds(null)
+        assertEquals(0L, RcRouter.epochSeconds, "absent → 0L")
+
+        RcRouter.setEpochSeconds("1751529600"); RcRouter.setEpochSeconds("  ")
+        assertEquals(0L, RcRouter.epochSeconds, "blank → 0L")
+
+        RcRouter.setEpochSeconds("1751529600"); RcRouter.setEpochSeconds("not-a-number")
+        assertEquals(0L, RcRouter.epochSeconds, "non-numeric → 0L")
+
+        RcRouter.setEpochSeconds("1751529600"); RcRouter.setEpochSeconds("-1")
+        assertEquals(0L, RcRouter.epochSeconds, "negative → 0L (no nonsensical seed)")
+
+        RcRouter.setEpochSeconds("3.14")
+        assertEquals(0L, RcRouter.epochSeconds, "non-Long (float) → 0L")
+
+        RcRouter.setEpochSeconds(null) // reset shared state for other tests
     }
 }

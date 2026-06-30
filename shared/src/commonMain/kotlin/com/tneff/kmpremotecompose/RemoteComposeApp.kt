@@ -100,6 +100,14 @@ fun RemoteComposeApp(
     // REM-62: static-mode frame pin (deep-link `&t=N`). Read at composition level so a change recomposes →
     // the Canvas redraws at the new pinned frame. Only consulted in static mode; 0f ⇒ original t=0 path.
     val staticTimeSeconds = RcRouter.staticTimeSeconds
+    // REM-178-S2: epoch seed for ID_EPOCH_SECOND (REM-176) → derived REM-177 calendar vars (year, month,
+    // day-of-year, day-of-week). Deep-link `&epoch=<sec>` override wins; otherwise the live App-Shell
+    // reads the platform wall clock via [epochNow] so a live launch of an epoch-driven doc shows TODAY,
+    // not 1970. **No test-pin fallback in the Library** (REM-178-S2 architecture cleanup, PO Option-a):
+    // `RenderTimePins.epochFor` is consulted only by the desktop sweep harness; Maestro mobile static
+    // captures of the 2 epoch-pinned docs deep-link `&epoch=1751529600` explicitly. Read at composition
+    // level so a deep-link epoch change recomposes → the Canvas redraws against the new epoch.
+    val paintEpoch: Long = RcRouter.epochSeconds.takeIf { it > 0L } ?: epochNow()
     var frameTime by remember { mutableStateOf(0f) }
     var doc by remember { mutableStateOf<RemoteComposeDocument?>(null) }
     var decodeError by remember { mutableStateOf<String?>(null) }
@@ -348,6 +356,10 @@ fun RemoteComposeApp(
                                 // REM-62: static-mode frame pin (deep-link `&t=N`); the player reads it
                                 // only when animation is off, so the live loop is untouched. 0f ⇒ t=0 path.
                                 staticTimeSeconds = staticTimeSeconds,
+                                // REM-178-S2: epoch seed for ID_EPOCH_SECOND → REM-177 calendar vars.
+                                // Either the deep-link `&epoch=<sec>` override (RcRouter.epochSeconds)
+                                // or the live wall-clock fallback (epochNow); composed above.
+                                epochSeconds = paintEpoch,
                                 // REM-101 (D5): the player seeds the doc's sensor ids from this LIVE-only.
                                 sensorSource = sensorSource,
                                 // REM-108 (S2b): live pointer gesture (consumed LIVE-only; null ⇒ no touch).

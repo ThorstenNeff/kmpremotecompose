@@ -22,6 +22,11 @@ struct iOSApp: App {
                     // REM-135: &palette=baseline forces the deterministic baseline host palette for captures
                     // (analog &density=1.0). Absent / other → live device accent (untouched app behavior).
                     RcRouter.shared.setForceBaselinePalette(value: items?.first(where: { $0.name == "palette" })?.value)
+                    // REM-178-S2: &epoch=<sec> Unix-epoch override for ID_EPOCH_SECOND seeding.
+                    // Absent / invalid → 0L → the live App-Shell falls back to `epochNow()` (real
+                    // device time). Maestro captures of the 2 epoch-pinned docs pass
+                    // `&epoch=1751529600` for the EPOCH_SAFE_PIN render.
+                    RcRouter.shared.setEpochSeconds(value: items?.first(where: { $0.name == "epoch" })?.value)
                 }
         }
     }
