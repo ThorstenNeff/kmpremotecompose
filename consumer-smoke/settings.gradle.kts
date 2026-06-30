@@ -19,20 +19,23 @@ pluginManagement {
 
 dependencyResolutionManagement {
     repositories {
-        // REM-168 Phase 1 — resolve the published KmpRemoteCompose artifacts from the local Maven cache.
+        // REM-168 Phase 1 — resolve from the local Maven cache (token-free local dev). Listed first so
+        // token-less local builds keep working; GHP below is the real external-app-team path.
         mavenLocal()
         google()
         mavenCentral()
-        // REM-168 Phase 2 (token-gated) — to consume from GitHub Packages instead of mavenLocal, add a
-        // read:packages token (gpr.user/gpr.token in ~/.gradle/gradle.properties or GITHUB_ACTOR/
-        // GITHUB_TOKEN env) and uncomment:
-        // maven {
-        //     url = uri("https://maven.pkg.github.com/ThorstenNeff/kmpremotecompose")
-        //     credentials {
-        //         username = (extra.properties["gpr.user"] as String?) ?: System.getenv("GITHUB_ACTOR")
-        //         password = (extra.properties["gpr.token"] as String?) ?: System.getenv("GITHUB_TOKEN")
-        //     }
-        // }
+        // REM-168 Phase 2 — GitHub Packages: the real external-app-team resolution path. Consumers need a
+        // `read:packages` token, read ONLY from `~/.gradle/gradle.properties` (gpr.user/gpr.token) or the
+        // environment (GITHUB_ACTOR/GITHUB_TOKEN) — never hardcoded, never committed. Used when the artifact
+        // isn't in mavenLocal (e.g. a fresh external machine, or `--refresh-dependencies` after clearing it).
+        maven {
+            name = "GitHubPackages"
+            url = uri("https://maven.pkg.github.com/ThorstenNeff/kmpremotecompose")
+            credentials {
+                username = providers.gradleProperty("gpr.user").orNull ?: System.getenv("GITHUB_ACTOR")
+                password = providers.gradleProperty("gpr.token").orNull ?: System.getenv("GITHUB_TOKEN")
+            }
+        }
     }
 }
 
