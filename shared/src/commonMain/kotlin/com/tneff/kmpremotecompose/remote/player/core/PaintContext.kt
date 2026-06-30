@@ -137,6 +137,27 @@ abstract class PaintContext(context: RemoteContext) {
         rtl: Boolean,
     )
 
+    /**
+     * REM-156 — draw a single-line text run at baseline `(x, y)` constrained to [maxWidth]: if the run is
+     * wider than [maxWidth] it is truncated and ellipsized (`…`) instead of clipping edgelessly past the
+     * surface. The **overflow policy** for `DRAW_TEXT_ANCHOR` (audit-P1: long anchored text ran off the
+     * doc edge with no wrap/ellipsis/indicator). `[maxWidth] <= 0` ⇒ nothing fits → no draw.
+     *
+     * Default (this base / headless fakes / geometry-only contexts) = plain [drawTextRun] ignoring
+     * [maxWidth], so no caller's behavior changes unless the rendering adapter overrides it. The real
+     * ellipsizing implementation lives in the CMP adapter, where the resolved string + text engine are
+     * available (it needs to measure arbitrary `prefix + …` strings, not just text-resource substrings).
+     */
+    open fun drawTextRunClipped(
+        textId: Int,
+        start: Int, end: Int,
+        x: Float, y: Float,
+        rtl: Boolean,
+        maxWidth: Float,
+    ) {
+        drawTextRun(textId, start, end, 0, 1, x, y, rtl)
+    }
+
     abstract fun drawTextOnPath(textId: Int, pathId: Int, hOffset: Float, vOffset: Float)
 
     /** Draw the [start,end) run of text [textId] with bitmap font [bitmapFontId] at baseline (x,y). */
