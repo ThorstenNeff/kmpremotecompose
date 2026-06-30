@@ -173,37 +173,33 @@ class RemoteComposePlayer(val context: RemoteContext = RemoteContext()) {
         // (CONDITIONAL_OPERATIONS skips its block when false — REM-41); LOOP_START is intercepted by an
         // isolated branch (REM-58) that triggers ONLY on a loop, so non-loop docs walk byte-identically.
         val ops = document.operations
-        // REM-175 cross-frame counter-pattern: a tap-mutated value (e.g. a hochzählenden Counter
-        // bound to a DATA_FLOAT) must SURVIVE the next frame's Phase-A reset. Without this, every
-        // Phase-A walk would re-apply DATA_FLOAT(initial) and the floatExpression(`c + 1`) would
-        // always evaluate against the initial → counter plateaus at `initial + 1`. The fix: each
-        // VariableSupport.apply() is **skipped** for an id that an override owns this frame; the
-        // overrides themselves are then materialised on the store BEFORE the FloatExpression reads
-        // them. Same pattern for the int side (no current corpus exercises it, but symmetry +
-        // future-proofing). Null tapState (S0/S1 paths) ⇒ no override map, behaviour unchanged.
+        // REM-175 cross-frame counter-pattern (app-treu / fresh-ctx-per-frame): a tap-mutated value
+        // (e.g. a hochzählenden Counter bound to a DATA_FLOAT) must SURVIVE the next frame's
+        // Phase-A reset — even though the app builds a FRESH [RemoteContext] per Canvas draw
+        // (`RemoteComposeApp` line 312 `val ctx = RemoteContext()`), so the float store starts
+        // EMPTY each frame. The fix: when Phase-A visits a DATA_FLOAT/DATA_INT whose id has a tap
+        // override on the (cross-frame-persistent) [TapState], **write the override INTO the
+        // fresh store** in place of the op's default and skip the op's own apply. A downstream
+        // FloatExpression in the same Phase-A walk then reads the accumulated counter from the
+        // store, not 0 from a stillborn fresh-context default. (PO/assist 2026-06-30: the test had
+        // a reused-ctx and never caught the fresh-ctx plateau; the inline write-on-skip below is
+        // the app-lifecycle-mirroring fix. Null tapState ⇒ no override map, behaviour unchanged.)
         walkGated(ops, 0, ops.size, paintPhase = false, paint) { op ->
             if (op is VariableSupport) {
                 op.updateVariables(context)
-                val skip = when (op) {
-                    is com.tneff.kmpremotecompose.remote.core.operations.FloatConstant ->
-                        tapState?.floatOverrides?.containsKey(op.id) == true
-                    is com.tneff.kmpremotecompose.remote.core.operations.IntegerConstant ->
-                        tapState?.intOverrides?.containsKey(op.id) == true
+                val overridden = when (op) {
+                    is com.tneff.kmpremotecompose.remote.core.operations.FloatConstant -> {
+                        val v = tapState?.floatOverrides?.get(op.id)
+                        if (v != null) { context.loadFloat(op.id, v); true } else false
+                    }
+                    is com.tneff.kmpremotecompose.remote.core.operations.IntegerConstant -> {
+                        val v = tapState?.intOverrides?.get(op.id)
+                        if (v != null) { context.loadInt(op.id, v); true } else false
+                    }
                     else -> false
                 }
-                if (!skip) op.apply(context)
+                if (!overridden) op.apply(context)
             }
-        }
-        // REM-175 — overrides land into the store BEFORE any downstream FloatExpression / etc. would
-        // read them. We re-apply here AFTER the Phase-A walk's data-binders skipped overridden ids,
-        // so the override beats the would-be reset. FloatExpression's own apply() above already ran
-        // with the previous (override-fresh) store; that's correct for a counter because the
-        // expression `counter + 1` reads `counter` directly and we want the FRESH overridden value
-        // to be the basis for next-frame's run. The current frame's expression result reflects
-        // last frame's counter value, which is what the dispatch action will then snapshot below.
-        if (tapState != null) {
-            for ((id, v) in tapState.floatOverrides) context.loadFloat(id, v)
-            for ((id, v) in tapState.intOverrides) context.loadInt(id, v)
         }
         // REM-108 S2: click dispatch — AFTER Phase A (doc DATA_INT defaults applied) and BEFORE the paint
         // walk, so a tap-mutated value (1) overrides the default and (2) renders this same frame. LIVE-only

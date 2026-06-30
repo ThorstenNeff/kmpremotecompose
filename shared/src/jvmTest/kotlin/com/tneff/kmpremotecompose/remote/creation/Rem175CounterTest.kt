@@ -132,24 +132,32 @@ class Rem175CounterTest {
     }
 
     /**
-     * **REM-175 dispatch regression test** — 3 taps → counter 0 → 1 → 2 → 3. Proves the full
-     * round-trip: DSL emits → bytes inflate → Phase-A FloatExpression evaluates `c+1` → tap →
-     * runAction reads expr value → persists onto override → next-frame Phase-A re-applies override
-     * → re-evaluates expr → next tap reads accumulated value → etc.
+     * **REM-175 dispatch regression test — APP-LIFECYCLE-MIRROR (PO/assist correction 2026-06-30).**
+     *
+     * The original version of this test built ONE `RemoteContext` + ONE `RemoteComposePlayer` and
+     * reused both across the 3 frames. That **did NOT mirror the app** (`RemoteComposeApp` Canvas
+     * draw lambda allocates a fresh `RemoteContext` AND a fresh `RemoteComposePlayer` per frame:
+     * line 312 `val ctx = RemoteContext()`, line 344 `RemoteComposePlayer(ctx)`). Under the
+     * reused-ctx model the float store carries between frames, so a previous-frame counter value
+     * naturally survives even without the override-write-on-skip. Under the FRESH-ctx-per-frame
+     * model (the real app's lifecycle) the store is EMPTY each frame, the override-presence-skip
+     * alone leaves the store at 0, and the counter plateaus at 1 — exactly what assist found in
+     * the field. This rewrite mirrors the app: TapState persists across frames (it lives on the
+     * compositions' rememberSaveable in the app), context+player are freshly built each frame.
      */
     @Test
-    fun dispatch_3_taps_counter_accumulates_0_to_3() {
+    fun dispatch_3_taps_counter_accumulates_0_to_3_appFreshCtxPerFrame() {
         val (bytes, counterId, _) = counterFixture(initial = 0f)
-        val doc = DocumentReader.inflate(bytes)
-
-        val ctx = RemoteContext().also { it.animationEnabled = true }
-        val player = RemoteComposePlayer(ctx)
+        // The TapState is the cross-frame anchor (intOverrides + floatOverrides + active span);
+        // identical pattern to the app's RcRouter `remember { TapState() }`.
         val tap = TapState()
-
-        // Each frame: queue a tap inside the green box, repaint, then read the counter.
         val tapX = 50f; val tapY = 50f
         val observed = mutableListOf<Float>()
         for (i in 1..3) {
+            // Fresh per-frame infrastructure — EXACTLY what the Canvas-draw lambda does.
+            val doc = DocumentReader.inflate(bytes)
+            val ctx = RemoteContext().also { it.animationEnabled = true }
+            val player = RemoteComposePlayer(ctx)
             tap.down(tapX, tapY)
             tap.up(tapX, tapY)
             player.paint(doc, NoOpPaintContext(ctx), tapState = tap)
@@ -157,10 +165,34 @@ class Rem175CounterTest {
         }
         assertEquals(
             listOf(1.0f, 2.0f, 3.0f), observed,
-            "3 taps must accumulate the counter as 0→1→2→3. Got per-frame observations: $observed. " +
-                "If first is 0, the runAction dispatch for VALUE_FLOAT_EXPRESSION_CHANGE_ACTION is missing; " +
-                "if values plateau, floatOverrides re-apply isn't reaching the next frame's Phase-A.",
+            "3 taps with FRESH RemoteContext per frame (app-lifecycle mirror) must accumulate the " +
+                "counter as 0→1→2→3. Got per-frame observations: $observed. " +
+                "If [1,1,1]: the Phase-A skip is not writing the override INTO the fresh store, so " +
+                "FloatExpression(c+1) reads 0 and plateaus. If first is 0: runAction dispatch for " +
+                "VALUE_FLOAT_EXPRESSION_CHANGE_ACTION is missing.",
         )
+    }
+
+    /**
+     * Belt-and-suspenders: the same test under REUSED-ctx (original model). Kept so a future
+     * regression that ONLY breaks the fresh-ctx model still leaves an obvious diagnostic — the
+     * reused-ctx variant passing while the fresh-ctx one plateaus is exactly the [1,1,1] vs
+     * [1,2,3] signature assist found in production.
+     */
+    @Test
+    fun dispatch_3_taps_counter_accumulates_0_to_3_reusedCtx() {
+        val (bytes, counterId, _) = counterFixture(initial = 0f)
+        val doc = DocumentReader.inflate(bytes)
+        val ctx = RemoteContext().also { it.animationEnabled = true }
+        val player = RemoteComposePlayer(ctx)
+        val tap = TapState()
+        val observed = mutableListOf<Float>()
+        for (i in 1..3) {
+            tap.down(50f, 50f); tap.up(50f, 50f)
+            player.paint(doc, NoOpPaintContext(ctx), tapState = tap)
+            observed += ctx.getFloat(counterId)
+        }
+        assertEquals(listOf(1.0f, 2.0f, 3.0f), observed, "reused-ctx variant accumulates correctly")
     }
 
     /**
