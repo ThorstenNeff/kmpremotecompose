@@ -293,6 +293,28 @@ class RemoteContext {
         // deterministic (golden-not-intent-oracle: a real-now epoch would rebase the golden daily).
         loadInt(ID_EPOCH_SECOND, epochSeconds.toInt())
         loadFloat(ID_EPOCH_SECOND, epochSeconds.toFloat())
+        // REM-177 — derived Gregorian Calendar Time/Date system vars: year, month, day-of-month,
+        // day-of-year, day-of-week. Single civil_from_days call (Hinnant, pure-int, no platform
+        // dep) gives us the year/month/day triple; day-of-year + day-of-week are derived from
+        // the same daysSinceEpoch so we don't iterate. The render-relevant consumer is REM-177's
+        // `clock_demo2_jclock2.rc` (8 sub-clocks read id=34 via FLOAT-NaN-ref); other 4 vars have
+        // 0 corpus consumers but are seeded together — App-Date-Content infrastructure, no per-
+        // var marginal cost. Cross-store seed (INT + FLOAT) mirrors REM-176's epoch pattern;
+        // either consumer path resolves.
+        //
+        // **At epochSeconds == 0L (default)**: daysSinceEpoch = 0 → civilFromDays returns
+        // (1970, 1, 1), dayOfYear = 1, dayOfWeek = 4 (Thursday). The pre-REM-176 path effectively
+        // returned 0/0/0 for unseeded reads; the new 1970-1-1 values are MORE correct but DO
+        // change reads for the 1 doc with corpus consumers (REM-177 expected re-baseline).
+        val daysSinceEpoch = epochSeconds / 86400L
+        val (year, month, dayOfMonth) = com.tneff.kmpremotecompose.remote.player.core.utilities.CivilFromDays.civilFromDays(daysSinceEpoch)
+        val dayOfYear = com.tneff.kmpremotecompose.remote.player.core.utilities.CivilFromDays.dayOfYear(daysSinceEpoch)
+        val dayOfWeek = com.tneff.kmpremotecompose.remote.player.core.utilities.CivilFromDays.dayOfWeek(daysSinceEpoch)
+        loadInt(ID_YEAR, year.toInt()); loadFloat(ID_YEAR, year.toFloat())
+        loadInt(ID_CALENDAR_MONTH, month); loadFloat(ID_CALENDAR_MONTH, month.toFloat())
+        loadInt(ID_DAY_OF_MONTH, dayOfMonth); loadFloat(ID_DAY_OF_MONTH, dayOfMonth.toFloat())
+        loadInt(ID_DAY_OF_YEAR, dayOfYear); loadFloat(ID_DAY_OF_YEAR, dayOfYear.toFloat())
+        loadInt(ID_WEEK_DAY, dayOfWeek); loadFloat(ID_WEEK_DAY, dayOfWeek.toFloat())
     }
 
     fun getBitmap(id: Int): ImageBitmap? = idObjects[id] as? ImageBitmap
@@ -495,6 +517,26 @@ class RemoteContext {
 
         /** Player density (upstream `ID_DENSITY`). */
         const val ID_DENSITY = 27
+
+        // -----------------------------------------------------------------------------------
+        // REM-177 — Calendar Time/Date system vars derived from `ID_EPOCH_SECOND` (REM-176).
+        //
+        // Upstream `TimeVariables.updateTime` seeds these from a `RemoteClock.TimeSnapshot` which
+        // walks the platform calendar (`java.time.LocalDate` on JVM, `NSCalendar` on iOS); our
+        // commonMain port derives them purely from the seeded `ID_EPOCH_SECOND` via Hinnant's
+        // `civil_from_days` algorithm (`shared/.../utilities/CivilFromDays.kt`) — same correctness
+        // for all years in the Gregorian range, no platform-clock dep, deterministic in lockstep
+        // with `EPOCH_SAFE_PIN` for golden captures. The seed is **cross-store** (int + float at
+        // the same id) — `clock_demo2_jclock2.rc` reads id=34 via a FLOAT-NaN-ref while a future
+        // doc may read via int; mirroring REM-176's epoch cross-store pattern keeps both paths
+        // byte-faithful.
+        // -----------------------------------------------------------------------------------
+        /** Calendar month, 1-12 (1 = January). Upstream `ID_CALENDAR_MONTH`. */
+        const val ID_CALENDAR_MONTH = 9
+        /** Day of week, 1=Monday … 7=Sunday. Upstream `ID_WEEK_DAY`. */
+        const val ID_WEEK_DAY = 11
+        /** Day of month, 1-31. Upstream `ID_DAY_OF_MONTH`. */
+        const val ID_DAY_OF_MONTH = 12
         /**
          * REM-176 — Unix-epoch seconds (upstream `RemoteContext.ID_EPOCH_SECOND = 32`). The doc
          * encodes calendar-time-dependent calculations (solar position, moon phase, …) as
@@ -509,6 +551,14 @@ class RemoteContext {
         const val ID_EPOCH_SECOND = 32
         /** Default font size (upstream `ID_FONT_SIZE`). */
         const val ID_FONT_SIZE = 33
+        /**
+         * Day of year, 1-366 (1 = January 1). Upstream `ID_DAY_OF_YEAR`. REM-177 trigger:
+         * `clock_demo2_jclock2.rc`'s 8 sub-city sub-clocks render solar sunrise/sunset and
+         * consume this id — without seeding they collapse to 1970-01-01 values.
+         */
+        const val ID_DAY_OF_YEAR = 34
+        /** Gregorian year (e.g. 2026). Upstream `ID_YEAR`. */
+        const val ID_YEAR = 35
 
         /**
          * An **opt-in** visible default theme palette (REM-36 b1) — a conservative mid-grey for
